@@ -8,7 +8,8 @@ import { chromium } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { openOverlay, overlay, overlayMeta, readMeta, writeMeta } from '../web/overlay.ts';
 import { openDisk } from '../web/qcow2.ts';
-import { importImage, mergeOverlay, openStored, openStoredForWriting, storedEstimate, zeroDisk } from '../web/stored.ts';
+import { blockSource, importImage, mergeOverlay, openStored, openStoredForWriting, storedEstimate, zeroDisk } from '../web/stored.ts';
+import { loggedFiles } from './logged-files.ts';
 import type { Source } from '../web/disk-sources.ts';
 
 const bufferSource = (b: Uint8Array): Source => ({ size: b.length, read: (off, len) => (off >= 0 && off + len <= b.length ? b.slice(off, off + len) : undefined) });
@@ -33,6 +34,60 @@ test('an image imported into a stored disk reads back as its bytes, zero blocks 
     assert.ok(same(src.read(0, image.size), want), `${name} reads back`);
     assert.ok(same(src.read(4096 + 512, 3 * 4096), want.subarray(4096 + 512, 4 * 4096 + 512)), `${name}: a read across blocks`);
     src.close();
+  }
+});
+
+test('an import writes its store unordered and flushes both files once, at its end (nothing reads a store before its record)', async () => {
+  const size = 700 * 4096 + 300; // the last block not whole
+  const image = new Uint8Array(size);
+  for (let i = 0; i < size; i++) image[i] = (i >> 12) % 5 === 0 ? 0 : ((i * 2654435761) >>> 24) | 1; // every 5th block zeros
+  const f = loggedFiles();
+  const r = await importImage(bufferSource(image), { ...f, close() {} });
+  assert.equal(r.blocks, 701 - 141); // blocks 0, 5, … 700 are zeros
+  assert.equal(f.flushes('data'), 1, 'unordered: one data flush');
+  assert.equal(f.unflushed('data'), 0, 'the data flushed after its last write');
+  assert.equal(f.unflushed('map'), 0, 'the map flushed after its last write');
+  assert.ok(same(blockSource(f.data, f.map, size).read(0, size), image), 'the store reads as the image');
+});
+
+// A tab closed during an import: the disk's record is made only once the job is done (after its last flush), so a
+// store cut off part way is never a disk; its files are left for the store's sweep.
+test('in Chromium (OPFS): an import cut off by its page closing leaves no stored disk', async () => {
+  const server = await startServer();
+  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
+  try {
+    const context = await browser.newContext();
+    const at = `http://127.0.0.1:${(server.address() as { port: number }).port}/tests/browser/core.html`;
+    const page = await context.newPage();
+    await page.goto(at);
+    // 256 MiB that isn't zeros, its import started; resolves at its first progress (a MiB of it written).
+    await page.evaluate(async () => {
+      const { Store } = await import('/web/app/store.ts' as string);
+      const { importStored } = await import('/web/app/disks.ts' as string);
+      const store = await Store.open();
+      const words = new Uint32Array(64 << 20);
+      for (let i = 0; i < words.length; i++) words[i] = Math.imul(i, 2654435761) | 1;
+      const file = new File([words], 'big.img');
+      await new Promise<void>((resolve, reject) => {
+        importStored(store, file, (f: number) => { if (f > 0) resolve(); }).then(() => reject(new Error('the import ended before the page closed')), reject);
+      });
+    });
+    await page.close();
+    const again = await context.newPage();
+    await again.goto(at);
+    const r = await again.evaluate(async () => {
+      const { Store } = await import('/web/app/store.ts' as string);
+      const store = await Store.open();
+      const disks = (await store.all('disks')).length;
+      store.close();
+      const dirs: string[] = [];
+      for await (const name of (await (await navigator.storage.getDirectory()).getDirectoryHandle('disks')).keys()) dirs.push(name);
+      return { disks, dirs: dirs.length };
+    });
+    assert.deepEqual(r, { disks: 0, dirs: 1 }, 'no record; the files left are the sweep\'s');
+  } finally {
+    await browser.close();
+    server.close();
   }
 });
 

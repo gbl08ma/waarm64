@@ -1,0 +1,102 @@
+{
+ "schema": 1,
+ "page": "bench/io/index.html",
+ "date": "2026-11-25T21:58:02.128Z",
+ "commit": "4e51c47216cd",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "chromiumArgs": "",
+ "quick": false,
+ "profile": "persistent",
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 18
+ },
+ "browser": {
+  "version": "155.0.8059.84",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "bulk_import",
+   "unit": "ms",
+   "params": {
+    "bytes": 268435456,
+    "blocks": 65536,
+    "zeroed": 4096,
+    "data": "random",
+    "opfs": "stored disks and an overlay"
+   },
+   "samples": [
+    460.960000038147,
+    510.4300000667572,
+    479.8149998188019
+   ],
+   "median": 479.8149998188019,
+   "iqr": 24.735000014305115,
+   "n": 3
+  },
+  {
+   "name": "bulk_changes_load",
+   "unit": "ms",
+   "params": {
+    "bytes": 268435456,
+    "blocks": 65536,
+    "zeroed": 4096,
+    "data": "random",
+    "opfs": "stored disks and an overlay",
+    "note": "without the base hash"
+   },
+   "samples": [
+    20705.33999991417,
+    21076.389999628067,
+    21377.21999979019
+   ],
+   "median": 21076.389999628067,
+   "iqr": 335.93999993801117,
+   "n": 3
+  },
+  {
+   "name": "bulk_changes_hash",
+   "unit": "ms",
+   "params": {
+    "bytes": 268435456,
+    "blocks": 65536,
+    "zeroed": 4096,
+    "data": "random",
+    "opfs": "stored disks and an overlay"
+   },
+   "samples": [
+    135.94000005722046,
+    163.38500022888184,
+    134.0350000858307
+   ],
+   "median": 135.94000005722046,
+   "iqr": 14.675000071525574,
+   "n": 3
+  },
+  {
+   "name": "bulk_merge",
+   "unit": "ms",
+   "params": {
+    "bytes": 268435456,
+    "blocks": 65536,
+    "zeroed": 4096,
+    "data": "random",
+    "opfs": "stored disks and an overlay"
+   },
+   "samples": [
+    261.2149999141693,
+    239.74499988555908,
+    317.5150001049042
+   ],
+   "median": 261.2149999141693,
+   "iqr": 38.885000109672546,
+   "n": 3
+  }
+ ]
+}

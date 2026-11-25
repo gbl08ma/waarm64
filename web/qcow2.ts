@@ -551,6 +551,7 @@ export function readChanges(
   const cs = 2 ** clusterBits;
   const l2Entries = cs / 8;
   const perCluster = cs / 4096;
+  const RUN_CLUSTERS = Math.max(1, (1 << 20) / cs);
   async function* blocks(): AsyncGenerator<ChangedBlock> {
     const l1b = readAt(l1Offset, l1Size * 8) ?? fail('L1 table past the end of the file');
     const l1 = new DataView(l1b.buffer, l1b.byteOffset, l1b.byteLength);
@@ -567,16 +568,25 @@ export function readChanges(
         if (!packed && off === 0 && !zero) continue; // unallocated: the base shows through
         const first = (i * l2Entries + k) * cs;
         if (first >= size) continue;
+        // Data clusters that follow each other in the file as on the disk are one read, up to 1 MiB (a chosen file's
+        // read costs ~0.2-0.4 ms whatever its size: a 4 KiB cluster a read was most of a load).
+        let run = 1;
+        if (!packed && !zero)
+          for (; run < RUN_CLUSTERS && k + run < l2Entries && first + run * cs < size; run++) {
+            const x = l2.getBigUint64((k + run) * 8);
+            if (x & COMPRESSED || (version === 3 && x & ZERO) || Number(x & OFFSET_MASK) !== off + run * cs) break;
+          }
         const data = packed
           ? ((await compressedCluster(readAt, fileSize, e, clusterBits)) ??
             fail('a compressed cluster does not unpack'))
           : zero
             ? new Uint8Array(cs)
-            : (readAt(off, cs) ?? fail('a data cluster is past the end of the file'));
-        for (let b = 0; b < perCluster && first + b * 4096 < size; b++) {
+            : (readAt(off, run * cs) ?? fail('a data cluster is past the end of the file'));
+        for (let b = 0; b < run * perCluster && first + b * 4096 < size; b++) {
           const n = Math.min(4096, size - (first + b * 4096));
           yield { block: first / 4096 + b, data: data.subarray(b * 4096, b * 4096 + n) };
         }
+        k += run - 1;
       }
     }
   }

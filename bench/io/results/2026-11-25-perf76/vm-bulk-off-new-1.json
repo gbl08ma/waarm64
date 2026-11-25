@@ -1,0 +1,102 @@
+{
+ "schema": 1,
+ "page": "bench/io/index.html",
+ "date": "2026-11-25T22:01:31.430Z",
+ "commit": "4e51c47216cd",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "chromiumArgs": "",
+ "quick": false,
+ "profile": "off the record",
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 18
+ },
+ "browser": {
+  "version": "155.0.8059.84",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "bulk_import",
+   "unit": "ms",
+   "params": {
+    "bytes": 268435456,
+    "blocks": 65536,
+    "zeroed": 4096,
+    "data": "random",
+    "opfs": "stored disks and an overlay"
+   },
+   "samples": [
+    998.2000000476837,
+    1031.170000076294,
+    1025.75
+   ],
+   "median": 1025.75,
+   "iqr": 16.485000014305115,
+   "n": 3
+  },
+  {
+   "name": "bulk_changes_load",
+   "unit": "ms",
+   "params": {
+    "bytes": 268435456,
+    "blocks": 65536,
+    "zeroed": 4096,
+    "data": "random",
+    "opfs": "stored disks and an overlay",
+    "note": "without the base hash"
+   },
+   "samples": [
+    838.204999923706,
+    822.4250001907349,
+    823.1650002002716
+   ],
+   "median": 823.1650002002716,
+   "iqr": 7.889999866485596,
+   "n": 3
+  },
+  {
+   "name": "bulk_changes_hash",
+   "unit": "ms",
+   "params": {
+    "bytes": 268435456,
+    "blocks": 65536,
+    "zeroed": 4096,
+    "data": "random",
+    "opfs": "stored disks and an overlay"
+   },
+   "samples": [
+    133.42000007629395,
+    149.75999999046326,
+    138.27499985694885
+   ],
+   "median": 138.27499985694885,
+   "iqr": 8.169999957084656,
+   "n": 3
+  },
+  {
+   "name": "bulk_merge",
+   "unit": "ms",
+   "params": {
+    "bytes": 268435456,
+    "blocks": 65536,
+    "zeroed": 4096,
+    "data": "random",
+    "opfs": "stored disks and an overlay"
+   },
+   "samples": [
+    806.9500000476837,
+    770.6100001335144,
+    774.9399998188019
+   ],
+   "median": 774.9399998188019,
+   "iqr": 18.169999957084656,
+   "n": 3
+  }
+ ]
+}

@@ -213,3 +213,103 @@ floor, and the change doesn't touch reads. A fresh write's extra `data` flush is
 `flush` on a file the guest just wrote); the suite has no discards, so reuse's map flush isn't exercised, and it costs
 one flush per write that reuses slots after a trim. Kept on. Not measured: the Mac's or the user's x86_64 host, where
 a flush may cost more.
+
+## PERF loop 76 (2026-11-25): the blk path and the bulk writes on a persistent profile
+
+Everything above was measured off the record (Playwright's default context: OPFS in memory, every sync-handle call
+~0.3 ms, a flush free). A user's browser has a profile, where OPFS is a file on disk: a call costs µs and a flush is
+what costs. `bench/run.ts --profile=<dir>` runs a page on a fresh persistent profile made under `<dir>` (on disk: the
+dev VM's `/tmp` is RAM) and removed after; `bench/run-mac.sh` carries bench/io and the `--input` file to the Mac.
+Hosts: the dev VM (Lima vz, 8 vCPUs, arm64, xfs), Chromium 155.0.8059.84; the Mac mini M4 (macOS, APFS), Chrome for
+Testing 158.0.8127.88; both headless. Raw: `results/2026-11-25-perf76/` (`stats.py`, `summary.py`, `bulk.py`, the
+drivers `ab.sh` and `ab-bulk.sh`, `bulk.patch`: this loop's change, which `ab-bulk.sh base` takes out for a run).
+
+**The blk device's stages** (`io_stats`, one boot a workload; µs a request in `request`, then the calls that carry it;
+`*-stats-*.json`):
+
+| workload | VM off the record | VM profile, `ORDERED` | VM profile, unordered | Mac profile, `ORDERED` |
+|---|---|---|---|---|
+| random 4 KiB first write | 659: data write 329, map write 317 | 222: data flush 185, write 11, map 13 | 31 | 472: data flush 443 |
+| sequential 1 MiB first write | 2,622: data write 2,088, map 338, gather 146 | 1,070: data flush 728, write 74, gather 165 | 344 (gather 184) | 1,353: flush 994, write 136, gather 93 |
+| held 1 MiB / 4 KiB read | 447 / 257 (data read 365 / 223) | 99 / 15 (data read 56 / 4, scatter 20 / 1) | 88 / 13 | 90 / 14 |
+| base 4 KiB read (`FileReaderSync`) | 412 | 415 | | 198 |
+
+On a profile the ordered flush (one `data` flush per request that maps new slots: docs/devices.md "blk") is 83-94%
+of a first write's time in the device; nothing else in the write path is past 10 µs a 4 KiB block.
+
+**What the guest sees** (`--only io`, 5 boots a run, `ORDERED` on and off alternated on off off on on off, 3 runs
+each; each run's median; `*-io-profile-{on,off}-N.json`, `summary.py`):
+
+| job | VM on | VM off | VM off/on | Mac on | Mac off | Mac off/on |
+|---|---|---|---|---|---|---|
+| sequential 1 MiB first write, MB/s | 366-374 | 446-462 | +24.5% | 275-317 | 377-465 | +38% |
+| ... latency µs | 2403-2446 | 1867-1949 | −23% | 2862-3331 | 1845-2359 | −31% |
+| random 4 KiB first write, KB/s | 8023-8308 | 13698-13861 | +72% | 4558-5520 | 15753-16253 | +225% |
+| ... latency µs | 435-452 | 245-248 | −46% | 677-815 | 203-210 | −73% |
+| the same with `fsync` after each, KB/s | 4129-4162 | 4432-4452 | +7% | 1741-2202 | 1729-2124 | −3% |
+| sequential 1 MiB with `fsync`, MB/s | 287-298 | 216-241 | −20% | 197-213 | 174-218 | −10% |
+| `dd bs=1M conv=fsync` (buffered), MiB/s | 24.4-24.8 | 24.4-24.8 | −0.8% | 24.9-25.5 | 24.6-25.0 | −1.9% |
+| every read job | | | within ±1.2% | | | within ±0.9% |
+
+So the flushes cost a guest's **direct** first writes (fio's `direct=1` without `fsync`: −23% to −73% latency
+without them), and nothing else: a write the guest flushes pays the same flush at its `FLUSH` instead (the fsync'd
+jobs' bandwidth doesn't gain), and a buffered write isn't waiting on the device (`dd`'s requests are ~22 ms of its
+~650: the guest's CPU is the rest). Debian's boot makes ~260 first-write requests (above, "The real case"): 0.05-0.26 s
+of flushes in a 26-35 s boot. **Not built:** keeping new map entries in memory until the guest's `FLUSH` (one data
+flush a group, "Order" above) keeps a crash consistent but loses what a closed tab keeps today: the OS's cache holds
+every acknowledged write's data and entry, and a closed tab would take the entries written since the guest's last
+`FLUSH` with it. Writing the entries at once without the flush loses the crash consistency `ORDERED` was added for.
+What would keep both: entries that check themselves (each new entry, with a checksum of its slot's bytes, appended
+to a log that the opening replays and drops where the bytes don't match), with every reader of a map file (a stored
+disk's readers, merges, restores) reading the log too: a fourth file and a new format, for a gain only direct I/O
+sees. Left as a finding (docs/devices.md "blk").
+
+**The copies** (`gather` into a fresh buffer, `scatter` into the guest's memory): `scatter` is ~20 µs a MiB, ~1% of a
+held 1 MiB read (a read straight into the guest's segments would save that); `gather` ~165-184 µs a MiB, 7-10% of the
+direct 1 MiB write, about half of it the fresh buffer's making (a Node micro-benchmark, not kept: 90 µs against 45 µs a MiB
+copied from 256 segments into a new buffer or a kept one), so a kept buffer would save ≤ ~4% of a direct write and nothing a
+buffered one sees. Not built.
+
+**The bulk writes** (row 15). `--only io_bulk` (`bench/io/bulk.ts`): the 256 MiB random file imported as a stored disk
+(`importImage`), a 1 MiB run zeroed every 16 MiB, its blocks written as a changes file over a blank 256 MiB base and
+loaded as a new overlay (`loadChanges`, the page's Import changes; its base hash, ~0.14 s, timed apart and left out),
+then that overlay merged into an empty stored disk (`mergeOverlay`); 3 rounds a run, the first checking the merged
+disk against the file. A snapshot's restore was already in runs (bench/boot/REPORT.md "SNAPZ loop 5": the desktop's
+blocks ~0.1 s on a profile), and the merge since RESIZE loop 2c's review (runs of up to 256 blocks). What was left:
+
+- **Import changes wrote a block a call** (a data write, a data flush and a map write each), and `readChanges` read
+  the file a cluster at a time (a chosen file's `FileReaderSync` read is ~0.2-0.4 ms whatever its size: on a profile
+  that, not OPFS, was most of the 21 s). **Built:** `readChanges` reads data clusters that follow each other in the
+  file as on the disk in one read, up to 1 MiB (web/qcow2.ts); `changesInto` (web/changes.ts) gives `write` and
+  `zero` runs of up to 256 consecutive blocks of one kind, into the new overlay opened unordered, both files flushed at
+  its end.
+- **An import flushed `data` after each MiB's write.** **Built:** the import's store is opened unordered and flushed at
+  its end (web/stored.ts). Both are safe because nothing reads a new store or overlay before the page records it, and
+  the page records it once the job is done, after that flush (web/app/disks.ts `importStored`, `loadChangesInto`): one
+  cut off by a closed tab or a crash is never a disk; its files are the store's sweep's.
+
+Medians of each run's 3 rounds, ms (base = without `bulk.patch`, new = with it; alternated base new new base base new
+on a profile, one run each off the record):
+
+| 256 MiB | VM profile base | VM profile new | VM off base / new | Mac profile base | Mac profile new | Mac off base / new |
+|---|---|---|---|---|---|---|
+| import | 465-480 | 462-474 | 1,052 / 1,026 | 347-465 | 180-184 | 416 / 408 |
+| Import changes (without the hash) | 20,577-21,101 | 301-314 | 54,189 / 823 | 17,962-28,861 | 160-186 | 17,549 / 399 |
+| merge | 231-261 | 280-312 | 819 / 775 | 352-575 | 333-383 | 377 / 352 |
+
+Import changes is 70× faster on the VM's profile (180× off the record) and 110-170× on the Mac's: a 4 GiB changes file
+would have taken ~5.5 min on a profile (~14 min off the record) and now takes ~5 s. The import on the Mac's profile
+is twice as fast (its flushes were ~1 ms a MiB there); on the VM the flushes and the one flush at the end write the
+same bytes, and the import doesn't move. The merge's code didn't change: on the VM it ran 20% slower right after the
+new load, which leaves its 256 MiB to the OS's writeback a moment before (with 3 s between the load and the merge,
+`diag-merge-after-pause-*.json`: new 235-312, base 291-353 ms); the Mac's overlap. Memory: a 1 MiB run buffer and
+1 MiB reads of the changes file in place of 4 KiB ones during a load: ~2 MiB while it runs.
+
+**Tests:** `tests/changes.test.ts` "a changes file loads in runs" (a file whose blocks cross the run's 256 and a leaf's
+1,024, zeros after data, a lone block, a partial last block: the reads of the file, the calls, one data flush, both
+files flushed after their last write, the disk and its zero blocks without slots); `tests/stored.test.ts` "an import
+writes its store unordered and flushes both files once, at its end" and "in Chromium (OPFS): an import cut off by its
+page closing leaves no stored disk" (a 256 MiB import, the page closed at its first progress: no record, its files
+left). Planted, each caught: runs not split where data turns to zeros, no final flush (the load's and the import's),
+the load opened ordered, the import opened ordered, no 256-block cap, a cluster a read, and the disk's record put
+before the import's job.

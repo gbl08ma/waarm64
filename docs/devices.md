@@ -1064,11 +1064,23 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   flushes where one write depends on another: a write's new data is flushed before its map entries (one `data` flush
   per request that maps new slots), a slot freed by a discard or a move is reused only once the map that freed it is
   flushed, a compaction's copies are flushed before their entries move, and `data` is cut only once the map entries
-  that left its end are flushed. They cost nothing bench/io's suite can see (bench/io/REPORT.md "Ordered flushes");
-  `tests/overlay.test.ts` replays every crash point with either file as of its last flush. **A snapshot's restore**
-  writes its overlay unordered (`overlay`'s `ordered: false`) and flushes both files at its end: until then the overlay
-  is part of a snapshot's blocks over an emptied one whatever its order, and a data flush per run was most of the
-  restore's disk phase (bench/boot/REPORT.md "SNAPZ loop 5").
+  that left its end are flushed. `tests/overlay.test.ts` replays every crash point with either file as of its last
+  flush. **What they cost** (bench/io/REPORT.md "PERF loop 76"): on a persistent profile a `data` flush is the
+  first write's whole cost (~0.19 ms a 4 KiB block, ~0.7 ms a MiB in the dev VM; ~0.44 and ~1 ms on the Mac), so
+  fio's direct first writes are 1.25× (1 MiB) to 1.7× (4 KiB) faster without them in the dev VM and 1.4× to 3.3× on
+  the Mac; buffered writes (`dd … conv=fsync`) and writes the guest flushes don't move (the flush only moves to the
+  guest's `FLUSH`), and Debian's boot makes ~260 such flushes (0.05-0.26 s of a 26-35 s boot). Off the record a flush is free (bench/io/REPORT.md
+  "Ordered flushes"). Kept: keeping map entries in memory until the guest's `FLUSH` (one data flush a group) would
+  lose a closed tab's acknowledged writes, which the OS's cache keeps today; what would keep both is entries that
+  check themselves (each new entry beside a checksum of its slot's bytes, in a log the opening replays and every
+  reader of a map file reads too), a fourth file and a new format for a gain only direct I/O sees.
+  **Bulk writes into a new store or overlay are unordered** (`overlay`'s `ordered: false`), both files flushed at
+  their end: **a snapshot's restore** (until then the overlay is part of a snapshot's blocks over an emptied one
+  whatever its order, and a data flush per run was most of the restore's disk phase: bench/boot/REPORT.md "SNAPZ
+  loop 5"), **an image's import** (web/stored.ts `importImage`) and **[Import changes](ui:disks:disk-changes.changes.title)** (web/changes.ts
+  `changesInto`): nothing reads a store or an overlay before the page records it, which it does once the job is done,
+  so one cut off part way (a closed tab, a crash) is never a disk's; its files are the store's sweep's
+  (tests/stored.test.ts closes a page during an import). A merge writes into a disk that exists: it stays ordered.
   **The map's two levels** (RESIZE loop 2b): the entries are in **leaves** of 1,024 (4 KiB, a 4 MiB range of the
   disk), a leaf made at the first write (or zeroing) into its range; a range without one reads as the base (or zeros
   past it), as an unwritten block does. So the map file and the memory grow with what's written, not with the disk's
@@ -1112,13 +1124,20 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   stored disk, 1.32 MB (322 leaves) where it was 3.0 MiB (GPT's backup header at the end); a disk grown to 1 TiB with
   GPT's headers written: 8 KiB of map file and 1 MiB kept at opening, where the flat one would be 1 GiB of each
   (bench/io/REPORT.md "The two-level map").
-  **Few OPFS calls:** a sync-handle
-  call costs ~0.3 ms whatever its size (Chromium on Linux, `bench/io/REPORT.md`), so reads and writes go in runs: blocks held in
+  **Few OPFS calls:** off the record (a private window, Playwright's default context) a sync-handle call costs
+  ~0.3 ms whatever its size (Chromium on Linux, `bench/io/REPORT.md`); on a persistent profile a call is a few µs (a
+  4 KiB write ~11 µs, a MiB ~70-130) and a flush is what costs. So reads and writes go in runs: blocks held in
   consecutive slots are one read or write, whole blocks not held take consecutive slots where `take` has them and are written
   from the request's bytes in one write with their map entries in one more per leaf the run crosses (a range's first
   write makes its leaf in that write); only a block a write covers in part is read-modify-write. A snapshot's restore
   writes each DISK frame's runs of data blocks and of zero blocks with a call each, and a save reads the blocks it
-  carries with `blocks(list)` (those in consecutive slots one read): bench/boot/REPORT.md "SNAPZ loop 5".
+  carries with `blocks(list)` (those in consecutive slots one read): bench/boot/REPORT.md "SNAPZ loop 5". A merge
+  (web/stored.ts `copyIn`) and a changes file's load (`changesInto`) write runs of up to 256 consecutive blocks of one kind a
+  call too, an import a run of non-zero blocks of each MiB it reads. A request's copies out of and into the guest's
+  memory, on a profile: `scatter` ~20 µs a MiB, ~1% of a held 1 MiB read (a read straight into the guest's segments
+  would save that); `gather` ~170 µs a MiB, 7-10% of fio's direct 1 MiB write, about half of it (in Node) the fresh buffer's
+  making, so a buffer kept would save ≤ ~4% of direct writes and nothing a buffered one sees (`dd`'s requests are
+  ~3% of its time: the guest's CPU is the rest). Not built (bench/io/REPORT.md "PERF loop 76").
   **Its size** is the largest of the base's, its own (`meta`) and the spec's `size` (the guest's, from the page):
   past the base's end it reads as zeros until written (`grown`), and its map grows as blocks there are written
   (the capacity the guest sees is the spec's `size`), a leaf where a range is first written.

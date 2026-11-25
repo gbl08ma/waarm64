@@ -1,0 +1,153 @@
+diff --git a/web/changes.ts b/web/changes.ts
+index 2e8eef1e..5b04b8d1 100644
+--- a/web/changes.ts
++++ b/web/changes.ts
+@@ -4,8 +4,17 @@
+ // to be the one it was made over. Workers only in a browser (sync access handles, synchronous reads).
+ import type { Source } from './disk-sources.ts';
+ import { msg, MsgError, type Msg } from './msg.ts';
+-import { openOverlay, overlay, readMeta, removeOverlay, storageFullError, withRoom, writeMeta } from './overlay.ts';
+-import { openDisk, readChanges } from './qcow2.ts';
++import {
++  openOverlay,
++  overlay,
++  readMeta,
++  removeOverlay,
++  storageFullError,
++  withRoom,
++  writeMeta,
++  type SyncFile,
++} from './overlay.ts';
++import { openDisk, readChanges, type ChangedBlock, type Disk } from './qcow2.ts';
+ import { isZero } from './qcow2-write.ts';
+ 
+ /** The slices of an image's file that `hashSource` digests, and how many digests run at once. */
+@@ -105,18 +114,55 @@ export async function loadChanges(o: {
+   try {
+     if (c.size > base.size && !writeMeta(files.meta, { ...readMeta(files.meta), size: c.size }))
+       throw await storageFullError();
+-    const disk = overlay(base, files.data, files.map, files.meta);
+     const lands = withRoom(o.makeRoom);
+     const total = Math.ceil(c.size / 4096);
+-    let blocks = 0;
+-    for await (const { block, data } of c.blocks()) {
+-      if (!(await lands(() => (isZero(data) ? disk.zero(block * 4096, data.length) : disk.write(block * 4096, data)))))
+-        throw new MsgError('disks:changes.blockWriteFailed', { block }, { cause: await storageFullError() });
+-      if (++blocks % 256 === 0) progress(msg('disks:changes.loadingChanges'), block, total);
+-    }
+-    disk.flush();
+-    return { blocks };
++    return await changesInto(c.blocks(), base, files, lands, (block) =>
++      progress(msg('disks:changes.loadingChanges'), block, total),
++    );
+   } finally {
+     files.close();
+   }
+ }
++
++/** The most blocks a changes file's load gives one write or zeroing (1 MiB). */
++const CHANGES_RUN = 256;
++
++/**
++ * Writes a changes file's blocks (`blocks`, ascending) into the new, empty overlay of `files` over `base`: runs of
++ * consecutive blocks of one kind (data or zeros), up to `CHANGES_RUN`, a write or a zeroing each (a block a call, a
++ * changes file of 4 GiB was ~10^6 calls, each with a data flush). Unordered (`overlay`'s `ordered: false`), both files
++ * flushed at its end: nothing reads the overlay before the page records it, which it does once this is done
++ * (web/app/disks.ts `loadChangesInto`), so a load cut off part way is never a disk's. A write the storage refuses
++ * goes through `lands` (`withRoom`). `progress` gets a block every 256. The blocks written, and the calls.
++ */
++export async function changesInto(
++  blocks: AsyncIterable<ChangedBlock>,
++  base: Disk,
++  files: { data: SyncFile; map: SyncFile; meta: SyncFile },
++  lands: (w: () => boolean | Promise<boolean>) => Promise<boolean>,
++  progress: (block: number) => void = () => {},
++) {
++  const disk = overlay(base, files.data, files.map, files.meta, 0, { ordered: false });
++  const run = new Uint8Array(CHANGES_RUN * 4096);
++  let [first, n, len, zeros, written, calls] = [0, 0, 0, false, 0, 0];
++  const land = async () => {
++    if (!n) return;
++    const at = first * 4096;
++    if (!(await lands(() => (zeros ? disk.zero(at, len) : disk.write(at, run.subarray(0, len))))))
++      throw new MsgError('disks:changes.blockWriteFailed', { block: first }, { cause: await storageFullError() });
++    calls++;
++    [n, len] = [0, 0];
++  };
++  for await (const { block, data } of blocks) {
++    const z = isZero(data);
++    if (n && (block !== first + n || z !== zeros || n === CHANGES_RUN)) await land();
++    if (!n) [first, zeros] = [block, z];
++    if (!z) run.set(data, len);
++    len += data.length;
++    n++;
++    if (++written % 256 === 0) progress(block);
++  }
++  await land();
++  disk.flush();
++  return { blocks: written, calls };
++}
+diff --git a/web/qcow2.ts b/web/qcow2.ts
+index cecabcdd..88b51005 100644
+--- a/web/qcow2.ts
++++ b/web/qcow2.ts
+@@ -551,6 +551,7 @@ export function readChanges(
+   const cs = 2 ** clusterBits;
+   const l2Entries = cs / 8;
+   const perCluster = cs / 4096;
++  const RUN_CLUSTERS = Math.max(1, (1 << 20) / cs);
+   async function* blocks(): AsyncGenerator<ChangedBlock> {
+     const l1b = readAt(l1Offset, l1Size * 8) ?? fail('L1 table past the end of the file');
+     const l1 = new DataView(l1b.buffer, l1b.byteOffset, l1b.byteLength);
+@@ -567,16 +568,25 @@ export function readChanges(
+         if (!packed && off === 0 && !zero) continue; // unallocated: the base shows through
+         const first = (i * l2Entries + k) * cs;
+         if (first >= size) continue;
++        // Data clusters that follow each other in the file as on the disk are one read, up to 1 MiB (a chosen file's
++        // read costs ~0.2-0.4 ms whatever its size: a 4 KiB cluster a read was most of a load).
++        let run = 1;
++        if (!packed && !zero)
++          for (; run < RUN_CLUSTERS && k + run < l2Entries && first + run * cs < size; run++) {
++            const x = l2.getBigUint64((k + run) * 8);
++            if (x & COMPRESSED || (version === 3 && x & ZERO) || Number(x & OFFSET_MASK) !== off + run * cs) break;
++          }
+         const data = packed
+           ? ((await compressedCluster(readAt, fileSize, e, clusterBits)) ??
+             fail('a compressed cluster does not unpack'))
+           : zero
+             ? new Uint8Array(cs)
+-            : (readAt(off, cs) ?? fail('a data cluster is past the end of the file'));
+-        for (let b = 0; b < perCluster && first + b * 4096 < size; b++) {
++            : (readAt(off, run * cs) ?? fail('a data cluster is past the end of the file'));
++        for (let b = 0; b < run * perCluster && first + b * 4096 < size; b++) {
+           const n = Math.min(4096, size - (first + b * 4096));
+           yield { block: first / 4096 + b, data: data.subarray(b * 4096, b * 4096 + n) };
+         }
++        k += run - 1;
+       }
+     }
+   }
+diff --git a/web/stored.ts b/web/stored.ts
+index 55879a38..c229b369 100644
+--- a/web/stored.ts
++++ b/web/stored.ts
+@@ -88,7 +88,7 @@ export async function openStoredForWriting(path: string, identity: string, size:
+  * Copies image `src` (qcow2 or raw: its virtual bytes, compressed clusters inflated) into the empty block store
+  * `files`, leaving zero blocks out. `progress` gets the bytes done of the virtual size. Returns the size and the
+  * blocks written. `inflater` unpacks compressed clusters (web/inflate-pool.ts in the disk worker). A write the storage
+- * refuses asks `makeRoom` for room first (`withRoom`).
++ * refuses asks `makeRoom` for room first (`withRoom`). `files` is a new store's: written unordered (below).
+  */
+ export async function importImage(
+   src: Source,
+@@ -98,7 +98,9 @@ export async function importImage(
+   makeRoom?: () => Promise<boolean>,
+ ) {
+   const image = openDisk((off, len) => (len === 0 ? new Uint8Array(0) : src.read(off, len)), src.size, inflater);
+-  const store = overlay(zeroDisk(image.size), files.data, files.map, files.meta);
++  // Unordered (no data flush per write), both files flushed at the end: nothing reads a store before the page records
++  // it, which it does once the import is done (web/app/disks.ts `importStored`), so an import cut off is never a disk.
++  const store = overlay(zeroDisk(image.size), files.data, files.map, files.meta, 0, { ordered: false });
+   const lands = withRoom(makeRoom);
+   const CHUNK = 1 << 20;
+   let blocks = 0;

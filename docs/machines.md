@@ -291,7 +291,8 @@ shape, §5.1, and carried by definitions) makes it the guest's swap with nothing
   (`web/stored.ts`). A stored disk from before leaves (a flat map) is read as it is under its overlays and converted
   by its first writable opening's first change (writing in place, a merge into it). An imported qcow2 is converted on the
   way in (compressed clusters inflated, zero and unallocated ones left out), a raw image too (zero blocks left out).
-  So a stored disk takes no more than its data, and the same code reads, writes and exports it. Debian's published
+  The import writes its store unordered and flushes it at its end; the disk's record comes after, so an import cut off
+  is never a disk (devices.md "blk"). So a stored disk takes no more than its data, and the same code reads, writes and exports it. Debian's published
   image (a ~400 MB compressed qcow2) stores as 1,043 MB, estimated beforehand at 1,212 MB from the qcow2's
   allocated clusters (`storedEstimate`); its import took ~94–140 s in a cloud session. Keeping the file as it is was
   the alternative: a qcow2 can't be written in place (our qcow2 code reads, and writes whole files, never allocates

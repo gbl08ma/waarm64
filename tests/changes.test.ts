@@ -10,12 +10,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { splitmix64 } from '../tools/corpus/corpus.ts';
-import { hashSource, loadChanges } from '../web/changes.ts';
+import { changesInto, hashSource, loadChanges } from '../web/changes.ts';
 import type { Source } from '../web/disk-sources.ts';
 import { msgOf } from '../web/msg.ts';
 import { memFile, openOverlay, overlay } from '../web/overlay.ts';
 import { openDisk, readChanges } from '../web/qcow2.ts';
 import { changedClusters, writeQcow2, type Sink } from '../web/qcow2-write.ts';
+import { loggedFiles } from './logged-files.ts';
 
 const have = spawnSync('qemu-img', ['--version']).status === 0 && spawnSync('qemu-io', ['--version']).status === 0;
 
@@ -176,4 +177,34 @@ test('a compressed changes file from qemu-img (64 KiB clusters) reads block by b
   assert.ok(bytes.length < 1 << 19, `${bytes.length} bytes: not compressed`); // convert copies the base's clusters too
   assert.equal(blocks, 256);
   assert.ok(Buffer.compare(got, merged) === 0, 'the base plus the blocks is another disk');
+});
+
+test('a changes file loads in runs: its consecutive data clusters one read, consecutive blocks of one kind one write or zeroing (up to 1 MiB), unordered, both files flushed at its end', async () => {
+  const size = 1100 * 4096 + 1000; // across a leaf (1,024 blocks), the last block not whole
+  const base = randomBase(9n, size);
+  const marks: [number, Uint8Array][] = [];
+  const fill = (b: number, n: number, v: number) => marks.push([b * 4096, new Uint8Array(Math.min(n * 4096, size - b * 4096)).fill(v)]);
+  fill(10, 300, 0x31); // longer than a run: 256 + 44
+  fill(310, 5, 0); // zeros right after: a zeroing of their own
+  fill(315, 2, 0x32); // data again
+  fill(400, 1, 0x33); // a lone block after a gap
+  fill(1000, 40, 0x34); // across the leaf's end
+  fill(1099, 1, 0x35); // the last block, partial
+  const merged = base.slice();
+  for (const [off, b] of marks) merged.set(b, off);
+  const file = await changesFile(base, marks);
+  let reads = 0;
+  const c = readChanges((o, l) => (reads++, o + l <= file.length ? file.subarray(o, o + l) : undefined), file.length)!;
+  const f = loggedFiles();
+  const disk = openDisk((o, l) => base.slice(o, o + l), size);
+  const r = await changesInto(c.blocks(), disk, f, async (w) => w());
+  assert.equal(r.blocks, 300 + 5 + 2 + 1 + 40 + 1);
+  assert.equal(r.calls, 2 + 1 + 1 + 1 + 1 + 1, `${r.calls} calls`); // 300 = 256 + 44; 1000..1039 one write over two leaves
+  assert.ok(reads <= 12, `${reads} reads of the file: its consecutive data clusters are one read (up to 1 MiB)`); // the header, L1, three L2 tables, five runs
+  assert.equal(f.flushes('data'), 1, 'unordered: one data flush, at the end');
+  assert.equal(f.unflushed('data'), 0, 'the data flushed after its last write');
+  assert.equal(f.unflushed('map'), 0, 'the map flushed after its last write');
+  const got = await overlay(disk, f.data, f.map).read(0, size);
+  assert.ok(got && Buffer.compare(got, merged) === 0, 'the overlay holds another disk');
+  for (let b = 310; b < 315; b++) assert.ok(overlay(disk, f.data, f.map).zeroed!(b), `block ${b} zeros without a slot`);
 });

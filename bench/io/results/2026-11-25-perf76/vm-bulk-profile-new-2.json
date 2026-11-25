@@ -1,0 +1,102 @@
+{
+ "schema": 1,
+ "page": "bench/io/index.html",
+ "date": "2026-11-25T21:58:16.198Z",
+ "commit": "4e51c47216cd",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "chromiumArgs": "",
+ "quick": false,
+ "profile": "persistent",
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 18
+ },
+ "browser": {
+  "version": "155.0.8059.84",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "bulk_import",
+   "unit": "ms",
+   "params": {
+    "bytes": 268435456,
+    "blocks": 65536,
+    "zeroed": 4096,
+    "data": "random",
+    "opfs": "stored disks and an overlay"
+   },
+   "samples": [
+    461.914999961853,
+    479.37999987602234,
+    462.4300000667572
+   ],
+   "median": 462.4300000667572,
+   "iqr": 8.732499957084656,
+   "n": 3
+  },
+  {
+   "name": "bulk_changes_load",
+   "unit": "ms",
+   "params": {
+    "bytes": 268435456,
+    "blocks": 65536,
+    "zeroed": 4096,
+    "data": "random",
+    "opfs": "stored disks and an overlay",
+    "note": "without the base hash"
+   },
+   "samples": [
+    359.59499979019165,
+    314.460000038147,
+    297.97500014305115
+   ],
+   "median": 314.460000038147,
+   "iqr": 30.80999982357025,
+   "n": 3
+  },
+  {
+   "name": "bulk_changes_hash",
+   "unit": "ms",
+   "params": {
+    "bytes": 268435456,
+    "blocks": 65536,
+    "zeroed": 4096,
+    "data": "random",
+    "opfs": "stored disks and an overlay"
+   },
+   "samples": [
+    135.83000016212463,
+    140.24000000953674,
+    140.17999982833862
+   ],
+   "median": 140.17999982833862,
+   "iqr": 2.2049999237060547,
+   "n": 3
+  },
+  {
+   "name": "bulk_merge",
+   "unit": "ms",
+   "params": {
+    "bytes": 268435456,
+    "blocks": 65536,
+    "zeroed": 4096,
+    "data": "random",
+    "opfs": "stored disks and an overlay"
+   },
+   "samples": [
+    357.9599997997284,
+    304.875,
+    255.15000009536743
+   ],
+   "median": 304.875,
+   "iqr": 51.40499985218048,
+   "n": 3
+  }
+ ]
+}

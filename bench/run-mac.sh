@@ -6,6 +6,7 @@
 # needs Node, npm and the Chromium that Playwright installed. Nothing else on the host is touched.
 #   [WASM=core.wasm] [MAC_TIMEOUT=s, the Mac side's bound, 580] bench/run-mac.sh <name> [bench/run.ts args]   -> bench/results/local/mac/<name>.json
 # e.g. bench/run-mac.sh user-default --page bench/boot/index.html --only alpine_user_jit
+#      bench/run-mac.sh io-profile --page bench/io/index.html --input target/bench/io-raw.img --only io --profile=target/bench-profiles
 set -euo pipefail
 cd "$(dirname "$0")/.."
 name=$1; shift
@@ -13,7 +14,7 @@ HOST=${MAC_HOST:-macmini.lan}
 DEST=waarm64-bench
 CORE=target/wasm32-unknown-unknown/release
 ssh "$HOST" "mkdir -p $DEST/bench $DEST/tools $DEST/$CORE $DEST/target/images $DEST/target/bench"
-rsync -a --delete --exclude results --exclude memory bench/boot bench/interp bench/spike bench/vulkan bench/mac bench/run.ts bench/stats.ts bench/procstat.ts "$HOST:$DEST/bench/"
+rsync -a --delete --exclude results --exclude memory bench/boot bench/interp bench/io bench/spike bench/vulkan bench/mac bench/run.ts bench/stats.ts bench/procstat.ts "$HOST:$DEST/bench/"
 # The counters' helper (bench/procstat.ts: instructions, cycles and CPU time of the browser's processes), built there.
 ssh "$HOST" "cd $DEST && { [ procstat -nt bench/mac/procstat.c ] || cc -O2 -Wall -o procstat bench/mac/procstat.c; }"
 # The dev server (Vite: tools/serve.ts) and the packages, installed there (bench/mac-packages.sh).
@@ -24,6 +25,13 @@ rsync -a "${WASM:-$CORE/waarm64_core.wasm}" "$HOST:$DEST/$CORE/waarm64_core.wasm
 rsync -a target/images/alpine target/images/alpine-user "$HOST:$DEST/target/images/"
 rsync -a --exclude '*defconfig' --exclude 'System.map' target/images/linux target/images/buildroot "$HOST:$DEST/target/images/"
 rsync -a target/bench/coremark.bin target/bench/coremark-linux "$HOST:$DEST/target/bench/"
+# A page's chosen file (bench/io's `--input target/bench/…`), at the same path there.
+prev=
+for a in "$@"; do
+  case $prev in --input) rsync -a "$a" "$HOST:$DEST/$a" ;; esac
+  case $a in --input=*) rsync -a "${a#--input=}" "$HOST:$DEST/${a#--input=}" ;; esac
+  prev=$a
+done
 ssh "$HOST" "cd $DEST && export PATH=/opt/homebrew/bin:\$PATH WAARM64_TAILSCALE=0 && \
   export CHROMIUM=\"$MAC_CHROME\" && \
   perl -e 'alarm shift; exec @ARGV' ${MAC_TIMEOUT:-580} node --disable-warning=ExperimentalWarning bench/run.ts --out bench/results/local/$name.json $*"

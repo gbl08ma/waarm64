@@ -88,7 +88,7 @@ export async function openStoredForWriting(path: string, identity: string, size:
  * Copies image `src` (qcow2 or raw: its virtual bytes, compressed clusters inflated) into the empty block store
  * `files`, leaving zero blocks out. `progress` gets the bytes done of the virtual size. Returns the size and the
  * blocks written. `inflater` unpacks compressed clusters (web/inflate-pool.ts in the disk worker). A write the storage
- * refuses asks `makeRoom` for room first (`withRoom`).
+ * refuses asks `makeRoom` for room first (`withRoom`). `files` is a new store's: written unordered (below).
  */
 export async function importImage(
   src: Source,
@@ -98,7 +98,9 @@ export async function importImage(
   makeRoom?: () => Promise<boolean>,
 ) {
   const image = openDisk((off, len) => (len === 0 ? new Uint8Array(0) : src.read(off, len)), src.size, inflater);
-  const store = overlay(zeroDisk(image.size), files.data, files.map, files.meta);
+  // Unordered (no data flush per write), both files flushed at the end: nothing reads a store before the page records
+  // it, which it does once the import is done (web/app/disks.ts `importStored`), so an import cut off is never a disk.
+  const store = overlay(zeroDisk(image.size), files.data, files.map, files.meta, 0, { ordered: false });
   const lands = withRoom(makeRoom);
   const CHUNK = 1 << 20;
   let blocks = 0;

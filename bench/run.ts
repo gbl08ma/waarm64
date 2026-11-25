@@ -1,9 +1,10 @@
 // Runs a benchmark page in a pinned Chromium via Playwright and writes a
 // results JSON (see bench/README.md for the schema).
-//   node bench/run.ts [--quick] [--only <bench>] [--config default|liftoff-only|turbofan-only|bounds-checks] [--flags='<more V8 flags>'] [--chromium-args='<Chromium switches>'] [--query='<more of the page query>']
+//   node bench/run.ts [--quick] [--only <bench>] [--config default|liftoff-only|turbofan-only|bounds-checks] [--flags='<more V8 flags>'] [--chromium-args='<Chromium switches>'] [--query='<more of the page query>'] [--profile=<dir>]
 import { execSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
+import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { chromium } from 'playwright-core';
 import { ROOT, startServer } from '../tools/serve.ts';
@@ -28,6 +29,9 @@ const { values: args } = parseArgs({
     flags: { type: 'string', default: '' },
     'chromium-args': { type: 'string', default: '' }, // e.g. the WebGPU switches of bench/gpu (docs/benchmarking.md)
     query: { type: 'string' }, // more of the page's query (e.g. `nocw`: bench/boot without the JIT's compile worker)
+    // A persistent profile, made fresh under this directory and removed at the end: OPFS on disk, as a user's (the
+    // default context is off the record: OPFS in memory, ~0.3 ms a call, a flush free). On a real disk, not tmpfs.
+    profile: { type: 'string' },
   },
 });
 if (CONFIGS[args.config!] === undefined) throw new Error(`unknown --config ${args.config}; one of ${Object.keys(CONFIGS)}`);
@@ -40,12 +44,19 @@ const server = await startServer();
 const port = (server.address() as { port: number }).port;
 // The browser's CPU counters for the page's samples (bench/procstat.ts; `?proc=<port>`: bench/boot/suite.ts).
 const proc = await procServer(process.pid);
-const browser = await chromium.launch({
+const launch = {
   executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium',
   args: [...(jsFlags ? [`--js-flags=${jsFlags}`] : []), ...args['chromium-args']!.split(' ').filter(Boolean)],
-});
+};
+let profileDir: string | undefined;
+if (args.profile) {
+  mkdirSync(resolve(ROOT, args.profile), { recursive: true });
+  profileDir = mkdtempSync(join(resolve(ROOT, args.profile), 'profile-'));
+}
+const browser = profileDir ? undefined : await chromium.launch(launch);
+const context = profileDir ? await chromium.launchPersistentContext(profileDir, { ...launch, headless: true }) : await browser!.newContext();
 try {
-  const page = await browser.newPage();
+  const page = context.pages()[0] ?? (await context.newPage());
   page.on('console', (m) => console.error(`[page] ${m.text()}`));
   const qs = new URLSearchParams();
   if (args.quick) qs.set('quick', '');
@@ -77,8 +88,9 @@ try {
     chromiumArgs: args['chromium-args'],
     query: args.query,
     quick: args.quick,
+    profile: profileDir ? 'persistent' : 'off the record',
     host: { platform: os.platform(), arch: os.arch(), cpu: os.cpus()[0]?.model, cores: os.cpus().length, memGiB: Math.round(os.totalmem() / 2 ** 30) },
-    browser: { version: browser.version(), userAgent: data.userAgent },
+    browser: { version: browser?.version() ?? (await (await context.newCDPSession(page)).send('Browser.getVersion')).product.split('/')[1], userAgent: data.userAgent },
     results: data.results.map((r) => ({ ...r, ...summarize(r.samples) })),
   };
   const out = args.out ?? `bench/results/local/${report.date.replace(/[:.]/g, '-')}-${args.config}.json`;
@@ -89,7 +101,9 @@ try {
   }
   console.error(`wrote ${out}`);
 } finally {
-  await browser.close();
+  await context.close();
+  await browser?.close();
+  if (profileDir) rmSync(profileDir, { recursive: true, force: true });
   server.close();
   proc.close();
 }

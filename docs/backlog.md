@@ -268,12 +268,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   top entry meaning "the whole range zeros" would make it free, if large whole-disk zeroings turn up. A dense flat map
   converted keeps its old room before the records (~2× the records) when they don't fit in it; nothing reclaims it
   later. The top table is flat in memory (4 bytes per 4 MiB: 8 MiB at `MAX_RESIZE`), allocated at each opening.
-- **Restore, merge and Import changes write one block per call** (web/snapshot.ts's restore, web/stored.ts `copyIn`,
-  web/changes.ts; RESIZE loop 2c's review): each block a data write and a map write (~0.3 ms each: bench/io/REPORT.md),
-  and a compaction probe on each zero one, so a 4 GiB overlay (~10^6 blocks) is about 10 minutes (the reviewer's
-  estimate, not measured), where runs of consecutive blocks given to `write` (and `zero`) at once would be one call per
-  run. The snapshot file's DISK frames come in ~256-block batches and a merge's `written()` is ascending, so the runs
-  are there to be had.
 - blk DISCARD/WRITE_ZEROES ([devices.md](devices.md)) is the page's only: offering it to the
   tests' guests moves every writable guest's step count (the driver reads the longer config) and
   needs the native twin (`core/tests/common` `Overlay`) to take the requests. One segment per
@@ -1630,8 +1624,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   writes, a zero run's `shrink` a `getSize` each, ~80 ms). A restore-only bulk write (a frame's runs' data, then
   each leaf's entries once) would take the map writes to one per leaf touched (~0.3 s off the record, ~5 ms on
   disk); not built, the persistent case being ~0.1 s already. A save off the record pauses 2.7 s, 2.2 of it the
-  sink (the file's OPFS writes). A merge into a stored disk (web/stored.ts `mergeOverlay`) still copies one block a
-  call (`changes.block`, then a write or a zeroing each): runs and `blocks()` would serve it as they do a restore.
+  sink (the file's OPFS writes).
 - **A restore empties the TLBs**, which Linux can tell by its step count (not its behaviour): a
   test that wants an unbroken run's steps through a snapshot needs a guest that doesn't lean on
   stale entries, or the count of a run with TLB flushes at the same points

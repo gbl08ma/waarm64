@@ -6,6 +6,7 @@
 import type { Options, Sample } from '../spike/benchmarks.ts';
 import { boot, images } from '../boot/suite.ts';
 import { removeOverlay } from '../../web/overlay.ts';
+import { ioBulk } from './bulk.ts';
 
 const OVERLAY = 'bench-io';
 const CMDLINE = 'console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/bin/sh -- -c "mount -t proc proc /proc; mount -t 9p -o trans=virtio,version=9p2000.L host /mnt; . /mnt/guest.sh; poweroff -f"';
@@ -96,5 +97,5 @@ async function ioStats(o: Options & { file: File }): Promise<Sample[]> {
   return out;
 }
 
-export const suite = { io, io_reads: ioReads, io_stats: ioStats };
+export const suite = { io, io_reads: ioReads, io_stats: ioStats, io_bulk: ioBulk };
 export const runAll = io;

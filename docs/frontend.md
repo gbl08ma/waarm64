@@ -2325,7 +2325,10 @@ booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file
   and **hash** (the `WAM2` extension) are checked against the base's (`hashSource`, under a second
   for Debian's 400 MB), then the overlay and the variable store beside it are **deleted** (the
   changes are the whole of what the disk has written; EDK2 rebuilds its variables, Debian boots
-  by the fallback path) and the blocks are written into a fresh overlay. Refused before anything
+  by the fallback path) and the blocks are written into a fresh overlay (`changesInto`: the file's consecutive data
+  clusters one read, consecutive blocks of one kind one write or zeroing, up to 1 MiB; unordered, both files flushed
+  at the end, the overlay's record made after: devices.md "blk"; 256 MiB in 0.16-0.31 s on a profile, where a block a
+  call took 18-29 s: bench/io/REPORT.md "PERF loop 76"). Refused before anything
   is touched, with what the user can act on: not a changes file; a qcow2 over a backing file that
   isn't ours (no checksum to check); another size; another base (names the file it was made over and both
   hashes' first digits: open that disk first). The file name isn't compared (the base can be

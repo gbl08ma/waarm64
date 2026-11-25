@@ -4,8 +4,17 @@
 // to be the one it was made over. Workers only in a browser (sync access handles, synchronous reads).
 import type { Source } from './disk-sources.ts';
 import { msg, MsgError, type Msg } from './msg.ts';
-import { openOverlay, overlay, readMeta, removeOverlay, storageFullError, withRoom, writeMeta } from './overlay.ts';
-import { openDisk, readChanges } from './qcow2.ts';
+import {
+  openOverlay,
+  overlay,
+  readMeta,
+  removeOverlay,
+  storageFullError,
+  withRoom,
+  writeMeta,
+  type SyncFile,
+} from './overlay.ts';
+import { openDisk, readChanges, type ChangedBlock, type Disk } from './qcow2.ts';
 import { isZero } from './qcow2-write.ts';
 
 /** The slices of an image's file that `hashSource` digests, and how many digests run at once. */
@@ -105,18 +114,55 @@ export async function loadChanges(o: {
   try {
     if (c.size > base.size && !writeMeta(files.meta, { ...readMeta(files.meta), size: c.size }))
       throw await storageFullError();
-    const disk = overlay(base, files.data, files.map, files.meta);
     const lands = withRoom(o.makeRoom);
     const total = Math.ceil(c.size / 4096);
-    let blocks = 0;
-    for await (const { block, data } of c.blocks()) {
-      if (!(await lands(() => (isZero(data) ? disk.zero(block * 4096, data.length) : disk.write(block * 4096, data)))))
-        throw new MsgError('disks:changes.blockWriteFailed', { block }, { cause: await storageFullError() });
-      if (++blocks % 256 === 0) progress(msg('disks:changes.loadingChanges'), block, total);
-    }
-    disk.flush();
-    return { blocks };
+    return await changesInto(c.blocks(), base, files, lands, (block) =>
+      progress(msg('disks:changes.loadingChanges'), block, total),
+    );
   } finally {
     files.close();
   }
+}
+
+/** The most blocks a changes file's load gives one write or zeroing (1 MiB). */
+const CHANGES_RUN = 256;
+
+/**
+ * Writes a changes file's blocks (`blocks`, ascending) into the new, empty overlay of `files` over `base`: runs of
+ * consecutive blocks of one kind (data or zeros), up to `CHANGES_RUN`, a write or a zeroing each (a block a call, a
+ * changes file of 4 GiB was ~10^6 calls, each with a data flush). Unordered (`overlay`'s `ordered: false`), both files
+ * flushed at its end: nothing reads the overlay before the page records it, which it does once this is done
+ * (web/app/disks.ts `loadChangesInto`), so a load cut off part way is never a disk's. A write the storage refuses
+ * goes through `lands` (`withRoom`). `progress` gets a block every 256. The blocks written, and the calls.
+ */
+export async function changesInto(
+  blocks: AsyncIterable<ChangedBlock>,
+  base: Disk,
+  files: { data: SyncFile; map: SyncFile; meta: SyncFile },
+  lands: (w: () => boolean | Promise<boolean>) => Promise<boolean>,
+  progress?: (block: number) => void,
+) {
+  const disk = overlay(base, files.data, files.map, files.meta, 0, { ordered: false });
+  const run = new Uint8Array(CHANGES_RUN * 4096);
+  let [first, n, len, zeros, written, calls] = [0, 0, 0, false, 0, 0];
+  const land = async () => {
+    if (!n) return;
+    const at = first * 4096;
+    if (!(await lands(() => (zeros ? disk.zero(at, len) : disk.write(at, run.subarray(0, len))))))
+      throw new MsgError('disks:changes.blockWriteFailed', { block: first }, { cause: await storageFullError() });
+    calls++;
+    [n, len] = [0, 0];
+  };
+  for await (const { block, data } of blocks) {
+    const z = isZero(data);
+    if (n && (block !== first + n || z !== zeros || n === CHANGES_RUN)) await land();
+    if (!n) [first, zeros] = [block, z];
+    if (!z) run.set(data, len);
+    len += data.length;
+    n++;
+    if (++written % 256 === 0) progress?.(block);
+  }
+  await land();
+  disk.flush();
+  return { blocks: written, calls };
 }
