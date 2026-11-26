@@ -80,17 +80,17 @@ export type SnapshotDisk = {
 
 /**
  * What a restore does with a writable disk the file pins (docs/machines.md §5.2): `keep` its overlay as it is
- * (it is at `generation`, the one the page planned with, else the restore is refused: the file's blocks for it are
- * skipped), or `write` the file's blocks into overlay
+ * (the disk's device runs on `overlay`, `overlays/<id>` or a stored disk written in place `disks/<id>`, and it is at
+ * `generation`, the one the page planned with, else the restore is refused: the file's blocks for it are skipped), or `write` the file's blocks into overlay
  * `overlay` (emptied first: a fork into a new overlay, or a replace), with `whole` the disk's every block made zeros
  * first (a stored disk written in place, forked over its moved store: the file has the whole disk), and `fork` when
- * the overlay is a new fork the page made (cut off, the page puts the machine back on what it had: a refusal after it
- * deleted nothing of the disk's), and `token` the restore's fill token, written into the overlay's meta with its fill
+ * the overlay holds none of the disk's own changes: a new fork the page made (cut off, the page puts the machine back
+ * on what it had), or a template's fresh overlay, never written (a refusal after either deleted nothing), and `token` the restore's fill token, written into the overlay's meta with its fill
  * mark (the proof the page's undo needs before it empties or deletes it: docs/machines.md §5.2 "Other machines"). A
  * ramdisk's blocks always go to its new chunks.
  */
 export type DiskPlan =
-  | { slot: number; action: 'keep'; generation: number }
+  | { slot: number; action: 'keep'; overlay: string; generation: number }
   | {
       slot: number;
       action: 'write';
@@ -367,14 +367,20 @@ export async function readSnapshot(
         }
       }
       const plan = opts.plan?.find((p) => p.slot === d.slot);
-      // A kept overlay must still be at the generation the page planned with: one written since (the guest ran on
-      // between the plan and the stop) would put the snapshot's RAM over a disk that moved on.
+      // A kept overlay must be the one the disk's device runs on (an attachment switched to another, or to its stored
+      // disk written in place, would put the snapshot's RAM over other blocks), still at the generation the page
+      // planned with: one written since (the guest ran on between the plan and the stop) would put it over a disk that
+      // moved on.
       // One a fill was cut off in (marked) holds none of what it was planned at either, and one grown since (a resize
       // in another tab: its own size, or the disk's record, past the size the snapshot saw) is another disk to the guest.
       const kept = !opts.resume && plan?.action === 'keep' ? plan : undefined;
       const now = kept && (await overlayMeta(spec.overlay));
       const grown = !!now && d.size > 0 && Math.max(spec.size ?? 0, now.size) > d.size;
-      if (kept && now && (now.generation !== kept.generation || now.filling || grown)) {
+      if (
+        kept &&
+        now &&
+        (spec.overlay !== kept.overlay || now.generation !== kept.generation || now.filling || grown)
+      ) {
         throw new SnapshotError('snapshots:snapshot.keptMoved', {}, 'other-disk');
       }
       targets.set(
@@ -540,8 +546,8 @@ export async function readSnapshot(
       // Every overlay's lock first, before any is emptied: one open elsewhere (another tab's job or machine) refuses the
       // restore (`overlay-in-use`) with all the disks as they were. Each is handed to its opening below.
       const held = new Map<number, () => void>();
-      // Whether an overlay's own changes were deleted (one written that isn't a new fork: a replace, a template's fresh
-      // overlay, the page's own disk): a refusal from here on says so (`emptied`, for the page's words).
+      // Whether an overlay's own changes were deleted (one written that isn't planned as a fork: a replace, the page's
+      // own disk): a refusal from here on says so (`emptied`, for the page's words).
       let emptied = false;
       try {
         for (const [slot, t] of targets) if (t.kind === 'overlay') held.set(slot, await lockOverlay(t.name));

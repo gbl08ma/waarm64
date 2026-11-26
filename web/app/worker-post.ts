@@ -1,6 +1,6 @@
 // The machine worker's messages to the page (web/app/worker.ts; web/app/protocol.ts `FromWorker`).
 import { toWire, type Msg } from '../msg.ts';
-import type { FromWorker, PowerState, Problem } from './protocol.ts';
+import type { FromWorker, LoadPhases, PowerState, Problem } from './protocol.ts';
 
 export const post = (m: FromWorker, transfer: Transferable[] = []) => self.postMessage(m, { transfer });
 /** Posts the machine's state: with an error (what stopped it, or what went wrong on the way) or a note (resumed, suspended). */
@@ -25,3 +25,19 @@ export function throttled(id: number, phase: Msg) {
     progress(id, phase, total ? done / total : 0);
   };
 }
+
+/** The page's answer to `loaded` awaited (`postLoaded`), or none. */
+let answered: (() => void) | undefined;
+/**
+ * Posts `loaded` (a start from a snapshot loaded it: where its time went) and waits for the page's answer (`recorded`:
+ * a restore's disks recorded as the machine's, docs/machines.md §5.2 "A restore's records") or a stop, either of which
+ * calls `answerLoaded`: the guest runs only after, so it writes nothing before that record.
+ */
+export async function postLoaded(phases: LoadPhases) {
+  const answer = new Promise<void>((resolve) => (answered = resolve));
+  post({ type: 'loaded', phases });
+  await answer;
+  answered = undefined;
+}
+/** The page answered `loaded`, or the machine is being stopped: a start waiting in `postLoaded` goes on. */
+export const answerLoaded = () => answered?.();

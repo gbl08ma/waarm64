@@ -316,17 +316,18 @@ test("a template's first start whose commit fails keeps the mark and says so; it
   });
   await page.goto(`${base}/web/app/?autostart=1&hooks`);
   await page.waitForFunction(() => document.body.dataset.state === 'idle', null, { timeout: 30_000, polling: 50 });
-  // The restore's commit refused once by the store (its one read and write of the machine's record, from the restore's plan).
+  // The restore's commit refused once by the store (its one read and write of the machine's record, among the other
+  // machines': `updateAmong`, from the restore's plan).
   await page.evaluate(async () => {
     const { Store } = await import('/web/app/store.ts' as string);
-    const update = Store.prototype.update;
+    const among = Store.prototype.updateAmong;
     let armed = true;
-    Store.prototype.update = function (this: unknown, kind: string, id: string, f: unknown) {
+    Store.prototype.updateAmong = function (this: unknown, kind: string, id: string, f: unknown) {
       if (armed && kind === 'machines' && /\/web\/app\/snapshots\.ts/.test(new Error().stack ?? '')) {
         armed = false;
         return Promise.reject(new DOMException('the storage is full', 'QuotaExceededError'));
       }
-      return update.call(this, kind, id, f);
+      return among.call(this, kind, id, f);
     };
   });
   const id = await page.evaluate(() => window.__waarm64FromTemplate!('/site/alpine/definition.json', 'snapshot.json'));

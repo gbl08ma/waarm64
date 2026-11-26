@@ -232,6 +232,11 @@ export type ToWorker =
    * clipboard agent's HELLO (docs/clipboard.md). A machine still `booting` is `running`, as its `ready` marker would make it.
    */
   | { type: 'up' }
+  /**
+   * The answer to `loaded`: the page recorded what a restore made the machine's (or had nothing to record), so its vCPUs
+   * may run. A record it couldn't write is answered by `stop` instead.
+   */
+  | { type: 'recorded' }
   /** Stop the vCPUs and release the disk overlay; answered by `stopped`. */
   | { type: 'stop' }
   /** Benchmarks (`?displaystats`, bench/gpu/sway-load.ts): start or stop the guest PC sampler over every vCPU; a stop is answered by `profile` with its `id`. */
@@ -335,7 +340,11 @@ export type FromWorker =
    * a template (a snapshot whose header has `template: true`), its agent renews the guest's identity too.
    */
   | { type: 'restored'; template: boolean }
-  /** A start from a snapshot or a suspended copy posted `running`: where its time went (for tools). */
+  /**
+   * A start from a snapshot or a suspended copy loaded it and posted `running`, its vCPUs not run yet: where its time
+   * went (for tools). They run once the page answers `recorded` (a restore's disks recorded as the machine's first:
+   * docs/machines.md §5.2 "A restore's records"), so nothing the guest writes comes before that record.
+   */
   | { type: 'loaded'; phases: LoadPhases }
   /** What a `loading` machine started from a snapshot is doing (it has no download to report). */
   | { type: 'phase'; text: Msg }

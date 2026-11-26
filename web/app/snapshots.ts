@@ -26,7 +26,7 @@ import {
 } from './shape.ts';
 import { overlayDir, type OverlayRecord, type SnapshotRecord, type Store } from './store.ts';
 import { msg, MsgError, type Msg } from '../i18n.ts';
-import type { RestoreStep } from './restore-step.ts';
+import { othersHave, type RestoreStep } from './restore-step.ts';
 import { namedByRestores, pendingRestore } from './snapshot-undo.ts';
 import { dependsOn, diskGenerations, inPlaceDisk, lost, RECORDED_FROM, type Lost } from './snapshot-lost.ts';
 
@@ -164,12 +164,18 @@ async function forkMark(store: Store, pinned: string, size: number): Promise<Gro
   return g && size > g.from && size <= g.to ? { from: g.from, to: size } : undefined;
 }
 
-/** What pin `p` calls for as its overlay is on disk now: a step, or why the restore is refused. */
-async function stepOf(r: Restoring, p: SnapshotDisk & { overlay: string }, generations: Generations): Promise<Step> {
+/** The attachment and disk in pin `p`'s slot (the caller checked the shape: one is there). */
+function pinnedAttachment(r: Restoring, p: SnapshotDisk) {
   const at = (r.bySlot[p.slot] as (typeof r.bySlot)[number] | undefined)?.attachment;
   const a = at === undefined ? undefined : r.m.attachments[at];
   const d = a && r.disks.get(a.disk);
   if (!a || !d) throw new Error(`the snapshot pins a disk in slot ${p.slot} that ${r.m.name} doesn't have`);
+  return { a, d };
+}
+
+/** What pin `p` calls for as its overlay is on disk now: a step, or why the restore is refused. */
+async function stepOf(r: Restoring, p: SnapshotDisk & { overlay: string }, generations: Generations): Promise<Step> {
+  const { a, d } = pinnedAttachment(r, p);
   const step = { slot: p.slot, attachment: a.id, disk: d, size: p.size || d.size, pinned: p.overlay };
   const keep: Step = { ...step, action: 'keep', generation: p.generation };
   const inPlace = inPlaceDisk(p);
@@ -181,6 +187,10 @@ async function stepOf(r: Restoring, p: SnapshotDisk & { overlay: string }, gener
     if (p.blocks > 0) return { ...step, action: 'fork-whole' };
     return forkStep(r, step, a.overlay);
   }
+  // Pinned under an overlay, the attachment written in place since: the machine runs on the stored disk itself, not
+  // on the overlay its record still names, so that overlay is neither kept nor written into (the snapshot's RAM would
+  // land on the stored disk without the overlay's blocks). It forks, and the fork's attachment is under an overlay again.
+  if (a.inPlace) return forkStep(r, step);
   if (a.overlay && overlayDir(a.overlay) === p.overlay && (await overlayMeta(p.overlay)).generation === p.generation)
     return keep;
   return forkStep(r, step, a.overlay);
@@ -272,7 +282,7 @@ async function commitStep(
     c.pending.push({ attachment: a.id, how: 'reuse', overlay: id, before, token });
     a.overlay = id;
     a.inPlace = undefined;
-    return { slot: s.slot, action: 'keep', generation: s.generation ?? 0 };
+    return { slot: s.slot, action: 'keep', overlay: overlayDir(id), generation: s.generation ?? 0 };
   }
   if (replace && replaces(s, a.overlay, replace)) {
     c.pending.push({ attachment: a.id, how: 'into', overlay: replace, generation: await generation(replace), token });
@@ -280,6 +290,8 @@ async function commitStep(
   }
   if (s.into && s.into === a.overlay && (await r.store.get('overlays', s.into))) {
     // The attached overlay never written: it takes the blocks, and is the snapshot's fork (named after it) once it loaded.
+    // Its fill deletes nothing of the disk's (it held nothing), so the worker plans it as a fork's (`fork`): a refusal
+    // after it (the storage full) is no snapshot that can't load here, and a template's first start keeps its mark.
     const fork = { snapshot: r.snap.key, name: r.snap.name };
     c.pending.push({
       attachment: a.id,
@@ -289,7 +301,7 @@ async function commitStep(
       fork,
       token,
     });
-    return write(s.into);
+    return write(s.into, false, true);
   }
   // A new overlay with the snapshot's blocks: its generation after the restore is 1 (web/snapshot.ts).
   const id = newId();
@@ -338,7 +350,9 @@ async function commit(planned: Restoring, asked: Map<string, string>, replace: b
   const { steps, refused } = await survey(r);
   if (refused) throw new MsgError(refused.key, refused.params);
   const plan: DiskPlan[] = steps.flatMap((s) =>
-    s.action === 'keep' ? [{ slot: s.slot, action: 'keep' as const, generation: s.generation ?? 0 }] : [],
+    s.action === 'keep'
+      ? [{ slot: s.slot, action: 'keep' as const, overlay: s.pinned, generation: s.generation ?? 0 }]
+      : [],
   );
   pendingRestore(r.m); // an earlier one's undo left steps (an overlay open elsewhere): said, nothing committed
   const c: Commit = { pending: [], make: [] };
@@ -352,11 +366,20 @@ async function commit(planned: Restoring, asked: Map<string, string>, replace: b
   const switched = new Map(
     r.m.attachments.flatMap((a) => (c.pending.some((p) => p.attachment === a.id) ? [[a.id, a] as const] : [])),
   );
-  await r.store.update('machines', r.m.id, (cur) => {
+  const names = new Map<string, string>();
+  for (const p of c.pending)
+    if (p.how !== 'fork') names.set(p.overlay, (await r.store.get('overlays', p.overlay))?.name ?? p.overlay);
+  // The other machines read in the same transaction (`updateAmong`): an overlay it writes into or attaches again that
+  // another machine chose, or copied, since the survey (another tab's Overlays dialog, Duplicate) refuses the commit,
+  // with nothing written; its Retry plans again on them, and forks.
+  await r.store.updateAmong('machines', r.m.id, (cur, all) => {
     if (!cur) throw new MsgError('machine:page-machine.noMachine', { id: r.m.id });
     pendingRestore(cur);
     for (const id of switched.keys())
       if (!cur.attachments.some((a) => a.id === id)) throw new Error(`attachment ${id} was detached during the commit`); // the machine is held: a detach needs it off
+    for (const p of c.pending)
+      if (p.how !== 'fork' && othersHave(all, cur.id, p.overlay))
+        throw new MsgError('snapshots:snapshots.takenMeanwhile', { overlay: names.get(p.overlay) ?? p.overlay });
     const attachments = cur.attachments.map((a) => {
       const to = switched.get(a.id);
       return to ? { ...a, overlay: to.overlay, inPlace: to.inPlace } : a;

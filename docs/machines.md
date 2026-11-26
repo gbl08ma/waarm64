@@ -589,9 +589,16 @@ The file's format, what the core saves and the page's toolbar and header fields:
   fork, and offers to **replace** instead (the attached overlay takes the blocks; what was written since is lost), for
   an overlay no other machine has chosen (below, "Other machines"). A
   ramdisk takes the snapshot's blocks. Transient machines have no plan: a restore replaces their overlays.
+- **An attachment written in place since a snapshot taken under an overlay** (the shape doesn't include writing in
+  place, so the snapshot isn't orphaned): the machine runs on the stored disk itself, not on the overlay its record
+  still names, so that overlay is neither kept (the snapshot's RAM would land on the stored disk without the overlay's
+  blocks) nor offered to replace or filled as a template's fresh one. The disk forks (or attaches an earlier fork
+  again), and the attachment is under an overlay again (its undo puts it back in place). Once the stored disk was
+  written in place since, the snapshot is refused by its `bases` (§5.1); this rule covers the runs that never wrote it
+  and the restore before any run (PERF loop 86; tests/unrestorable.test.ts "written in place since").
 - **The plan is made twice:** once for the confirmation, while the guest may still run, and again once the machine
   has stopped (`commit`): a disk the guest wrote to in between forks then (the replace answer holds only for the
-  overlays the confirmation named: one switched to another overlay meanwhile forks). The worker refuses a **keep** whose overlay isn't at the generation the plan names
+  overlays the confirmation named: one switched to another overlay meanwhile forks). The worker refuses a **keep** whose overlay isn't the one the disk's device runs on (the plan names it: `overlays/<id>`, or `disks/<id>` written in place) or isn't at the generation the plan names
   ([A disk this snapshot was to keep as it is was written to after the restore was planned, so the snapshot no longer fits it. Nothing was changed. Restore the snapshot again.](ui:snapshots:snapshot.keptMoved)), so the snapshot's RAM never lands on a disk that moved on.
 - **A fork into a fresh overlay:** on a machine's first restore (a template's, §6.1), where the attached overlay
   never took a write (its files' generation 0, or read as empty: a first restore undone; at the snapshot's size: the
@@ -618,7 +625,8 @@ The file's format, what the core saves and the page's toolbar and header fields:
   snapshot's changes. Start boots {{machine}} normally.](ui:snapshots:worker-errors.notRestored.cause)), and one that
   did ([The machine didn't start. The changes the restore was replacing were deleted, so the disks that held them start
   from their images. Start boots {{machine}} normally.](ui:snapshots:worker-errors.notRestored.emptied); the plan's
-  `fork` marks a new fork, and the fill's refusal carries `emptied`, whatever refused it: the file, the storage full, a
+  `fork` marks an overlay that holds none of the disk's own changes, a new fork or a template's fresh overlay, and the
+  fill's refusal of any other carries `emptied`, whatever refused it: the file, the storage full, a
   disk that didn't open, said under those words, web/app/worker-errors.ts `explain`). Retry after a restore's failure (its commit's,
   its start's before the snapshot loaded: the disk in use, a file disk's permission; or the record of its load
   refused) restores the snapshot again (`Runner.again`), on the records as the undo leaves them; it isn't a boot.
@@ -635,17 +643,22 @@ The file's format, what the core saves and the page's toolbar and header fields:
     overlay written into (a replace, or a template's fresh overlay), with the generation its files had at the commit.
   - **The commit** (under the machine's lock, which the restore takes before it and its start keeps to the run's end:
     `Runner.own`) writes the machine's record once, its attachments switched and `restoring` set, onto the record as
-    the store has it then (one read and write, `Store.update`: another tab's write to its other fields meanwhile
-    stays): that write is the commit. It gives the restore a **fill token** (`newId`), in each step and each write of
+    the store has it then (one read and write, `Store.updateAmong`: another tab's write to its other fields meanwhile
+    stays, and the other machines' records are read in the same transaction: below, "Other machines"): that write is
+    the commit. It gives the restore a **fill token** (`newId`), in each step and each write of
     the worker's plan, which the fill writes into each overlay's `meta` with its mark (below, "Other machines"). A new fork's record is made after it, under the id the step names: cut off between, the next load finds
     the step and goes back, with no fork to delete. Nothing else is written: a reused fork's and an overlay written
     into's records stay as they are.
   - **`loaded`** (the worker's, before the vCPUs run: web/app/run/restore-loaded.ts) clears `restoring` and
-    `restoreFirst` in one write: from then on everything the restore attached is the machine's. Refused (the storage
+    `restoreFirst` in one write: from then on everything the restore attached is the machine's. The vCPUs wait for
+    the page's answer (`recorded`, sent once that write settled; web/app/worker-post.ts `postLoaded`), so the guest
+    writes nothing before it: a guest resuming the disk requests in flight at the snapshot wrote within microseconds,
+    which cleared the fill's token before a refused record could be undone (PERF loop 86). Refused (the storage
     full), the run is stopped and the page says so ([The snapshot loaded, but the browser's storage refused to record that the machine's disks are now the snapshot's. The machine was stopped, and its restore is undone as one that didn't finish. Retry restores the snapshot again.](ui:snapshots:restore-loaded.notRecorded.cause)): the restore is
-    still one that never loaded, as a whole, and its Retry restores it again. After the write, a template's fresh
-    overlay is named after the snapshot and marked as its fork (`fork`, its generation one past the commit's), which
-    only spares a later restore a fork if it fails.
+    still one that never loaded, as a whole (the guest never ran), and its Retry restores it again. After the write, a
+    template's fresh overlay is named after the snapshot and marked as its fork (`fork`, its generation one past the
+    commit's; one read and write of its record, as every writer of an overlay's fields: the run's refresh at its stop,
+    a rename, a resize's size and grow mark), which only spares a later restore a fork if it fails.
   - **The undo** (`undoCutRestores`, at the machine's next load or start, under its lock taken only if free, so a
     restore under way here or in another tab is left alone; a page reading the records again waits for its own last
     run's lock to go: `MachineLock.settled`; a start that boots undoes as the lock's owner, `#openDisks`; the record
@@ -657,8 +670,7 @@ The file's format, what the core saves and the page's toolbar and header fields:
     attaches it again); `into`, left attached, and marked as a cut-off fill (`markCutFill`: read as empty at its next
     opening, its generation moved on) only where its `meta` still carries the restore's token (the fill opened it and
     nothing wrote it since), before the record says it's done; else as it is (the fill never opened it: a refusal before
-    the disk phase; or another machine wrote it since). Reset disk after a restore that never loaded undoes it first,
-    so the disk it resets is the one the machine is on, as its page said. An earlier overlay deleted since: none (the
+    the disk phase; or another machine wrote it since). An earlier overlay deleted since: none (the
     next start makes an empty one). A step whose overlay is open elsewhere (another tab's job or machine: an overlay
     that carries the token, to mark; a fork that no other machine has, to delete) stays, as it is, for the next load;
     until then the machine neither boots nor restores again ([A restore of this machine that didn't finish is still to
@@ -673,7 +685,11 @@ The file's format, what the core saves and the page's toolbar and header fields:
       overlay) only where no other machine has it chosen and no restore that hasn't loaded names it (as what it made,
       wrote into or goes back on: `taken`, web/app/snapshots.ts); otherwise that disk forks, and the confirmation
       offers no replace for it. It attaches an earlier fork again only on the same terms. Both are checked again at
-      the commit, and a replace holds only for the overlay the question named, still attached.
+      the commit, in the transaction of its write (`Store.updateAmong`: every machine's record read with it), so a
+      machine that chose the overlay, or a copy made with it, after the commit's survey refuses the commit with nothing
+      written ([Another machine started using the overlay {{overlay}} while the restore was getting ready, so the
+      restore changed nothing. Retry restores the snapshot into a new overlay instead.](ui:snapshots:snapshots.takenMeanwhile)),
+      and a replace holds only for the overlay the question named, still attached.
     - **An undo moves only its own machine's attachments, and empties or deletes only what it can prove nothing else
       wrote.** The proof is the fill token: the commit's id, which the worker's fill writes into each overlay's `meta`
       with the fill mark, before it deletes anything of it (web/overlay.ts `openOverlay`'s `fresh`), and which the
@@ -682,10 +698,13 @@ The file's format, what the core saves and the page's toolbar and header fields:
       or names it, and it is either never opened (generation 0) or carries the token. Anything else stays as it is,
       an overlay like another: a fork another machine chose (running, stopped, or one it wrote and left), an overlay
       another machine wrote after the fill. Overlays and steps from before tokens carry none, so their undo never
-      empties or deletes anything.
+      empties or deletes anything. A limit: a tab still on a page from before PERF loop 84 (open across that deploy)
+      writes a meta of 48 bytes at its first change, which leaves the token in place, so its machine's writes to an
+      overlay a pending restore names don't clear the proof; it takes such a tab running a machine on another machine's
+      pending fork, and that restore undone after, and it ends with the tab's reload.
     - **A copy is of what the undo leaves.** Duplicate of a machine whose restore hasn't loaded gives the copy, for
-      each fork the restore made or attached again, what that attachment had before (`before`); an overlay written
-      into is the copy's too (the undo's token rule decides it for both, by who wrote it last).
+      each fork the restore made or attached again, what that attachment had before (`before`; none where that
+      overlay was deleted since, as the undo); an overlay written into is the copy's too (the undo's token rule decides it for both, by who wrote it last).
     - **What it costs:** a restore that would have replaced a shared overlay forks (the storage of a fork); a fork
       another machine took stays after its undo (the user's to delete); a cut-off fill whose fork another machine
       opened first is emptied by that opening and stays, empty, named after the snapshot.
@@ -771,7 +790,8 @@ ones; a fresh one: that one, §5.2). It runs within `exclusively` (a Start meanw
 mark stays until the snapshot loaded (the worker's `loaded`: `restoreLoaded`), so a first start cut off or refused
 before that restores the snapshot again at the next start, its restore undone in between (§5.2;
 tests/page-template-first.test.ts); a commit that fails (the storage full) is said with Retry, which restores it
-again, the mark kept; a snapshot that can't be restored (another
+again, the mark kept; so is a fill refused after it began (the storage full, a disk that didn't open): a fresh overlay
+holds nothing to lose, its plan marks it a fork's (§5.2), and its refusal isn't a snapshot that can't load here; a snapshot that can't be restored (another
 shape: said) boots the machine instead, the mark cleared, and so does one that can't load once the start is under way (`SnapshotRestore`'s boot instead,
 said as [{{machine}} started from power on: its demo's saved state couldn't be restored in this browser.](ui:snapshots:snapshot-restore.firstBooted)): a 3D or Vulkan template whose 3D fails
 to start in this browser (the GPU worker's `failed`: the machine runs 2D, another shape, and the snapshot never reaches

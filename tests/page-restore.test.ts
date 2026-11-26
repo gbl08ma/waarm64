@@ -27,16 +27,28 @@ after(async () => { await browser?.close(); close?.(); });
 type Start = { disks: { overlay?: string; size?: number; source: Record<string, unknown> }[]; plan?: { slot: number; action: string; overlay?: string }[]; snapshot: boolean };
 
 /**
- * The machine worker as a stand-in: each start is recorded (`window.__starts`) and answered "off"; a stop, "stopped".
+ * The machine worker as a stand-in: each start is recorded (`window.__starts`) and answered "off" (one from a snapshot
+ * says `loaded` first, and "off" once the page answers it: `recorded`, kept in `window.__recorded`); a stop, "stopped".
  * `failing`: the first that many snapshot starts are answered as a start that failed with the disk in use, before the
  * snapshot loaded.
  */
 const standIn = (page: Page, failing = 0, unrecorded = 0) => page.addInitScript(([failing, unrecorded]) => {
   let fails = failing;
   let refusals = unrecorded;
+  /** A snapshot start's "off", once the page answered its `loaded`. */
+  let waiting: (() => void) | undefined;
   const Real = window.Worker;
   const starts: unknown[] = [];
   (window as unknown as { __starts: unknown[] }).__starts = starts;
+  const recorded: Promise<unknown>[] = [];
+  (window as unknown as { __recorded: Promise<unknown>[] }).__recorded = recorded;
+  const readRecords = async () => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const store = await Store.open();
+    const all = (await store.all('machines')) as { restoring?: unknown }[];
+    store.close();
+    return all.some((m) => m.restoring);
+  };
   window.Worker = class extends Real {
     #fake: boolean;
     constructor(url: string | URL, options?: WorkerOptions) {
@@ -53,10 +65,24 @@ const standIn = (page: Page, failing = 0, unrecorded = 0) => page.addInitScript(
           return answer({ type: 'state', state: 'failed', problem: 'disk-in-use', error: { name: 'Error', text: 'the disk is in use' } });
         // `unrecorded`: the page's record of the load refused, as the storage full does (`refuseRecords`).
         if (msg.snapshot) (window as unknown as { __unrecorded: boolean }).__unrecorded = refusals-- > 0;
-        if (msg.snapshot) answer({ type: 'loaded', phases: {} });
+        // As the worker: after `loaded`, nothing until the page's answer (`recorded`), or its stop.
+        if (msg.snapshot) {
+          answer({ type: 'loaded', phases: {} });
+          waiting = () => answer({ type: 'state', state: 'off' });
+          return;
+        }
         answer({ type: 'state', state: 'off' });
       }
-      if (msg.type === 'stop') answer({ type: 'stopped' });
+      if (msg.type === 'stop') {
+        waiting = undefined;
+        answer({ type: 'stopped' });
+      }
+      // The page's answer to `loaded` (its vCPUs may run): the machine's record as it is then, read for the test.
+      if (msg.type === 'recorded') {
+        recorded.push(readRecords());
+        waiting?.();
+        waiting = undefined;
+      }
     }
   };
 }, [failing, unrecorded] as const);
@@ -431,6 +457,10 @@ test("a restore that loaded but couldn't be recorded stops the machine, says so,
   }, sid);
   await barSays(page, words('snapshots:restore-loaded.notRecorded'), words('snapshots:restore-loaded.notRecorded.cause'));
   await stateIs(page, 'failed');
+  // Review restore-tokens 2: the worker's vCPUs wait for the page's answer to `loaded`; refused, none is sent (the run
+  // stops), so the guest wrote nothing and the undo is whole.
+  const answers = () => page.evaluate(() => Promise.all((window as unknown as { __recorded: Promise<boolean>[] }).__recorded));
+  assert.deepEqual(await answers(), [], 'no answer to a load that could not be recorded');
   const unrecorded = await recordOf(page, ids.m);
   assert.ok(unrecorded.restoring, 'still a restore that never loaded');
   await page.locator('#message-actions button', { hasText: t('machine:problems.retry') }).click();
@@ -439,6 +469,7 @@ test("a restore that loaded but couldn't be recorded stops the machine, says so,
   assert.deepEqual((await starts(page)).map((x) => x.snapshot), [false, true, true], 'the boot at the page load, the restore, the restore again');
   const rec = await recordOf(page, ids.m);
   assert.equal(rec.restoring, false, 'recorded once it loaded');
+  assert.deepEqual(await answers(), [false], 'the answer sent once the record says the restore loaded');
   assert.ok(!rec.overlays.includes(unrecorded.overlay), "the unrecorded restore's fork undone");
   assert.deepEqual(rec.overlays, [ids.o, rec.overlay].sort());
   assert.deepEqual(errors, []);
@@ -523,13 +554,15 @@ test('a start that finds its machine held off by a change to its disks says that
 
 // Review restore-records 7: Reset disk after a restore that never loaded deleted the restore's fork, and the next
 // start's undo put the machine back on the overlay it had: the disk wasn't reset.
-test('Reset disk after a restore that never loaded resets the disk the machine is on, the one the undo puts it back on', async () => {
+// Review restore-tokens 3: a stored machine has no Reset disk (docs/machines.md §1 rule 17): its overlays may be other
+// machines' too (Duplicate shares them), so a reset would delete their disks. The page's reset opens its Disks tab.
+test("Reset disk on a stored machine (the page's own call) deletes nothing and opens its Disks tab", async () => {
   const context = await browser.newContext();
   const page = await context.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await standIn(page, 1); // the restore's start fails (the disk in use) before the snapshot loaded
-  await answerAsks(page); // Restore: yes; keep the overlay (it forks): yes; Reset: yes
+  await answerAsks(page); // Restore: yes; keep the overlay (it forks): yes
   await page.goto(`${base}/web/app/?autostart=1`);
   const ids = await blankMachine(page, 'Resettable');
   await page.goto(`${base}/web/app/?autostart=1&m=${ids.m}`);
@@ -546,15 +579,10 @@ test('Reset disk after a restore that never loaded resets the disk the machine i
     const { page: p } = await import('/web/app/page.ts' as string);
     await p.resetDisk();
   });
-  await page.waitForFunction(() => (window as unknown as { __starts: unknown[] }).__starts.length === 3, null, { timeout: 30_000, polling: 50 });
-  await stateIs(page, 'off');
-  const all = await starts(page);
-  assert.deepEqual(all.map((x) => x.snapshot), [false, true, false], 'the boot at the page load, the restore, the boot after the reset');
+  await page.locator('.machines [data-tab=disks][aria-selected=true]').waitFor({ timeout: 30_000 });
+  assert.equal((await starts(page)).length, 2, 'no start: the boot at the page load and the restore');
   const rec = await recordOf(page, ids.m);
-  assert.notEqual(all[2].disks[0].overlay, `overlays/${ids.o}`, 'not on the overlay it had: that one was reset');
-  assert.equal(all[2].disks[0].overlay, `overlays/${rec.overlay}`);
-  assert.deepEqual(rec.overlays, [rec.overlay], 'the fork undone, the overlay it had deleted, a new empty one');
-  assert.equal(rec.restoring, false);
+  assert.deepEqual(rec.overlays, [ids.o, cut.overlay].sort(), 'no overlay deleted');
   assert.deepEqual(errors, []);
   await context.close();
 });

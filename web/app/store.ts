@@ -104,6 +104,12 @@ export type Records = {
     id: string,
     f: (was: Kinds[K] | undefined) => Kinds[K] | undefined,
   ): Promise<Kinds[K] | undefined>;
+  /** As `update`, `f` also given every record of `kind` as the same transaction reads them (`was` among them). */
+  updateAmong<K extends Kind>(
+    kind: K,
+    id: string,
+    f: (was: Kinds[K] | undefined, all: Kinds[K][]) => Kinds[K] | undefined,
+  ): Promise<Kinds[K] | undefined>;
   delete(kind: Kind, id: string): Promise<void>;
 };
 
@@ -247,6 +253,21 @@ export class Store {
    */
   async update<K extends Kind>(kind: K, id: string, f: (was: Kinds[K] | undefined) => Kinds[K] | undefined) {
     const value = await this.records.update(kind, id, f);
+    if (value) this.said({ kind, id });
+    return value;
+  }
+
+  /**
+   * As `update`, with every record of `kind` read in the same transaction (`Records.updateAmong`): a write that depends
+   * on the other records (a restore's commit, on the other machines' overlays: docs/machines.md §5.2 "Other machines"),
+   * none of which another write can change between the check and the write.
+   */
+  async updateAmong<K extends Kind>(
+    kind: K,
+    id: string,
+    f: (was: Kinds[K] | undefined, all: Kinds[K][]) => Kinds[K] | undefined,
+  ) {
+    const value = await this.records.updateAmong(kind, id, f);
     if (value) this.said({ kind, id });
     return value;
   }

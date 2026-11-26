@@ -114,9 +114,10 @@ export async function newEmptyOverlay(store: Store, m: MachineRecord, attachment
 }
 
 export async function renameOverlay(store: Store, id: string, name: string) {
-  const o = await store.get('overlays', id);
-  if (!o) throw new MsgError('disks:disks.overlayGone');
-  await store.put('overlays', { ...o, name, modified: Date.now() });
+  await store.update('overlays', id, (o) => {
+    if (!o) throw new MsgError('disks:disks.overlayGone');
+    return { ...o, name, modified: Date.now() };
+  });
 }
 
 /**
@@ -190,25 +191,31 @@ export async function deleteOverlayAsked(store: Store, id: string) {
   }
 }
 
-/** Reads an overlay's generation, bytes and own size from its files into its record (after a machine stopped). */
+/**
+ * Reads an overlay's generation, bytes and own size from its files into its record (after a machine stopped): onto the
+ * record as the store has it, in one read and write (a restore's `loaded` may be naming and marking it meanwhile).
+ */
 export async function refreshOverlay(store: Store, id: string) {
-  const o = await store.get('overlays', id);
-  if (!o) return undefined;
+  if (!(await store.get('overlays', id))) return undefined;
   const meta = await overlayMeta(overlayDir(id));
   // One a fill was cut off in (still marked) reads as empty, whatever its files hold (web/overlay.ts `openOverlay`).
   const bytes = meta.filling ? 0 : await overlayBytes(overlayDir(id));
-  // A meta past its record (a resize cut off between the two, §4.5): the device opened it at that size, so it's the size.
-  const size = meta.size > (o.size ?? 0) ? meta.size : o.size;
-  if (meta.generation === o.generation && bytes === o.bytes && size === o.size) return o;
-  const next = {
-    ...o,
-    generation: meta.generation,
-    bytes,
-    modified: meta.generation !== o.generation ? Date.now() : o.modified,
-    ...(size === undefined ? {} : { size }),
-  };
-  await store.put('overlays', next);
-  return next;
+  let now: OverlayRecord | undefined;
+  const next = await store.update('overlays', id, (o) => {
+    now = o;
+    if (!o) return undefined;
+    // A meta past its record (a resize cut off between the two, §4.5): the device opened it at that size, so it's the size.
+    const size = meta.size > (o.size ?? 0) ? meta.size : o.size;
+    if (meta.generation === o.generation && bytes === o.bytes && size === o.size) return undefined;
+    return {
+      ...o,
+      generation: meta.generation,
+      bytes,
+      modified: meta.generation !== o.generation ? Date.now() : o.modified,
+      ...(size === undefined ? {} : { size }),
+    };
+  });
+  return next ?? now;
 }
 
 /** A stored disk's generation and bytes from its files into its record (after a machine wrote it in place, a merge). */

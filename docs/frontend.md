@@ -21,7 +21,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/app/main.ts` | the composition root: opens the store and the page's machine, builds the areas' modules, assembles `page`, mounts the components, boots |
 | `web/app/run/` (`page-machine.svelte.ts`, `page-disks.ts`, `knobs.ts`, `config.ts`, `dev-knobs.ts`, `runner.ts`, `run.ts`, `worker-messages.ts`, `start-message.ts`, `machine-lock.ts`, `messages.ts`, `problems.ts`, `power-actions.ts`, `size-actions.ts`, `memory-signal.ts`, `replies.ts`, `bench-hooks.ts`, `core.ts`) | the machine's run (below, "The page's code"): the page's machine (the owner the areas share), the address's knobs and what a machine is resolved to, a start and a stop, the workers' messages by type, the state and the message bar, power and size, the memory signal |
 | `web/app/areas/*-actions.ts`, `screen-view.ts`, `serial-terminal.ts`, `page-window.ts`, `disk-changes.ts`, `disk-export.ts`, `snapshot-restore.ts`, `usb-view.ts`, `usb-attach.ts`, `usb-entries.ts`, `held.ts`, `hooks.ts`, `browser.d.ts` | each area's actions next to its state: the screen and the terminal, the views and the window, disks, snapshots, network, USB, folders, clipboard, keys; the held-by-another-tab flow; the test hooks' and the missing browser APIs' types |
-| `web/app/worker.ts` (`worker-start.ts`, `-devices`, `-header`, `-fetch`, `-errors`, `-snapshot`, `-status`, `-profile`, `-post`) | the machine worker: boots a machine with `bootVm` and drives it with `runAsync`; what a start fetches and makes (the page's machine or a snapshot's, its devices, `bootVm`'s options), a snapshot's header, what stops a start, snapshots and suspension, the status, the benchmarks' profilers, its messages |
+| `web/app/worker.ts` (`worker-start.ts`, `-devices`, `-header`, `-fetch`, `-errors`, `-snapshot`, `-status`, `-profile`, `-post`, `-flash`) | the machine worker: boots a machine with `bootVm` and drives it with `runAsync`; what a start fetches and makes (the page's machine or a snapshot's, its devices, `bootVm`'s options), a snapshot's header, what stops a start, snapshots and suspension, the status, the benchmarks' profilers, its messages, the firmware's variable store |
 | `web/app/protocol.ts` | the messages between the two (types only) |
 | the toolbar's Snapshot and Load snapshot, `areas/snapshot-actions.ts`'s `save` and `snapshot-restore.ts`'s `load`, `worker-snapshot.ts`'s `saveSnapshot` and the worker's start from a snapshot (`worker-start.ts` `openRestore`) | snapshots on the page (below, "Snapshots") |
 | `web/app/shape.ts` (`shape-diff.ts`: what differs between two shapes, in words), `web/app/store.ts` (`store-backends.ts`: the records and files in memory, IndexedDB and OPFS) | machines as the unit (below, "Machines in the browser"): the records and their shape; IndexedDB and OPFS, the sweep, the change notices between tabs |
@@ -1453,7 +1453,8 @@ pool"), `poolReady` (the pool's start to its last worker ready, 0 without one) a
 for it after the hint, before the pause); and `close` (the output closed: a file's or a kept snapshot's
 after the resume, a suspended copy's before the stop), `copy` (a staged file's copy into the picked file, after the
 resume; 0 for none). A start from a snapshot or a suspended copy posts `loaded` once
-it runs, and `#message`'s `data-load` has its phases (ms; protocol.ts `LoadPhases`, web/snapshot.ts `RestorePhases`):
+it is `running`, its vCPUs waiting for the page's answer (`recorded`: a stored machine's restore recorded as loaded,
+machines.md §5.2 "A restore's records"), and `#message`'s `data-load` has its phases (ms; protocol.ts `LoadPhases`, web/snapshot.ts `RestorePhases`):
 `prepare` (the core fetched and compiled, the firmware's files), `check` (the whole file's checksums before anything is
 touched: `checkRead`, `checkCrc`), `state` (the CORE, DEVS and BLOB frames), `ram` (RAM's frames read and placed),
 `disk` (the disks' blocks into their overlays), `start` (the rest to `running`: the core instantiated, the
@@ -2180,8 +2181,8 @@ each other's disks.
 
 **Reset disk** (M8 decision 4; a transient machine's, on the Home page's Disks tab: a stored machine has New empty
 instead, which keeps the old overlay) asks for a confirmation that
-says what goes (the overlay's size, from `overlayBytes`; a stored machine's restore that never loaded is undone
-first, so it says and resets the overlay the machine is on, not the restore's fork: machines.md §5.2), stops the machine (its device worker
+says what goes (the overlay's size, from `overlayBytes`; the page's call of it on a stored machine opens its Disks tab
+instead: its overlays may be other machines' too), stops the machine (its device worker
 releases the overlay's sync access handles), deletes the overlay (`removeOverlay` in
 web/overlay.ts: under the overlay's Web Lock, `removeEntry(name, {recursive: true})` on the OPFS
 root) and starts a new

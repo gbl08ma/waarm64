@@ -202,6 +202,28 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
       return (send as (...a: unknown[]) => void).call(this, m, ...rest);
     };
   });
+  // Review restore-tokens 2: what the machine worker posts, and the page's answer to `loaded` held back 2.5 s: until
+  // it is sent, the restored machine doesn't run (no status, no serial output; its first status comes a second in).
+  await p2.addInitScript(() => {
+    const Real = window.Worker;
+    const log: [number, string][] = [];
+    (window as unknown as { workerLog: [number, string][] }).workerLog = log;
+    window.Worker = class extends Real {
+      #machine: boolean;
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        this.#machine = /\/app\/worker\.ts/.test(String(url));
+        if (this.#machine) this.addEventListener('message', (e: MessageEvent<{ type?: string }>) => log.push([performance.now(), String(e.data?.type)]));
+      }
+      postMessage(m: unknown, t?: unknown) {
+        if (!this.#machine || (m as { type?: string } | null)?.type !== 'recorded') return super.postMessage(m as never, t as never);
+        setTimeout(() => {
+          log.push([performance.now(), 'recorded (sent)']);
+          super.postMessage(m as never, t as never);
+        }, 2500);
+      }
+    };
+  });
   await p2.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}machine=buildroot&ncpus=1&view=terminal`);
   await running(p2);
   const t0 = performance.now();
@@ -226,6 +248,12 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   await shows(p2, /var=\[kept-42\]\s*tmpfs-kept-42\s*after-42/);
   // The terminal showed the saved tail, whose cursor position query it answers to nobody: nothing was sent to the guest but the keys typed.
   assert.deepEqual(await p2.evaluate(() => (window as unknown as { escapes: string[] }).escapes), [], 'no reply to the replayed output reached the guest');
+  const log = await p2.evaluate(() => (window as unknown as { workerLog: [number, string][] }).workerLog);
+  const loadedAt = log.findIndex(([, type]) => type === 'loaded');
+  const sentAt = log.findIndex(([, type]) => type === 'recorded (sent)');
+  assert.ok(loadedAt >= 0 && sentAt > loadedAt, `the page answered \`loaded\` (${JSON.stringify(log.map(([, type]) => type))})`);
+  const before = log.slice(loadedAt + 1, sentAt).filter(([, type]) => type === 'status' || type === 'serial');
+  assert.deepEqual(before, [], 'the restored machine ran only once the page answered `loaded`');
 
   // Refusals leave the machine and the disk as they are: a file that isn't a snapshot, ...
   const junk = join(dir, 'junk.waarm64snap');

@@ -13,7 +13,7 @@
 import { bootVm, type Restore, type Vm } from '../vm.ts';
 import { compileCore, Exit, PSCI_SYSTEM_OFF } from '../core.ts';
 import { msg, MsgError } from '../msg.ts';
-import { dropSuspend, saveFlash } from '../overlay.ts';
+import { dropSuspend } from '../overlay.ts';
 import { lzCodec } from '../lz.ts';
 import type { SnapshotHeader } from '../snapshot-file.ts';
 import type { RestorePhases } from '../snapshot.ts';
@@ -27,7 +27,8 @@ import { explain } from './worker-errors.ts';
 import { sessionOf, type Session } from './worker-header.ts';
 import { asked } from './worker-profile.ts';
 import { stopRam } from './worker-ram.ts';
-import { post, state } from './worker-post.ts';
+import { answerLoaded, post, postLoaded, state } from './worker-post.ts';
+import { flashLoaded, keepFlash } from './worker-flash.ts';
 import { limitJit, status, watchKeyboard } from './worker-status.ts';
 import { checkSnapshot, saveSnapshot, spareBuffer, suspend, TAIL, type Running } from './worker-snapshot.ts';
 import { saveSettled } from './worker-saving.ts';
@@ -91,8 +92,11 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
       return vm?.wake();
     case 'up':
       return up?.();
+    case 'recorded':
+      return answerLoaded();
     case 'stop':
       stopping = true;
+      answerLoaded(); // a start waiting for the page's answer to `loaded` ends (`stopped`)
       void (async () => {
         // A save in progress ends first (a staged file's copy goes on after the resume), within the page's wait for it.
         await saveSettled();
@@ -108,23 +112,6 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
   }
 };
 
-/** The variable store as last saved (or loaded): the firmware's boot entries and settings, kept beside the disk's overlay. */
-let savedFlash: Uint8Array | undefined;
-let saving: Promise<void> = Promise.resolve();
-const same = (a: Uint8Array, b?: Uint8Array) => !!b && a.length === b.length && a.every((x, i) => x === b[i]);
-/** Saves the flash bank if it changed since the last save (a save in flight finishes first). */
-function keepFlash(v: Vm) {
-  const flash = v.flash();
-  const at = home;
-  if (!flash || !at || same(flash, savedFlash)) return saving;
-  savedFlash = flash;
-  return (saving = saving
-    .then(() => saveFlash(at, flash))
-    .catch(() => {
-      savedFlash = undefined;
-    })); // retried at the next change or tick
-}
-
 /** Stops `v` and keeps its variable store (firmware machines); once per machine. */
 let closed: Promise<void> | undefined;
 const shutdown = (v: Vm) =>
@@ -132,7 +119,7 @@ const shutdown = (v: Vm) =>
     // The vCPUs stop at once; the flash isn't written after that. The page terminates this worker next: its own
     // workers are left to that end (web/worker-end.ts `endWithOwner`).
     await v.close({ ending: true });
-    await keepFlash(v);
+    await keepFlash(v, home);
   })());
 
 /** The RAM of the machine being started, MiB (the page's choice, or a snapshot's). */
@@ -203,9 +190,9 @@ async function prepare(m: StartMessage, machine: Machine, snapshot: boolean) {
   if (stopped()) return undefined;
   const wasm = await compileCore(parts.wasm);
   core = wasm;
-  savedFlash = await parts.flash;
+  const flash = flashLoaded(await parts.flash);
   const files = firmwareFiles(m, await parts.agent);
-  const firmware = files ? { flash: savedFlash, fwCfg: files } : undefined;
+  const firmware = files ? { flash, fwCfg: files } : undefined;
   return { core: wasm, kernel: parts.kernel, initrd: parts.initrd, firmware, heads: parts.heads };
 }
 
@@ -268,8 +255,11 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   if ('instead' in made) return bootInstead(made.instead);
   const { devices, v } = made;
   await booted(v, m, { header, resume: !!resume, note });
-  // A start from a snapshot says where its time went, once it runs (for tools: `#message[data-load]`).
-  if (restored) post({ type: 'loaded', phases: loadPhases(t0, prepared, restored) });
+  // A start from a snapshot says where its time went, once it runs (for tools: `#message[data-load]`), and its vCPUs
+  // wait for the page's answer: the page records a restore's disks as the machine's first, so the guest writes nothing
+  // before that record, and a record refused (the storage full) leaves the restore whole to undo (docs/machines.md §5.2).
+  if (restored && !stopped()) await postLoaded(loadPhases(t0, prepared, restored));
+  if (stopped()) return; // stopped while the page answered `loaded`: `stop` closes it
   const marker = m.config.dev.guestReadyOnly ? undefined : machine.ready; // `?ready=guest`: only the guest's signs
   return run({ ...machine, ready: marker }, plan, ioOf(plan, m, machine, devices), !!restore);
 }
@@ -281,7 +271,7 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
 async function booted(v: Vm, m: StartMessage, o: { header?: SnapshotHeader; resume: boolean; note: unknown }) {
   // The resumed machine is about to write its disk: its suspended copy is void from here.
   if (o.resume && home) await dropSuspend(home);
-  if (o.header) await keepFlash(v); // the restore deleted the copy beside the overlay: the bank the machine has goes back
+  if (o.header) await keepFlash(v, home); // the restore deleted the copy beside the overlay: the bank the machine has goes back
   showScreen(v, m);
   if (!o.header) return state('booting', { error: o.note });
   if (serialTail) post({ type: 'serial', data: serialTail, replay: true }); // what the terminal showed when it was saved
@@ -328,7 +318,7 @@ async function run(machine: Machine, plan: Plan, io: Parameters<typeof status>[6
   const signal = new Signal();
   const timer = setInterval(() => {
     // A tab can close without a shutdown: the variable store is kept as it changes (every 5 s at most).
-    if (machine.firmware && ++ticks % 5 === 0) void keepFlash(vm!);
+    if (machine.firmware && ++ticks % 5 === 0) void keepFlash(vm!, home);
     const now = performance.now();
     const st = status(vm!, ncpus, ramMiB, now - t0, loopMax, now - loopAt, io, signal);
     limitJit(vm!, st);

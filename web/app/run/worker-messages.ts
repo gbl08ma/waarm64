@@ -13,7 +13,7 @@ import { power } from '../areas/power.svelte.ts';
 import { status } from '../areas/status.svelte.ts';
 import { graphics, type Graphics } from '../statusbar-graphics.ts';
 import { metrics } from '../statusbar-metrics.ts';
-import type { FromWorker, Status } from '../protocol.ts';
+import type { FromWorker, Status, ToWorker } from '../protocol.ts';
 import { isStorageFull } from '../../devices.ts';
 import { benchHooks } from './knobs.ts';
 import type { Handlers, Run } from './run.ts';
@@ -153,7 +153,13 @@ export function workerHandlers(x: Runner, r: Run): Handlers<FromWorker> {
     restored: (m) => x.d.agent.restored(m.template),
     loaded: (m) => {
       messageBar.load = JSON.stringify(m.phases);
-      void x.loaded(r);
+      // Its vCPUs run once the restore is recorded (`recorded`); a record refused stops the run instead.
+      void x
+        .loaded(r)
+        .catch((e: unknown) => console.warn('waarm64: after a snapshot loaded:', e))
+        .then(() => {
+          if (x.d.machine.run === r) r.worker.postMessage({ type: 'recorded' } satisfies ToWorker);
+        });
     },
     phase: (m) => {
       bootCard.line = text(m.text);

@@ -615,3 +615,47 @@ the formatting run), then tests/page-run.test.ts "finding 9", whose stand-in sto
 `update` (the settings save hung; it now passes `update` and `all` through); then OK (740 s). `scripts/ci-machines.sh`
 OK (337 s); `scripts/ci-debian.sh` OK (233 s).
 
+
+## PERF loop 86 (2026-11-26): the out-of-context review of a restore's tokens, fixed
+
+The review of a restore's plan, its commit and fill token, `loaded`, the undo, Duplicate and Reset disk (branch
+`review/restore-tokens` at 77ae8eb2, `review/restore-tokens.md`; static, at bc6852bf, loop 84) ranked eight findings.
+Each was checked against main at 50cae970 (loop 85 and 46945e46, a file disk's re-pick, touched none of the code they
+name); each real one got its test at the cheapest layer, shown failing on that code (the Node tests on the base
+sources or with the rule left out, the page tests with the fix left out), then fixed. Nothing was measured: the one
+change on a start's path is the worker waiting for the page's answer to `loaded` before the vCPUs run, one message
+round trip and the record's IndexedDB write that a restore already made (a resume or a transient machine's load
+answers at once); no change touches the guest's I/O, and step counts don't move.
+
+| # | the review's finding | outcome | test (failing first) | fix |
+|---|---|---|---|---|
+| 1 | High: a restore onto an attachment now written in place keeps or writes its old overlay while the machine runs on the stored disk | **defect** (confirmed) | tests/unrestorable.test.ts "a snapshot taken under an overlay, the attachment written in place since…" (failed: kept; a replace written into the overlay, still in place; a template's fresh overlay filled, still in place); tests/snapshot-plan.test.ts, a keep planned for another overlay (failed: kept) | `stepOf`: an overlay pin on an attachment written in place forks (no keep, no replace, no fresh fill), the fork's attachment under an overlay again; the worker's keep names the overlay it keeps (`DiskPlan.overlay`) and is refused unless the disk's device runs on it |
+| 2 | Medium: a `loaded` that can't be recorded is undone only in part (the guest's first write cleared the token) | **defect** (by reading; the tests show the order) | tests/page-restore.test.ts "a restore that loaded but couldn't be recorded…" (the stand-in says nothing after `loaded` until answered: failed, no answer); tests/page-snapshot.test.ts on Buildroot, the answer held back 2.5 s (planted: status messages before it) | the worker waits for the page's `recorded` (or a stop) after `loaded` (`postLoaded`, web/app/worker-post.ts); the page sends it once `restoreLoaded` settled, none when it stopped the run; the words now hold as written (the catalog note says the guest hadn't run) |
+| 3 | Medium: Reset disk deletes an overlay for every machine that has it, without a lock | **doesn't hold** for the page's controls: a stored machine's `disk-mismatch` action is Disks… (`DiskActions.resetAction`, at bc6852bf too), and Reset disk is only on a transient machine's pane (PagePane.svelte). Reached only by the page's own `resetDisk()` call (loop 84's page test) | tests/page-restore.test.ts "Reset disk on a stored machine (the page's own call)…" (failed: no Disks tab, the reset went on) | the stored branch removed: `reset()` on a stored machine opens its Disks tab (docs/machines.md §1 rule 17); loop 84's "undo first" for it went with it |
+| 4 | Low: Duplicate puts the copy on an earlier overlay deleted since | **defect** (confirmed) | tests/restore-records.test.ts "restore-tokens 4" (failed: the copy on the deleted id) | `duplicateMachine`: no overlay where `before`'s record is gone, as the undo |
+| 5 | Low: a tab of a page before loop 84 writes 48-byte metas, which leave the token | **holds, closed as a limit** | — | it takes a tab open across that deploy running a machine on another machine's pending fork, then that restore undone; the tab's reload ends it. Tying the proof to the generation as well was the alternative; for an `into` it misjudges a write between the commit and the fill. Said in docs/machines.md §5.2 "Other machines" |
+| 6 | Low: a template's first start refused by a full storage after its fill boots instead, for good | **defect** (by reading) | tests/template.test.ts "a machine's first restore onto a fresh overlay…" (failed: not planned as a fork) | a template's fresh overlay holds nothing: the plan marks its write a fork's (`fork`), so its fill's refusal carries no `emptied`, isn't the `snapshot` problem, and the first start keeps its mark (Start or Retry restores it again) |
+| 7 | Low: the commit's check of other machines' overlays and its write aren't one transaction | **defect** (by reading; the test shows it) | "restore-tokens 7" (another machine put on Mine just before the commit's write: failed, Mine written into) | `Store.updateAmong` (memory and IndexedDB: one transaction reads every machine and writes one); the commit refuses an overlay it writes into or attaches again that another machine has by then (`snapshots:snapshots.takenMeanwhile`, with Retry, which forks) |
+| 8 | Low: `restoreLoaded`'s naming of a fresh overlay is a get then a put | **defect** (confirmed) | "restore-tokens 8" (`loaded` and the run's refresh at once: failed, the fork's name and mark lost; the refresh between `loaded`'s read and write: the generation lost) | the overlay record's writers write their fields in one read and write: `restoreLoaded`'s mark, `refreshOverlay`, `renameOverlay`, a resize's size and grow marks |
+
+**For #1, what was reachable:** the existing check (`lost`'s `bases`) refuses a snapshot taken under the overlay once
+the stored disk was written in place since, so every sequence through a run that wrote the disk was refused already.
+What reached the bad state is turning Written in place on and restoring before any run that wrote: with the overlay
+as pinned, the plan kept it, and the worker's keep check compared the stored disk's generation with the overlay's and
+passed when they were equal (a fresh import and an overlay after its first run are both 1); with the overlay moved on,
+the replace was offered, and taking it emptied the overlay and resumed in place; a template's first start with the
+attachment set in place filled the fresh overlay and resumed in place. A fork, and an earlier fork attached again,
+already cleared `inPlace`.
+
+**Also changed:** tests that refuse the commit's write intercept `updateAmong` (tests/restore-records.test.ts's cut-off
+commit, tests/page-template-first.test.ts); tests/resize.test.ts's refused record intercepts `update`; the keep plans
+in the tests name their overlay. To keep web/app/worker.ts under its size rule, the firmware's variable store moved to
+web/app/worker-flash.ts.
+
+**Planted bugs, each caught by its test:** the in-place rule left out of `stepOf`; the worker's keep without its
+overlay check; the page sending no answer to `loaded`; the worker running without waiting for it (tests/page-snapshot.test.ts);
+a stored machine's reset deleting its overlay; the commit's check among the machines left out; `refreshOverlay` and
+`restoreLoaded` each back to a get and a put; a template's fresh overlay planned as not a fork. Duplicate's rule was
+shown by its test failing on the base sources.
+
+**CI:** `scripts/ci.sh` OK (714 s), `scripts/ci-machines.sh` OK (230 s), `scripts/ci-debian.sh` OK (251 s), each on the first run.

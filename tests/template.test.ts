@@ -16,6 +16,9 @@ import { MachineLock } from '../web/app/run/machine-lock.ts';
 import { canonical, shapeHash, shapeOf, type MachineRecord } from '../web/app/shape.ts';
 import { overlayDir, Store } from '../web/app/store.ts';
 import { memoryFiles, memoryRecords } from '../web/app/store-backends.ts';
+import { MACHINES } from '../web/app/machine.ts';
+import { explain } from '../web/app/worker-errors.ts';
+import { MsgError } from '../web/msg.ts';
 
 const MiB = 2 ** 20;
 const ID = 'ab'.repeat(32);
@@ -114,6 +117,12 @@ test("a machine's first restore onto a fresh overlay (never written) fills that 
   const m = (await b.get('machines', machine.id))!;
   assert.equal(m.attachments[0].overlay, empty.id, 'the fresh overlay is the fork');
   assert.deepEqual(steps.map((s) => s.action === 'write' && s.overlay), [overlayDir(empty.id)]);
+  // Review restore-tokens 6: its fill deletes nothing of the disk's (it held nothing), so the worker plans it as a fork's:
+  // a refusal after it (the storage full) says no changes were deleted, and isn't a snapshot that can't load here (a
+  // template's first start then keeps its mark and restores again, rather than booting instead for good).
+  assert.deepEqual(steps.map((s) => s.action === 'write' && !!s.fork), [true], 'planned as a fork: nothing of the disk deleted');
+  const full = new MsgError('snapshots:snapshot.storageFull');
+  assert.notEqual(explain(full, MACHINES.buildroot, { restoring: true, ramMiB: 64 })[0], 'snapshot', "a fork's refusal after its fill: not a snapshot's problem");
   assert.deepEqual(m.restoring, [{ attachment: m.attachments[0].id, how: 'into', overlay: empty.id, generation: 0, fork: { snapshot: 'k2', name: 'Alpine' }, token: m.restoring?.[0].token }]);
   await restoreLoaded(b, m.id); // it loaded: named after the snapshot, its fork
   m.restoring = undefined; // as the record is now

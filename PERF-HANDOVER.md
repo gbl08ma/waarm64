@@ -128,7 +128,9 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried and lost: polled code without `acc`").
 
-## State (2026-11-26, after loop 85)
+## State (2026-11-26, after loop 86)
+
+**The track is PAUSED by the user after loop 86; the next row when it resumes is 21.**
 
 **The rule since 2026-11-24 (the user): spend as little time in benchmarks and CI as the answers allow
 ("Batching", above).** Loop 75's notes still hold: `bench/boot/results/perf75/diag.patch` applies to 3a08fdf3; loop
@@ -139,14 +141,13 @@ remote disk a start, the start message no longer waits for the GPU worker (under
 machine worker's own module load ran beside it). Its marks: `bench/boot/results/perf85/diag-new.py` (today's start).
 The snapshot probe runs on the Mac too (`bench/snapz/probe-mac.sh`; `pages.waarm64snap` loads with 3D off there, its
 caps being SwiftShader's), and the read-back alone on both (`bench/snapz/readback.ts`, `readback-mac.sh`).
-**Next: loop 86 fixes the out-of-context review of loop 84 at `origin/review/restore-tokens` if that branch exists by
-then; then row 21.** `target/snapbench/pages.waarm64snap` loads into the current state layout;
+Loop 86 fixed the out-of-context review of loop 84 (bench/io/REPORT.md "PERF loop 86"). `target/snapbench/pages.waarm64snap` loads into the current state layout;
 `target/archarm/desktop.qcow2` is ab-mac.sh's default disk. The ABI is 74.
 
 What every loop kept, dropped and found is in its REPORT entry (bench/boot/REPORT.md "PERF loop 36" to "PERF loop
 66" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
-36, 42, 47, 50, 55, 58, 71, 73, 74, 76, 77, 78, 79, 80 and 82) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43, 48, 56, 60, 72,
-75, 77, 78, 80, 81, 82 and 84 (50's: comments only), 73's in its own commit while paused. Built but off by default (measured slower): I8MM, FCMA,
+36, 42, 47, 50, 55, 58, 71, 73, 74, 76, 77, 78, 79, 80, 82 and 84) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43, 48, 56, 60, 72,
+75, 77, 78, 80, 81, 82, 84 and 86 (50's: comments only), 73's in its own commit while paused. Built but off by default (measured slower): I8MM, FCMA,
 FP16, FHM, BF16. The ABI is 74.
 
 ## Still open (the queue: the first is next; by expected gain, highest first)
@@ -169,7 +170,7 @@ every row:
 
 | # | Entry | Kind | Notes |
 |---|---|---|---|
-| 21 | **Next:** Display: a key's glyph ~13 ms later on virtio-gpu than on the simple framebuffer (backlog "Platform and devices") | measure | the entry's next step: the same measurement on the Mac's GPU, then a device worker with animation frames or drawing from the machine worker |
+| 21 | **Next** (when the track resumes): Display: a key's glyph ~13 ms later on virtio-gpu than on the simple framebuffer (backlog "Platform and devices") | measure | the entry's next step: the same measurement on the Mac's GPU, then a device worker with animation frames or drawing from the machine worker |
 | 22 | Round-robin's run loop: `Vm::publish` at every chunk end, ERET and SVC through the loop (core/src/vm.rs:1171, :1292; interp/sys.rs:270) | count, build | the gates' own cost, not the page's (parallel throttles `publish_cpu` to every 65,536 steps and its exits are 0.2-0.3%): 1.37 M chunk ends in the userspace gate, 452 K of them an unmasking ERET (`results/perf49/counts-new.json`). The throttle is S (~0.5% by the survey's estimate); completing ERET in place is M and moves the gates without moving a user's machine: low, and say so in its report |
 | 23 | Small sweeps, each one screen: `PRESSURE_KNEE` (mod.rs:297; flat 2000 against 1000/2000, the memory side), `VCPU_YIELD_MS` 50/100/250 (web/vm.ts:118; stalls), the table pre-grown at install (web/jit-host.ts:115) | sweep | none swept on the Mac; small expectations |
 | 24 | Host, per event: virgl uploads across backing entries join into a fresh buffer (web/virgl-renderer.ts:694; count the joins first), an import's serial 1 MiB reads from a server (web/stored.ts:105), frame ports taking batches (backlog "The network, per packet" P7), the checksum two bytes at a time (web/offload.ts:54), `Devices.poll`'s closures per request (web/devices.ts:887) | count, build | each by its own micro-benchmark; with other work in the file |

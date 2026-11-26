@@ -593,7 +593,7 @@ test("a restore refused after some of its disk's blocks were written leaves the 
   // A plan that keeps it at the fill's generation (another tab's, planned on its record) is refused too.
   const gen = (await overlayMeta(name)).generation;
   await assert.rejects(
-    readSnapshot(new Blob(parts as BlobPart[]), codec, codec.snapshotVersion, { devices: [spec], plan: [{ slot: 0, action: 'keep', generation: gen }] }),
+    readSnapshot(new Blob(parts as BlobPart[]), codec, codec.snapshotVersion, { devices: [spec], plan: [{ slot: 0, action: 'keep', overlay: name, generation: gen }] }),
     (e: unknown) => e instanceof SnapshotError && e.msg.key === 'snapshots:snapshot.keptMoved',
   );
   const f = await openOverlay(name, diskIdentity(spec, size));

@@ -215,3 +215,74 @@ test('a stored disk attached read-only with a leftover in-place mark is read, no
   const b = (await store.get('machines', w.B.id))!.attachments[0];
   assert.deepEqual([b.readOnly, b.inPlace], [true, undefined]);
 });
+
+// Review restore-tokens 1: a snapshot taken under an overlay, its attachment written in place since. The machine runs on
+// the stored disk itself, so the overlay its record still names is neither kept (the snapshot's RAM would land on the
+// stored disk without the overlay's blocks) nor written into (a replace, a template's fresh overlay): the disk forks,
+// under an overlay again. Turned on and run in place, the stored disk moved under the snapshot: refused (its base).
+test("a snapshot taken under an overlay, the attachment written in place since: it forks (never kept or written into), or is refused once the disk moved", async () => {
+  const slotOf = (m: MachineRecord) => slots({ nets: 0, display: '2d', attachments: m.attachments }).findIndex((s) => s.attachment === 0);
+  const run = { display: '2d' as const, devices: [] };
+  const { editAttachment } = await import('../web/app/machines.ts');
+  const { openOverlay, writeMeta } = await import('../web/overlay.ts');
+  const setGeneration = async (id: string, generation: number) => {
+    const f = await openOverlay(overlayDir(id), undefined);
+    assert.ok(writeMeta(f.meta, { generation, merging: '', size: 0 }));
+    f.close();
+    await navigator.locks.request(`waarm64-overlay:${overlayDir(id)}`, async () => {});
+  };
+  /** A fresh world, A's overlay at generation `at` (pinned at 0), A's attachment then written in place. */
+  const inPlace = async (at: number) => {
+    const w = await world();
+    await setGeneration(w.os.id, 0);
+    const bases = await basesOf(w.A, (id) => (id === w.S.id ? w.S : w.R));
+    const pins = [{ slot: slotOf(w.A), identity: identityOf(w.S), size: 4 * MiB, blocks: 0, overlay: overlayDir(w.os.id), generation: 0 }];
+    if (at) await setGeneration(w.os.id, at);
+    await editAttachment(w.store, w.A, w.A.attachments[0].id, { inPlace: true });
+    const m = (await w.store.get('machines', w.A.id))!;
+    assert.deepEqual([m.attachments[0].overlay, m.attachments[0].inPlace], [w.os.id, true], 'the record still names the overlay');
+    return { ...w, m, snap: { name: 's', key: `k${at}`, pins, bases } };
+  };
+  type W = Awaited<ReturnType<typeof inPlace>>;
+  /** The plan's words, the worker's plan, and the attachment after the commit. */
+  const restored = async (w: W, o: { replace?: boolean; fresh?: boolean } = {}) => {
+    const plan = await planRestore(w.store, w.m, await w.disks(), w.snap, run, { fresh: o.fresh });
+    const words = { kept: plan.kept, forks: plan.forks.map((f) => [f.reused, f.replaceable?.overlay]) };
+    const steps = await plan.commit(!!o.replace);
+    const a = (await w.store.get('machines', w.A.id))!.attachments[0];
+    return { words, steps, a };
+  };
+  const forked = (w: W, r: Awaited<ReturnType<typeof restored>>, what: string) => {
+    assert.deepEqual(r.words, { kept: [], forks: [[false, undefined]] }, `${what}: a fork, no replace offered`);
+    assert.equal(r.steps.length, 1);
+    const step = r.steps[0];
+    assert.ok(step.action === 'write' && step.fork && step.overlay !== overlayDir(w.os.id), `${what}: written into a new fork, not the overlay`);
+    assert.ok(r.a.overlay && r.a.overlay !== w.os.id && !r.a.inPlace, `${what}: the attachment under the fork, not in place`);
+  };
+
+  // Turned on, restored before any run, the overlay as pinned (and at the stored disk's generation, which the worker's
+  // keep check read): no keep.
+  let w = await inPlace(0);
+  forked(w, await restored(w), 'unmoved');
+  // Its undo puts the attachment back in place, on its overlay.
+  assert.deepEqual((await w.store.get('machines', w.A.id))!.restoring?.map((s) => s.how === 'fork' && s.before), [{ overlay: w.os.id, inPlace: true }]);
+  // The overlay moved on before it was turned on: no replace offered, and a replace answered (asked of another disk,
+  // say) writes nothing into it.
+  w = await inPlace(2);
+  forked(w, await restored(w, { replace: true }), 'moved, replace');
+  // A template's first restore (its pin names the template's overlay) onto a fresh overlay of an attachment written in
+  // place: not filled.
+  w = await inPlace(0);
+  w.snap.pins = [{ ...w.snap.pins[0], overlay: 'overlays/0123456789ab', generation: 4 }];
+  forked(w, await restored(w, { fresh: true }), 'fresh');
+  // Run in place, writing: the stored disk moved under the snapshot (its base), refused, as the lists say.
+  w = await inPlace(0);
+  await writeInPlace(w.store, w.S);
+  assert.equal(keyOf((await planRestore(w.store, w.m, await w.disks(), w.snap, run)).refused), 'snapshots:snapshots.baseMoved');
+  // Pinned in place and still in place, unmoved: kept, on the stored disk (the keep names what the device runs on).
+  w = await inPlace(0);
+  const pinsB = [{ slot: slotOf(w.m), identity: identityOf(w.S), size: 4 * MiB, blocks: 0, overlay: diskDir(w.S.id), generation: 0 }];
+  const kept = await planRestore(w.store, w.m, await w.disks(), { name: 's', key: 'kb', pins: pinsB }, run);
+  assert.deepEqual(kept.kept, ['System']);
+  assert.deepEqual(await kept.commit(false), [{ slot: pinsB[0].slot, action: 'keep', overlay: diskDir(w.S.id), generation: 0 }]);
+});

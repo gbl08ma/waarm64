@@ -93,17 +93,22 @@ export async function createMachine(
  * A copy of machine `id`: the same settings and disks, new attachments (so new serials) with the same overlays chosen.
  * Of a machine whose restore hasn't loaded, the overlays its undo puts it back on (docs/machines.md §5.2 "Other
  * machines"): a restore's fork, made or attached again, is its machine's to undo, and a copy on it would run on what
- * that undo leaves.
+ * that undo leaves; none where that overlay was deleted since (as the undo: its next start makes an empty one).
  */
 export async function duplicateMachine(store: Store, id: string) {
   const m = await store.get('machines', id);
   if (!m) throw gone();
   const taken = (await store.all('machines')).map((x) => x.name);
   const now = Date.now();
+  const deleted = new Set<string>();
+  for (const s of m.restoring ?? [])
+    if (s.how !== 'into' && s.before.overlay && !(await store.get('overlays', s.before.overlay)))
+      deleted.add(s.before.overlay);
   const back = (a: Attachment) => {
     const s = m.restoring?.find((x) => x.attachment === a.id);
     if (!s || s.how === 'into' || (a.overlay !== s.overlay && a.overlay !== undefined)) return a;
-    return { ...a, overlay: s.before.overlay, inPlace: s.before.inPlace };
+    const overlay = s.before.overlay && !deleted.has(s.before.overlay) ? s.before.overlay : undefined;
+    return { ...a, overlay, inPlace: s.before.inPlace };
   };
   const copy: MachineRecord = {
     ...m,

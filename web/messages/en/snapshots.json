@@ -143,6 +143,10 @@
     "message": "The disk <name>{{disk}}</name> has been written in place since this snapshot was taken, and the snapshot doesn't include the whole disk. It can only be restored onto that disk as it was then.",
     "note": "Why a snapshot can't be restored, shown under “Couldn't restore …” in a notice when it's restored (its Restore button, Load snapshot…, or a file): {{disk}} is the name of a disk of the machine written in place (without an overlay) that has changed since."
   },
+  "snapshots.takenMeanwhile": {
+    "message": "Another machine started using the overlay <name>{{overlay}}</name> while the restore was getting ready, so the restore changed nothing. <ui>Retry</ui> restores the snapshot into a new overlay instead.",
+    "note": "Error details under “Couldn't restore …” (snapshots:snapshot-restore.restore.failed), on the line under it in the same place, when a restore was about to write the snapshot's disk into an overlay (the one it replaces, or an earlier copy of the snapshot's disk it would use again), and in that moment another machine chose that overlay or was copied with it (another tab or window of this web app): the restore stops before it changes anything, as a restore never changes another machine's disk. {{overlay}} is the overlay's name. <ui>Retry</ui> is the message bar's button (machine:problems.retry); the restore planned again then puts the snapshot's disk into a new overlay."
+  },
   "snapshots.baseMoved": {
     "message": "The disk <name>{{disk}}</name>, stored in this browser, has been changed since this snapshot was taken (written in place, or an overlay merged into it). The snapshot can only be restored onto that disk as it was then.",
     "note": "Why a snapshot can't be restored, shown under “Couldn't restore …” when it's restored (its Restore button, Load snapshot…, or a file): {{disk}} is the name of a disk stored in the browser that the machine read (read-only, or under an overlay) when the snapshot was taken, and that has been written to since."
@@ -505,7 +509,7 @@
   },
   "restore-loaded.notRecorded.cause": {
     "message": "The snapshot loaded, but the browser's storage refused to record that the machine's disks are now the snapshot's. The machine was stopped, and its restore is undone as one that didn't finish. <ui>Retry</ui> restores the snapshot again.",
-    "note": "Error details: the cause under the headline snapshots:restore-loaded.notRecorded, on the line under it in the same place; the storage's error is the detail under it. What happened: the restore's record stays that of a restore that never loaded, so the machine's next start or load undoes it (a new overlay it made is deleted with what the guest wrote to it in that moment, a disk goes back on the overlay it had; an overlay it replaced reads as empty). <ui>Retry</ui> is the message bar's button (machine:problems.retry)."
+    "note": "Error details: the cause under the headline snapshots:restore-loaded.notRecorded, on the line under it in the same place; the storage's error is the detail under it. What happened: the restore's record stays that of a restore that never loaded, and the guest hadn't run yet, so the machine's next start or load undoes it whole (a new overlay it made is deleted, a disk goes back on the overlay it had; an overlay it replaced reads as empty). <ui>Retry</ui> is the message bar's button (machine:problems.retry)."
   },
   "snapshot-undo.pending": {
     "message": "A restore of this machine that didn't finish is still to be undone, and one of the disks it wrote to is open in another tab or window of this web app. Close that tab, then <ui>Retry</ui>.",

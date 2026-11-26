@@ -146,7 +146,7 @@ test("a restore's plan: keep where the pin matches, fork where it moved on, reus
     const plan = async (p: unknown[], key = 'snap-1') => on(m, p, key);
     // Everything as pinned: nothing written.
     const same = await plan(pins(4, 7));
-    out.same = { kept: same.kept, forks: same.forks.length, plan: await same.commit(false) };
+    out.same = { kept: same.kept, forks: same.forks.length, plan: await same.commit(false), work: a.id };
     // The overlay moved on: a fork, attached; the old overlay stays.
     const moved = await plan(pins(3, 7));
     const forkPlan = await moved.commit(false);
@@ -183,7 +183,8 @@ test("a restore's plan: keep where the pin matches, fork where it moved on, reus
     store.close();
     return out;
   });
-  assert.deepEqual(r.same, { kept: ['disk.img', 'stored.img'], forks: 0, plan: [{ slot: 5, action: 'keep', generation: 4 }, { slot: 6, action: 'keep', generation: 7 }] });
+  const work = (r.same as { work: string }).work;
+  assert.deepEqual(r.same, { kept: ['disk.img', 'stored.img'], forks: 0, plan: [{ slot: 5, action: 'keep', overlay: `overlays/${work}`, generation: 4 }, { slot: 6, action: 'keep', overlay: 'disks/d0000000000c', generation: 7 }], work });
   assert.deepEqual(r.moved, { forks: [[false, 'Work']], plan: [['keep', false], ['write', false]], attached: true });
   assert.deepEqual(r.reused, { forks: [true], plan: ['keep', 'keep'] });
   assert.deepEqual(r.replace, { reused: [false], plan: [['keep', false], ['write', true]] });

@@ -7,7 +7,6 @@ import { removeOverlay, overlayBytes } from '../../overlay.ts';
 import { ask } from '../ask.svelte.ts';
 import { current } from './current.svelte.ts';
 import { records } from './records.svelte.ts';
-import { deleteOverlay } from '../disks.ts';
 import { fetchManifest, isManifestUrl } from '../../chunked.ts';
 import { qcow2Size } from '../file-access.ts';
 import { openPicker } from '../file-pickers.ts';
@@ -16,7 +15,7 @@ import { attach, createDisk, createMachine, knownDisk } from '../machines.ts';
 import type { Core } from '../run/core.ts';
 import { params } from '../run/knobs.ts';
 import { MACHINE_PARAMS } from '../run/config.ts';
-import { bootAttachment, diskName, overlayName } from '../run/page-disks.ts';
+import { diskName, overlayName } from '../run/page-disks.ts';
 import { loadStored, rememberMachine } from '../run/page-machine.svelte.ts';
 import type { Action } from './message-bar.svelte.ts';
 import { isLive, power } from './power.svelte.ts';
@@ -211,20 +210,21 @@ export class DiskActions {
     await d.power.restart();
   }
 
-  // The disk reset (M8 decision 4): stop the machine (its overlay's files are locked while it runs), delete the overlay, start again.
+  /**
+   * The disk reset (M8 decision 4), a transient machine's: stop the machine (its overlay's files are locked while it
+   * runs), delete the overlay, start again. A stored machine has none (docs/machines.md §1 rule 17: its overlays may be
+   * other machines' too, and New empty keeps the old one): its Disks tab opens instead.
+   */
   async reset() {
     const { machine: m, power: pw } = this.#d;
+    if (m.stored) return this.#d.openMachines('disks', m.stored.record.id);
     if (pw.busy()) return;
-    // A restore of it that never loaded is undone first (its record read again: `loadStored`), so the disk reset is the
-    // one the machine is on, as its page said (the disks as they were), not a fork the undo takes it off.
-    if (m.stored?.record.restoring && !isLive(power.state) && !(await pw.reloadStored())) return;
     const name = overlayName(m);
     if (!name || pw.busy()) return;
     const written = await overlayBytes(name).catch(() => 0);
-    const disk =
-      m.chosen || m.stored
-        ? msg('disks:disk-actions.theDisk', { name: diskName(m) })
-        : msg('disks:disk-actions.machineDisk', { machine: m.spec.title });
+    const disk = m.chosen
+      ? msg('disks:disk-actions.theDisk', { name: diskName(m) })
+      : msg('disks:disk-actions.machineDisk', { machine: m.spec.title });
     const question = written
       ? msg('disks:disk-actions.reset.confirm.size', { disk, size: written })
       : msg('disks:disk-actions.reset.confirm', { disk });
@@ -239,17 +239,13 @@ export class DiskActions {
     await pw.exclusively(() => this.#resetNow(name));
   }
   async #resetNow(name: string) {
-    const { machine: m, runner, messages } = this.#d;
+    const { runner, messages } = this.#d;
     await runner.stop();
     this.#d.terminal.term.reset();
     messages.setState('loading');
     messages.stateText(msg('disks:disk-actions.resetting'));
     try {
-      const a = bootAttachment(m);
-      if (m.stored && a?.overlay) {
-        await deleteOverlay(m.store, a.overlay); // its record, then its files: the next start makes an empty one
-        await m.rereadRecord();
-      } else if (!m.stored) await removeOverlay(name); // once the machine's device worker has closed it
+      await removeOverlay(name); // once the machine's device worker has closed it
     } catch (e) {
       messages.setState(
         'failed',

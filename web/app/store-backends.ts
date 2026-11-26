@@ -22,6 +22,12 @@ export function memoryRecords(): Records {
       if (next) maps[kind].set(id, structuredClone(next));
       return structuredClone(next);
     },
+    updateAmong: async (kind, id, f) => {
+      const all = [...maps[kind].values()].map((v) => structuredClone(v)) as never[];
+      const next = f(structuredClone(maps[kind].get(id)) as never, all);
+      if (next) maps[kind].set(id, structuredClone(next));
+      return structuredClone(next);
+    },
     delete: async (kind, id) => {
       maps[kind].delete(id);
     },
@@ -84,32 +90,49 @@ export async function idbRecords(name = DB): Promise<Records> {
       s.transaction.oncomplete = () => resolve();
       s.transaction.onerror = s.transaction.onabort = () => reject(failure(s.transaction.error));
     });
+  /** `read`'s result made into the record to put (`f`; undefined: none), in one readwrite transaction; what was put. */
+  const readThenPut = (kind: Kind, read: (s: IDBObjectStore) => IDBRequest, f: (got: unknown) => unknown) => {
+    let next: unknown;
+    let thrown: { e: unknown } | undefined;
+    return commit(kind, (s) => {
+      const req = read(s);
+      req.onsuccess = () => {
+        try {
+          next = f(req.result);
+          if (next) s.put(next);
+        } catch (e) {
+          thrown = { e };
+          s.transaction.abort();
+        }
+      };
+    }).then(
+      () => next as never,
+      (e: unknown) => {
+        throw thrown ? thrown.e : e;
+      },
+    );
+  };
   return {
     get: (kind, id) => idb(store(kind, 'readonly').get(id)) as never,
     all: (kind) => idb(store(kind, 'readonly').getAll()) as never,
     put: (kind, value) => commit(kind, (s) => s.put(value)),
     // The get and the put in one transaction: IndexedDB runs no other readwrite transaction on the store between.
-    update: (kind, id, f) => {
-      let next: unknown;
-      let thrown: { e: unknown } | undefined;
-      return commit(kind, (s) => {
-        const req = s.get(id);
-        req.onsuccess = () => {
-          try {
-            next = f(req.result as never);
-            if (next) s.put(next);
-          } catch (e) {
-            thrown = { e };
-            s.transaction.abort();
-          }
-        };
-      }).then(
-        () => next as never,
-        (e: unknown) => {
-          throw thrown ? thrown.e : e;
+    update: (kind, id, f) =>
+      readThenPut(
+        kind,
+        (s) => s.get(id),
+        (was) => f(was as never),
+      ),
+    // The whole store read, and the put, in one transaction: none of the records `f` judges by changes before it.
+    updateAmong: (kind, id, f) =>
+      readThenPut(
+        kind,
+        (s) => s.getAll(),
+        (all) => {
+          const records = all as { id: string }[];
+          return f(records.find((r) => r.id === id) as never, records as never);
         },
-      );
-    },
+      ),
     delete: (kind, id) => commit(kind, (s) => s.delete(id)),
   };
 }

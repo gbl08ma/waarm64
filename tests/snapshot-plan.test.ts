@@ -80,14 +80,20 @@ test('a snapshot pins generations and carries the ramdisk; a restore keeps, fork
   (keep[1] as { ramInit?: unknown }).ramInit = undefined;
   // A keep planned at another generation (the guest wrote after the page planned) is refused before anything moves.
   await assert.rejects(
-    readSnapshot(file, codec, codec.snapshotVersion, { devices: keep, plan: [{ slot: 0, action: 'keep', generation: 1 }] }),
+    readSnapshot(file, codec, codec.snapshotVersion, { devices: keep, plan: [{ slot: 0, action: 'keep', overlay: name, generation: 1 }] }),
+    (e: unknown) => e instanceof SnapshotError && e.msg.key === 'snapshots:snapshot.keptMoved',
+  );
+  // Review restore-tokens 1: a keep planned for another overlay than the one the disk's device runs on (its attachment
+  // switched to its stored disk written in place: `disks/<id>`) is refused, even at the same generation.
+  await assert.rejects(
+    readSnapshot(file, codec, codec.snapshotVersion, { devices: keep, plan: [{ slot: 0, action: 'keep', overlay: `${name}-other`, generation: 2 }] }),
     (e: unknown) => e instanceof SnapshotError && e.msg.key === 'snapshots:snapshot.keptMoved',
   );
   // Review restore-marks 10: one grown since (a resize in another tab between the commit and the worker: its own size
   // past the size the snapshot saw, its generation unmoved) is another disk to the guest: refused too.
   await writeOwnSize(name, 2 * SIZE);
   await assert.rejects(
-    readSnapshot(file, codec, codec.snapshotVersion, { devices: keep, plan: [{ slot: 0, action: 'keep', generation: 2 }] }),
+    readSnapshot(file, codec, codec.snapshotVersion, { devices: keep, plan: [{ slot: 0, action: 'keep', overlay: name, generation: 2 }] }),
     (e: unknown) => e instanceof SnapshotError && e.msg.key === 'snapshots:snapshot.keptMoved',
   );
   await writeOwnSize(name, 0);
@@ -95,10 +101,10 @@ test('a snapshot pins generations and carries the ramdisk; a restore keeps, fork
   (grownSpec[0] as { size?: number }).size = 2 * SIZE; // the disk's record grown (a stored disk written in place)
   (grownSpec[1] as { ramInit?: unknown }).ramInit = undefined;
   await assert.rejects(
-    readSnapshot(file, codec, codec.snapshotVersion, { devices: grownSpec, plan: [{ slot: 0, action: 'keep', generation: 2 }] }),
+    readSnapshot(file, codec, codec.snapshotVersion, { devices: grownSpec, plan: [{ slot: 0, action: 'keep', overlay: name, generation: 2 }] }),
     (e: unknown) => e instanceof SnapshotError && e.msg.key === 'snapshots:snapshot.keptMoved',
   );
-  const r1 = await readSnapshot(file, codec, codec.snapshotVersion, { devices: keep, plan: [{ slot: 0, action: 'keep', generation: 2 }] });
+  const r1 = await readSnapshot(file, codec, codec.snapshotVersion, { devices: keep, plan: [{ slot: 0, action: 'keep', overlay: name, generation: 2 }] });
   const vm1 = await bootVm(module, { ...o, devices: keep, restore: r1.restore });
   await vm1.close();
   assert.equal(await byteAt(name, 1), 0x22, 'kept');

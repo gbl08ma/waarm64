@@ -140,7 +140,7 @@ async function dropFork(store: Store, own: string, s: RestoreStep) {
  * Machine `id`'s restore loaded (the worker's `loaded`: the machine runs from the snapshot): what it wrote is the
  * machine's now, no longer to be undone, and a template's first start is done. One write, the record's `restoring` and
  * `restoreFirst` cleared together in one read and write (`Store.update`): refused (the storage full), the restore is
- * still one that never loaded, as a whole. Then a template's fresh overlay it wrote into is named after the snapshot
+ * still one that never loaded, as a whole (the guest hasn't run: its vCPUs wait for the page's answer to `loaded`). Then a template's fresh overlay it wrote into is named after the snapshot
  * and marked as its fork (a later restore of it attaches it again while it hasn't moved), which only spares a fork if
  * it fails. Called while the run holds the machine's lock.
  */
@@ -153,11 +153,11 @@ export async function restoreLoaded(store: Store, id: string) {
   });
   for (const s of restoring) {
     if (s.how !== 'into' || !s.fork) continue;
-    const o = await store.get('overlays', s.overlay).catch(() => undefined);
-    if (!o) continue;
-    const fork = { snapshot: s.fork.snapshot, generation: s.generation + 1 };
+    const { name, snapshot } = s.fork;
+    const fork = { snapshot, generation: s.generation + 1 };
+    // Onto its record as the store has it, in one read and write (the run's stop may be refreshing it meanwhile).
     await store
-      .put('overlays', { ...o, name: s.fork.name, fork, modified: Date.now() })
+      .update('overlays', s.overlay, (o) => o && { ...o, name, fork, modified: Date.now() })
       .catch((e: unknown) => console.warn('waarm64: a fresh overlay not marked as its fork:', e));
   }
 }

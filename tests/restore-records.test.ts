@@ -303,8 +303,13 @@ test('a commit cut off part way leaves nothing that the next load does not undo'
       refuse(kind);
       return update(kind as 'machines', id, f);
     }) as typeof e.b.update;
+    const among = e.b.updateAmong.bind(e.b);
+    e.b.updateAmong = (async (kind: string, id: string, f: (was: MachineRecord | undefined, all: MachineRecord[]) => MachineRecord | undefined) => {
+      refuse(kind);
+      return among(kind as 'machines', id, f);
+    }) as typeof e.b.updateAmong;
     await assert.rejects(restore(e, e.m.id, 'k'));
-    [e.b.put, e.b.update] = [put, update];
+    [e.b.put, e.b.update, e.b.updateAmong] = [put, update, among];
     const after = await load(e, e.m.id);
     assert.equal(await nameOf(e, after.attachments[0].overlay), 'Mine', `${at}: back on Mine`);
     assert.deepEqual(await names(e), ['Mine'], `${at}: no fork left behind`);
@@ -560,4 +565,80 @@ test("review 9: a restore doesn't attach again an earlier fork that another mach
   await restore(e, e.m.id, 'k2');
   assert.notEqual(await attachedTo(e, e.m.id), f);
   assert.deepEqual(await plan(), [false], "F is One's again at its undo");
+});
+
+// Review restore-tokens (PERF loop 86).
+
+test("restore-tokens 4: a copy of a machine whose restore hasn't loaded isn't put on an earlier overlay deleted since", async () => {
+  const e = await withMine();
+  await restore(e, e.m.id, 'k'); // a fork, never loaded: its undo goes back onto Mine
+  await deleteOverlayAsked(e.b, e.mine); // the machine is free: Delete overlay of Mine is allowed
+  assert.equal(await e.b.get('overlays', e.mine), undefined);
+  const copy = await copyOf(e, e.m.id);
+  assert.equal(copy.attachments[0].overlay, undefined, 'no overlay: its next start makes an empty one, as the undo leaves the original');
+  const after = await load(e, e.m.id);
+  assert.equal(after.attachments[0].overlay, undefined, 'the undo agrees');
+});
+
+test("restore-tokens 8: a template's fresh overlay marked as its fork at `loaded` and its record refreshed at the run's stop, at once: both stay", async () => {
+  const { refreshOverlay } = await import('../web/app/disks.ts');
+  for (const first of ['loaded', 'refresh'] as const) {
+    const e = await withFresh();
+    await restore(e, e.m.id, 'k', { fresh: true }); // into Fresh
+    await fill(e.fresh, true, e.b);
+    const loaded = () => restoreLoaded(e.b, e.m.id);
+    const refresh = () => refreshOverlay(e.b, e.fresh);
+    await Promise.all(first === 'loaded' ? [loaded(), refresh()] : [refresh(), loaded()]);
+    const o = (await e.b.get('overlays', e.fresh))!;
+    assert.deepEqual([o.name, o.fork, o.generation], ['Snap k', { snapshot: 'k', generation: 1 }, 1], `${first} first: the fork's name and mark, and the generation from its files`);
+  }
+  // The refresh landing just after any read of the overlay's record that `loaded` makes (none of its own: one write).
+  const e = await withFresh();
+  await restore(e, e.m.id, 'k', { fresh: true });
+  await fill(e.fresh, true, e.b);
+  const get = e.b.get.bind(e.b);
+  let fired = false;
+  e.b.get = (async (kind: 'overlays', id: string) => {
+    const got = await get(kind, id);
+    if (kind === 'overlays' && id === e.fresh && !fired) {
+      fired = true;
+      await refreshOverlay(e.b, e.fresh);
+    }
+    return got;
+  }) as Store['get'];
+  await restoreLoaded(e.b, e.m.id);
+  e.b.get = get;
+  if (!fired) await refreshOverlay(e.b, e.fresh);
+  const o = (await e.b.get('overlays', e.fresh))!;
+  assert.deepEqual([o.name, o.fork, o.generation], ['Snap k', { snapshot: 'k', generation: 1 }, 1], 'the refresh between: both stay');
+});
+
+test("restore-tokens 7: another machine chose the overlay a replace writes into between the commit's check and its write: the commit refuses, and Retry forks", async () => {
+  const e = await withMine();
+  const two = await copyOf(e, e.m.id);
+  const now = Date.now();
+  const work = { id: newId(), name: 'Work', disk: e.disk.id, identity: e.disk.identity, generation: 0, bytes: 0, created: now, modified: now };
+  await e.b.put('overlays', work);
+  await switchOverlay(e.b, two, two.attachments[0].id, work.id); // Two on Work: Mine is One's alone
+  const m = (await e.b.get('machines', e.m.id))!;
+  const plan = await planRestore(e.b, m, await disksOf(e.b), { name: 'Snap k', key: 'k', pins: e.pins }, { display: '2d' });
+  assert.deepEqual(plan.forks.map((f) => f.replaceable?.name), ['Mine'], 'Mine offered to replace');
+  // Another tab's Overlays dialog puts Two on Mine just before the commit's write of One's record.
+  const [update, among] = [e.b.update.bind(e.b), e.b.updateAmong.bind(e.b)];
+  let armed = true;
+  const meanwhile = async (kind: string, id: string) => {
+    if (!armed || kind !== 'machines' || id !== e.m.id) return;
+    armed = false;
+    await switchOverlay(e.b, (await e.b.get('machines', two.id))!, two.attachments[0].id, e.mine);
+  };
+  e.b.update = (async (kind: 'machines', id: string, f: Parameters<Store['update']>[2]) => (await meanwhile(kind, id), update(kind, id, f as never))) as Store['update'];
+  e.b.updateAmong = (async (kind: 'machines', id: string, f: Parameters<Store['updateAmong']>[2]) => (await meanwhile(kind, id), among(kind, id, f as never))) as Store['updateAmong'];
+  await assert.rejects(plan.commit(true), (x: unknown) => msgOf(x)?.key === 'snapshots:snapshots.takenMeanwhile' && msgOf(x)?.params?.overlay === 'Mine');
+  [e.b.update, e.b.updateAmong] = [update, among];
+  const after = (await e.b.get('machines', e.m.id))!;
+  assert.deepEqual([after.restoring, after.attachments[0].overlay], [undefined, e.mine], 'nothing committed');
+  // Retry: planned again on the records as they are now, it forks beside Two's Mine.
+  const steps = await plan.commit(true);
+  assert.notEqual(steps[0].action === 'write' && steps[0].overlay, overlayDir(e.mine), 'a fork, not Mine');
+  assert.equal(await attachedTo(e, two.id), e.mine);
 });

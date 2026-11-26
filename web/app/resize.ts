@@ -233,7 +233,13 @@ async function grown(store: Store, x: Target, size: number, mark?: (had: GrowMar
     const dir = overlayDir(o.id);
     await writeOwnSize(dir, size); // the bytes first: the device worker reads it there
     try {
-      await store.put('overlays', { ...o, size, modified: Date.now(), grow: mark?.(o.grow) });
+      // Onto its record as the store has it (one read and write: a name or a fork mark written meanwhile stays).
+      await store.update('overlays', o.id, (cur) => ({
+        ...(cur ?? o),
+        size,
+        modified: Date.now(),
+        grow: mark?.((cur ?? o).grow),
+      }));
     } catch (e) {
       // The record refused: the meta back to what it says, or the guest would see a size the records don't.
       await writeOwnSize(dir, o.size ?? 0).catch(() => undefined); // the failure thrown is the one to report
@@ -288,8 +294,9 @@ export async function growMark(store: Store, t: ResizeTarget): Promise<GrowMark 
 /** Notes on `t`'s grow mark that the guest's grow failed once (`GrowMark.failed`): kept for the next start. */
 export async function growFailed(store: Store, t: ResizeTarget) {
   if ('overlay' in t) {
-    const o = await store.get('overlays', t.overlay);
-    if (o?.grow) await store.put('overlays', { ...o, grow: { ...o.grow, failed: true } });
+    await store.update('overlays', t.overlay, (o) =>
+      o?.grow ? { ...o, grow: { ...o.grow, failed: true } } : undefined,
+    );
   } else {
     const d = await store.get('disks', t.disk);
     if (d?.grow) await store.put('disks', { ...d, grow: { ...d.grow, failed: true } });
@@ -345,8 +352,7 @@ async function growOf(store: Store, a: Attachment): Promise<GrowDisk | undefined
 /** Clears `t`'s grow mark (the guest did it, or said why not). */
 export async function clearGrowMark(store: Store, t: ResizeTarget) {
   if ('overlay' in t) {
-    const o = await store.get('overlays', t.overlay);
-    if (o?.grow) await store.put('overlays', { ...o, grow: undefined });
+    await store.update('overlays', t.overlay, (o) => (o?.grow ? { ...o, grow: undefined } : undefined));
   } else {
     const d = await store.get('disks', t.disk);
     if (d?.grow) await store.put('disks', { ...d, grow: undefined });

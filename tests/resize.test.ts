@@ -420,15 +420,16 @@ test("finding 4: a grown overlay made by the page (a restore's fork) has its siz
 test("finding 5: a resize whose record write is refused leaves the overlay's meta at the record's size; a meta past its record is taken into it", async () => {
   const w = await world();
   const { store } = w;
-  const put = store.put.bind(store);
+  // The record's write (one read and write: `update`) refused once.
+  const update = store.update.bind(store);
   let refuse = true;
-  store.put = (async (kind: Parameters<Store['put']>[0], r: Parameters<Store['put']>[1]) => {
+  store.update = (async (kind: Parameters<Store['update']>[0], id: string, f: Parameters<Store['update']>[2]) => {
     if (kind === 'overlays' && refuse) {
       refuse = false;
       throw new Error('refused');
     }
-    return put(kind, r);
-  }) as Store['put'];
+    return update(kind, id, f);
+  }) as Store['update'];
   await assert.rejects(resize(store, { overlay: w.oa.id }, 16 * MiB, { grow: true }), /refused/);
   assert.equal((await store.get('overlays', w.oa.id))!.size, undefined);
   assert.equal((await overlayMeta(overlayDir(w.oa.id))).size, 0, 'the meta as the record says');
