@@ -1,0 +1,287 @@
+diff --git a/bench/boot/idle-cpu.ts b/bench/boot/idle-cpu.ts
+index 199ff44f..0d006d7e 100644
+--- a/bench/boot/idle-cpu.ts
++++ b/bench/boot/idle-cpu.ts
+@@ -9,24 +9,25 @@ import { testDevices } from '../../web/test-guests.ts';
+ 
+ const [ncpus = 4, settle = 6, measure = 20] = process.argv.slice(2).map(Number);
+ const root = new URL('../../', import.meta.url);
+-const module = await compileCore(readFileSync(new URL('target/wasm32-unknown-unknown/release/waarm64_core.wasm', root)));
++const module = await compileCore(readFileSync(new URL(process.env.WASM ?? 'target/wasm32-unknown-unknown/release/waarm64_core.wasm', root)));
+ const kernel = readFileSync(new URL('target/images/linux/Image', root));
+ const disk = new URL('target/images/buildroot/rootfs.ext4', root).href;
+ const cmdline = `console=ttyAMA0 panic=-1 root=/dev/vda ro init=/bin/sleep -- ${settle + measure + 30}`;
+ const vm = await bootVm(module, { ramSize: 256 << 20, kernel, cmdline, devices: testDevices(disk), realtime: true, jit: 1, ncpus, parallel: true, idleLimitMs: 120_000 });
+ const t0 = performance.now();
+-let a: { t: number; cpu: NodeJS.CpuUsage; idles: number; steps: number } | undefined;
++let a: { t: number; cpu: NodeJS.CpuUsage; idles: number; steps: number; wake: number[] } | undefined;
++const wk = () => ((vm.stats().jit as unknown as { wake?: number[] }).wake ?? []);
+ let out = '';
+ for (;;) {
+   const r = await vm.runAsync(1_000_000);
+   out += vm.drain();
+   const t = performance.now() - t0;
+-  if (!a && t >= settle * 1000) a = { t, cpu: process.cpuUsage(), idles: vm.stats().par.idles, steps: vm.stats().steps };
++  if (!a && t >= settle * 1000) a = { t, cpu: process.cpuUsage(), idles: vm.stats().par.idles, steps: vm.stats().steps, wake: wk() };
+   if (a && t >= (settle + measure) * 1000) {
+     const cpu = process.cpuUsage(a.cpu);
+     const s = vm.stats();
+     const wall = (t - a.t) / 1000;
+-    console.log(JSON.stringify({ ncpus, wallS: +wall.toFixed(2), cpuPct: +((100 * (cpu.user + cpu.system)) / 1e6 / wall).toFixed(2), userPct: +((100 * cpu.user) / 1e6 / wall).toFixed(2), sysPct: +((100 * cpu.system) / 1e6 / wall).toFixed(2), idlesPerS: Math.round((s.par.idles - a.idles) / wall), mipsGuest: +((s.steps - a.steps) / 1e6 / wall).toFixed(2) }));
++    console.log(JSON.stringify({ ncpus, wallS: +wall.toFixed(2), cpuPct: +((100 * (cpu.user + cpu.system)) / 1e6 / wall).toFixed(2), userPct: +((100 * cpu.user) / 1e6 / wall).toFixed(2), sysPct: +((100 * cpu.system) / 1e6 / wall).toFixed(2), idlesPerS: Math.round((s.par.idles - a.idles) / wall), mipsGuest: +((s.steps - a.steps) / 1e6 / wall).toFixed(2), wakePerS: wk().map((x, k) => +((x - a!.wake[k]) / wall).toFixed(1)) }));
+     break;
+   }
+   if (r.kind === Exit.DEVICE) await vm.settle();
+diff --git a/bench/boot/preempt-counts.ts b/bench/boot/preempt-counts.ts
+index 31b82972..95b96d4a 100644
+--- a/bench/boot/preempt-counts.ts
++++ b/bench/boot/preempt-counts.ts
+@@ -21,7 +21,7 @@ import { DISTROS } from '../../web/test-guests.ts';
+ /** core/src/tally.rs's slots. */
+ const JIT = ['back-edge', 'forward edge', 'transfer cache hit', 'miss function', 'jump cache hit (MMU off)', 'chain back', 'chain fwd', 'chain via jc back', 'chain via jc fwd', 'by-VA link back', 'by-VA link fwd', 'host call', 'host return', 'poll (polled code)'];
+ const END = ['budget', 'early (stop word, park)', 'Resync (ISB/DSB/ERET/unmask)', 'Invalidate (IC)', 'WFI', 'WFE', 'SEV', 'TLBI IS', 'HVC', 'counter read', 'platform (timer/GIC regs)', 'device (MMIO)', 'SVC', 'exception', 'other'];
+-const N = 80, END_AT = 16, END_STEPS = 32, BETWEEN = 31, BETWEEN_NS = 47, TIMER_LATE = 48, IRQ_LATE = 54, IRQ_HIST = 60, TIMER_SET = 64, IRQS = 67, PLATFORM_BY = 68, TIMER_ACC = 72;
++const N = 104, END_AT = 16, END_STEPS = 32, BETWEEN = 31, BETWEEN_NS = 47, TIMER_LATE = 48, IRQ_LATE = 54, IRQ_HIST = 60, TIMER_SET = 64, IRQS = 67, PLATFORM_BY = 68, TIMER_ACC = 72;
+ 
+ type Tallies = number[];
+ type Phase = { name: string; steps: number; t: Tallies };
+diff --git a/core/src/tally.rs b/core/src/tally.rs
+index 5dce3f01..94c8bde8 100644
+--- a/core/src/tally.rs
++++ b/core/src/tally.rs
+@@ -9,7 +9,7 @@
+ //! IRQ), and round-robin's timer reprogramming ([`TIMER_SET`]).
+ 
+ /// Words in each table.
+-pub const N: usize = 80;
++pub const N: usize = 104;
+ 
+ /// A region's loop back-edge taken (a `br` to the head's `loop`).
+ pub const BACK_EDGE: u32 = 0;
+@@ -96,6 +96,24 @@ pub const PLATFORM_BY: usize = 68;
+ /// that change the vCPU's timer line at the write, and the physical timer's accesses.
+ pub const TIMER_ACC: usize = 72;
+ 
++/// PERF loop 83's wake-ups (parallel): run-loop entries after an IDLE exit whose wake word moved / didn't; IDLE exits
++/// that retired nothing after each; the device signal taken, and taken in an entry woken that idled with nothing
++/// retired; `Vm::wake` of this vCPU, by refresh's IRQ rise, by `Vm::signal`; the wake word at the first entry (+1) and
++/// the last; then the worker's (web/vcpu-worker.ts): ns from the sleep's end to the core's return of empty woken
++/// exits, the spins after them, those a wake ended, their ns; all spins, those a wake ended, their ns; SIGNAL_RX taken.
++pub const W_WOKEN: usize = 80;
++pub const W_TIMED: usize = 81;
++pub const W_EMPTY: usize = 82;
++pub const W_EMPTY_TIMED: usize = 83;
++pub const W_DEVICE: usize = 84;
++pub const W_DEVICE_EMPTY: usize = 85;
++pub const W_BY_CORE: usize = 86;
++pub const W_BY_IRQ: usize = 87;
++pub const W_BY_SIGNAL: usize = 88;
++pub const W_WAKE_FIRST: usize = 89;
++pub const W_WAKE_LAST: usize = 90;
++pub const W_RX: usize = 98;
++
+ /// The [`END`] kind of a chunk that ended with exit `e` (`None`: no exit; `full`: the chunk's steps all ran).
+ #[cfg(feature = "diag")]
+ pub fn end_kind(e: Option<&crate::interp::Exit>, full: bool) -> usize {
+diff --git a/core/src/vm/parallel.rs b/core/src/vm/parallel.rs
+index eb3ecf3a..3ae19060 100644
+--- a/core/src/vm/parallel.rs
++++ b/core/src/vm/parallel.rs
+@@ -298,6 +298,21 @@ impl Vm {
+         // SAFETY: guaranteed by the caller.
+         let (v, own) = unsafe { self.vcpus[c].parts() };
+         let p = &self.shared.cpus[c].par;
++        #[cfg(feature = "diag")]
++        let woken = {
++            use crate::tally::*;
++            let d = &self.shared.cpus[c].counters.diag;
++            let w = self.shared.cpus[c].wake.load(Ordering::SeqCst) as u64;
++            let _ = d[W_WAKE_FIRST].compare_exchange(0, w + 1, Ordering::Relaxed, Ordering::Relaxed);
++            d[W_WAKE_LAST].store(w, Ordering::Relaxed);
++            let r = (own.exit.kind == exit::IDLE as u64).then_some(w != own.exit.wake);
++            match r {
++                Some(true) => add(d, W_WOKEN, 1),
++                Some(false) => add(d, W_TIMED, 1),
++                None => {}
++            }
++            (r, d[W_DEVICE].load(Ordering::Relaxed))
++        };
+         own.exit = ExitInfo::default();
+         let start = own.steps;
+         if let Some(t) = own.out {
+@@ -316,6 +331,21 @@ impl Vm {
+             w.set_running(c, true);
+         }
+         let kind = self.run_loop(c, v, own, budget);
++        #[cfg(feature = "diag")]
++        if kind == exit::IDLE && own.steps == start {
++            use crate::tally::*;
++            let d = &self.shared.cpus[c].counters.diag;
++            match woken.0 {
++                Some(true) => {
++                    add(d, W_EMPTY, 1);
++                    if d[W_DEVICE].load(Ordering::Relaxed) != woken.1 {
++                        add(d, W_DEVICE_EMPTY, 1);
++                    }
++                }
++                Some(false) => add(d, W_EMPTY_TIMED, 1),
++                None => {}
++            }
++        }
+         if let Some(w) = self.mem.watch() {
+             v.tlb.leave(&self.mem, c);
+             w.set_running(c, false);
+@@ -336,6 +366,10 @@ impl Vm {
+     pub fn signal(&self, bits: u32) {
+         self.shared.signal.fetch_or(bits, Ordering::AcqRel);
+         notify(&self.shared.signal);
++        #[cfg(feature = "diag")]
++        for s in &self.shared.cpus {
++            crate::tally::add(&s.counters.diag, crate::tally::W_BY_SIGNAL, 1);
++        }
+         (0..self.vcpus.len()).for_each(|i| self.wake(i));
+     }
+ 
+@@ -394,6 +428,8 @@ impl Vm {
+             if sig & SIGNAL_RX != 0
+                 && self.shared.signal.fetch_and(!SIGNAL_RX, Ordering::AcqRel) & SIGNAL_RX != 0
+             {
++                #[cfg(feature = "diag")]
++                crate::tally::add(&sh.counters.diag, crate::tally::W_RX, 1);
+                 self.refresh(&mut self.plat_of(c));
+             }
+             if sig & SIGNAL_DEVICE != 0
+@@ -404,6 +440,8 @@ impl Vm {
+                     & SIGNAL_DEVICE
+                     != 0
+             {
++                #[cfg(feature = "diag")]
++                crate::tally::add(&sh.counters.diag, crate::tally::W_DEVICE, 1);
+                 let ns = self.ns();
+                 let mut pl = self.plat_of(c);
+                 let r = complete(&mut pl, &self.mem, &self.shared, ns);
+@@ -834,6 +872,8 @@ impl Vm {
+                 s.counters.diag[crate::tally::IRQ_STAMP].store(t, Ordering::Relaxed);
+             }
+             if was != on && on {
++                #[cfg(feature = "diag")]
++                crate::tally::add(&s.counters.diag, crate::tally::W_BY_IRQ, 1);
+                 self.wake(i);
+             }
+         }
+@@ -863,6 +903,8 @@ impl Vm {
+     /// Bumps and notifies vCPU `i`'s wake word (after the change it's for),
+     /// and stops its chunk at its next poll.
+     pub(super) fn wake(&self, i: usize) {
++        #[cfg(feature = "diag")]
++        crate::tally::add(&self.shared.cpus[i].counters.diag, crate::tally::W_BY_CORE, 1);
+         self.stop(i);
+         let w = &self.shared.cpus[i].wake;
+         w.fetch_add(1, Ordering::SeqCst);
+diff --git a/web/idle-wait.ts b/web/idle-wait.ts
+index fb6aaa70..f29265da 100644
+--- a/web/idle-wait.ts
++++ b/web/idle-wait.ts
+@@ -18,6 +18,9 @@ export const SHARE = 2 / 3;
+  */
+ export const SPIN_MS = 0.05;
+ 
++/** PERF loop 83's diagnostic: the last idle's spin. */
++export const spinDiag = { ms: 0, hit: false };
++
+ export type Clock = () => number;
+ export type Wait = (word: Int32Array, index: number, value: number, ms: number) => string;
+ export type WaitAsync = (
+@@ -109,7 +112,11 @@ export function idle(
+   const off = ms === undefined;
+   const end = t0 + (off ? 1000 : ms);
+   const spin = Math.min(end - t0, SPIN_MS);
++  const s0 = h.now();
+   while (Atomics.load(wake, 0) === value && h.now() - t0 < spin);
++  // PERF loop 83's diagnostic: this spin's time and whether a wake-up ended it.
++  spinDiag.ms = h.now() - s0;
++  spinDiag.hit = Atomics.load(wake, 0) !== value;
+   if (off) {
+     if (t.due() && Atomics.load(wake, 0) === value) return t.pass(wake, value, end - h.now());
+     h.wait(wake, 0, value, end - h.now());
+diff --git a/web/vcpu-worker.ts b/web/vcpu-worker.ts
+index 0c7d931a..51f518cf 100644
+--- a/web/vcpu-worker.ts
++++ b/web/vcpu-worker.ts
+@@ -8,7 +8,8 @@
+ // (web/vm.ts `bootVm`). Runs in a browser worker or a Node worker thread.
+ import { EV_CONFIG, ring } from './virtio.ts';
+ import { livenessWriter } from './liveness.ts';
+-import { idle, turns, txFull, yieldTurn } from './idle-wait.ts';
++import { idle, spinDiag, turns, txFull, yieldTurn } from './idle-wait.ts';
++import { Counter } from './counters.ts';
+ import {
+   clockOffset,
+   Exit,
+@@ -61,6 +62,7 @@ type Ex = {
+   vm_run_cpu(vm: number, cpu: number, budget: bigint): number;
+   vm_exit_cpu(vm: number, cpu: number): number;
+   vm_cpu_signal(vm: number, i: number): number;
++  vm_counters(vm: number, i: number): number;
+ };
+ 
+ /** Steps per `vm_run_cpu` call: it returns early on anything the worker handles. */
+@@ -98,6 +100,15 @@ async function runCpu(j: VcpuJob, exports: WebAssembly.Exports): Promise<VcpuEnd
+   const turn = turns(j.yieldMs ?? 0);
+   // The exit's record: kind, steps, value, x0-x3, cpu, wake (a new view once the memory grew: its buffer is new).
+   let e = new BigUint64Array(mem.buffer, info, 9);
++  // PERF loop 83's diagnostic: the worker's words past the core's (core/src/tally.rs `W_*`, 91-97).
++  const dAt = ex.vm_counters(j.vm, j.cpu) + Counter.LEN * 8;
++  let d = new BigUint64Array(mem.buffer, dAt, 104);
++  const dAdd = (i: number, n: number) => {
++    if (d.buffer !== mem.buffer) d = new BigUint64Array(mem.buffer, dAt, 104);
++    d[i] += BigInt(Math.round(n));
++  };
++  let slept = 0; // when the last idle's sleep ended
++  let wakeMoved = false;
+   for (;;) {
+     live?.enter();
+     const kind = ex.vm_run_cpu(j.vm, j.cpu, BUDGET);
+@@ -116,8 +127,21 @@ async function runCpu(j: VcpuJob, exports: WebAssembly.Exports): Promise<VcpuEnd
+       case Exit.IDLE: {
+         idleStalls?.forEach((f) => f()); // test only: a host stall with the vCPU OUT
+         // Until its deadline or a wake-up; an off vCPU (no deadline) rechecks every second.
+-        const asleep = idle(wake, Number(e[8]) | 0, e[2] === NONE ? undefined : Number(e[2]) / 1e6, back, turn);
++        const value = Number(e[8]) | 0;
++        const empty = e[1] === 0n && slept > 0 && wakeMoved;
++        if (empty) dAdd(91, (back - slept) * 1e6);
++        const asleep = idle(wake, value, e[2] === NONE ? undefined : Number(e[2]) / 1e6, back, turn);
++        dAdd(95, 1);
++        if (spinDiag.hit) dAdd(96, 1);
++        dAdd(97, spinDiag.ms * 1e6);
++        if (empty) {
++          dAdd(92, 1);
++          if (spinDiag.hit) dAdd(93, 1);
++          dAdd(94, spinDiag.ms * 1e6);
++        }
+         if (asleep) await asleep;
++        slept = performance.now();
++        wakeMoved = Atomics.load(wake, 0) !== value;
+         continue;
+       }
+       case Exit.TX_FULL:
+diff --git a/web/vm.ts b/web/vm.ts
+index 001cad00..cbd6fb01 100644
+--- a/web/vm.ts
++++ b/web/vm.ts
+@@ -981,7 +981,14 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
+     /** Parallel mode's steps between two publications of a vCPU's PC (0: the default); the PC sampler shortens it. */
+     setChunk: (steps: number) => ex.vm_set_chunk(vm, BigInt(steps)),
+     /** A snapshot of the counters, summed over the vCPUs; exceptions by EC only where non-zero. */
+-    stats: () => stats(counter),
++    stats: () => {
++      const s = stats(counter);
++      // PERF loop 83's diagnostic: core/src/tally.rs's wake words (80-103), summed over the vCPUs.
++      (s.jit as Record<string, unknown>).wake = Array.from({ length: 24 }, (_, k) =>
++        blocks.reduce((n, b) => n + Number(new BigUint64Array(memory.buffer, b + Counter.LEN * 8, 104)[80 + k]), 0),
++      );
++      return s;
++    },
+     /** The vCPUs run each on its own worker (`VmConfig.parallel`): `cpuStats` is then per vCPU. */
+     parallel,
+     /**

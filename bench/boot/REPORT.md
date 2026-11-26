@@ -9129,3 +9129,91 @@ The runs: the gates' counts twice in Node (35 s each; the second core adds findi
 are the same), two counting pages sessions (286 s each). No A/B: the kept changes don't change compiled code
 (filing an entry the map has no room for, and the checker's words in the check mode). Tests: the two above, each
 failing first; `tests/steps.txt` unmoved; no export or state layout changed, the ABI stays 74. CI: `ci.sh` (736 s) and `ci-jit.sh` (270 s).
+
+## PERF loop 83: what wakes an idle vCPU, and its poll before it sleeps (2026-11-26)
+
+The queue's row 17 (PERF-HANDOVER.md, from a static survey): a device completion or a host signal bumps every vCPU's
+wake word, so each other idle vCPU wakes, enters the core, finds the signal taken, returns `IDLE` with nothing retired
+and polls `SPIN_MS` before it sleeps again. **Counted: those empty exits are ~300 a second in Firefox's pages session,
+~1.7% of one host core at most on the Mac, and under one a second in an idle guest; waking one taker instead (M) and
+skipping the poll after an empty exit (S) are not built. The poll itself was the larger cost: it ended in a wake-up
+for 12% of the idles in the pages session and none in an idle guest. Kept: a 20 µs poll instead of 50 (web/idle-wait.ts
+`SPIN_MS`): the pages session's renderer CPU −2.8% (energy −3%), an idle 4-vCPU guest's host CPU −12%, the parallel
+boots' CPU −1.2 to −4.0%, the guest's speed unchanged everywhere and the futex hand-offs the poll is for as fast.** Only
+web/ changed (the vCPU worker's idle path and a `vcpuSpinUs` knob, `?vspin=<µs>`); the core, compiled code,
+deterministic and round-robin runs and `tests/steps.txt` are 0c7707e7's. M4, macOS, Chrome for Testing 158.0.8127.88,
+Node 26.10.0 there; nothing else on the dev VM. Data: `bench/boot/results/perf83/` (its README).
+
+**The counts** (a diagnostic build, `diag.patch`: the core tallies each run-loop entry after an `IDLE` by whether its
+wake word moved, the `IDLE` exits that retired nothing after it, the signals taken and `Vm::wake` by caller; the worker
+times the empty exits' core round trip and every poll, and whether a wake-up ended it; `python3 wakes.py`; a second
+each, summed over 4 vCPUs):
+
+| | pages session (Mac, Chrome) | `smp_alpine_jit` n4 (VM, Node) | `smp_user_jit_4` (VM) | idle guest (VM) |
+|---|---|---|---|---|
+| entries woken / after a timed sleep | 1,166 / 677 | 936 / 1,021 | 642 / 457 | 0.8 / 400 |
+| **of them, `IDLE` again with nothing retired** | **297** (2 the device signal's taker) | **242** (19) | **138** (29) | 0.6 |
+| device / RX signals taken | 110 / 50 | 97 / 0 | 65 / 0 | 0.2 / 0 |
+| the host's wake-word bumps; the core's (IRQ rises) | 641; 2,733 (2,667) | 389; 2,909 (2,802) | 262; 3,697 (3,660) | 1; 400 (400: its own timer) |
+| an empty exit's cost: core round trip + poll | 11.4 + 47.2 µs | 3.4 + 46.9 µs | 3.4 + 42.4 µs | |
+| **the empty exits, of one host core** | **1.74%** | 1.22% | 0.63% | 0 |
+| their polls ended by a wake-up | 16% | 5% | 30% | |
+| **every poll: a second, of one core, ended by a wake-up** | **1,843, 8.96%, 12%** | 1,957, 8.78%, 10% | 1,099, 4.61%, 21% | 401, 1.86%, 0% |
+
+The idle guest's exits are WFIs to their timers (its 400 core wakes a second are each vCPU's own timer line, raised
+while it runs): nothing wakes it early, so no exit is empty and no poll ever catches a wake-up. Where devices complete,
+the broadcast does make empty exits, but their bound is 1.7% of a core of host CPU and none of the guest's speed (the
+vCPUs it wakes were idle). **M** (one taker) saves at most that and needs a new no-missed-wake argument and a taker
+that isn't stalled (a single woken vCPU in a GC or an event-loop visit would hold every completion); **S** (no poll
+after an empty exit) saves at most the polls' share, ~1.4%, and those polls end in a wake-up as often as any (16%
+against 12%): a partial poll cut, which the sweep below covers. Neither is built.
+
+**The poll's sweep** (`vcpuSpinUs`, new: `VmOptions`, the page's and the bench pages' `?vspin=<µs>`, idle-cpu.ts's 4th
+argument). An idle 4-vCPU guest's host CPU (`bench/boot/idle-cpu.ts 4 5 20 <µs>`, the Mac's Node, 3 rounds rotated,
+`idle-mac.txt`), % of a core: 0 µs 6.09-6.80 (median 6.30); 20 µs 7.15-7.86 (7.42); **50 µs (before) 8.26-8.49
+(8.47)**; 100 µs 9.82-11.41 (10.30). In the dev VM 50 → 20: 11.8-12.1 → 10.8-11.0. The futex hand-offs the poll was
+made for (M7 loop 8): the atomics stress's `pingpong` (two pairs of threads, 20,000 hand-offs each, through a mutex
+and a condition variable) on 4 vCPUs (`pingpong.ts`; the Mac's Node, 3 rounds; LSE's / LL/SC's s): 0 µs 0.55 / 0.51;
+10 µs 0.23 / 0.17; 20 µs 0.22-0.23 / 0.17-0.18; 50 µs 0.21-0.22 / 0.16-0.17; 100 µs 0.21 / 0.16-0.17: ~11 µs a
+hand-off with any poll from 10 µs, 2.5× that with none. In the dev VM 10 µs isn't enough (1.27-1.32 / 0.93-1.04
+against 0.27-0.37 / 0.21-0.25 at 20 and 50; 1.72 / 1.66 at 0): 20 µs is the least that keeps the hand-offs on both.
+
+Firefox's pages session from `pages.waarm64snap` (`bench/gpu/ab-mac.sh`, 3 rounds, each round starting with the next
+arm; median [range]; `cpuS` the renderers' CPU over the session, `proc`):
+
+| | 50 µs (base) | 0 µs | 20 µs (kept) |
+|---|---|---|---|
+| the starts and the pages' loads (s) | 67.8 [65.7-69.5] | 66.8 [65.6-67.5] (−1.5%, overlapping) | 66.6 [66.1-67.0] (−1.8%, overlapping) |
+| **the renderers' CPU (s)** | 274.6 [273.2-283.1] | 258.8 [256.5-260.5] (**−5.8%**, no overlap) | 266.8 [265.7-267.4] (**−2.8%**, no overlap) |
+| their instructions (G) | 2,296 [2,295-2,301] | 2,003 [1,995-2,009] (−12.7%) | 2,143 [2,126-2,148] (−6.6%) |
+| energy (J) | 800 [783-804] | 743 [736-757] (−7.1%) | 772 [771-779] (−3.5%) |
+| busy MIPS; modules; stalls of 20 ms+ | 490; 2,662; 2 | 485; 2,664; 1 | 487; 2,652; 0 |
+
+The paired A/B's multi-vCPU workload (`WORKLOADS=smp bench/ab-mac.sh`, four copies of jitjit.js on 4 vCPUs, 12 pairs,
+the cap; `ab-smp/verdict.txt`), against 50 µs, wall: 0 µs +0.00% [−2.26%, +2.32%], 20 µs −0.62% [−4.02%, +2.89%],
+100 µs −0.55% [−4.60%, +3.66%], all open (the workload's wall is that noisy; the CPU a step −0.3 to −0.6%, open): no
+arm moves it. The parallel boots in Chromium (`gates.sh 3 50 20`, `bench/run-mac.sh`, 3 rounds alternated; ranges of
+the rounds' medians, ms; `python3 ../perf53/summary.py gates p83 s50 s20`):
+
+| | 50 µs | 20 µs | |
+|---|---|---|---|
+| `smp_alpine_jit` n1 / n2 / n4 total | 5000-5045 / 4708-4735 / 4679-4702 | 5042-5055 / 4701-4713 / 4684-4741 | +0.2 / +0.0 / −0.2%, overlapping |
+| their CPU (ms) | 5222-5293 / 6135-6191 / 7349-7469 | 5260-5290 / 6026-6047 / 7149-7190 | −0.1 / **−1.9 / −4.0%**, the last two no overlap |
+| `smp_user_jit_4` total; its CPU | 10547-10689; 33185-33325 | 10573-10738; 32752-33048 | +0.0%, overlapping; **−1.2%**, no overlap |
+
+Not run: the paired command's `node`, `user` and `boot` workloads (deterministic round-robin: the vCPU worker, the only
+code changed, doesn't run there). **Kept: 20 µs.** 0 µs would save twice the CPU (the pages session −5.8%, the idle
+guest −26%) and the pages session didn't slow, but a guest that hands work between CPUs through futexes would run
+those hand-offs 2.5-5× slower; 20 is the least poll that kept them in both hosts. Memory: none. A next step, not
+taken: a poll that adapts per vCPU (none after idles whose polls haven't caught a wake-up lately), which the idle
+guest's 0% and the pages session's 12% suggest; its bound is the rest of the poll's cost, ~5% of a core on the pages
+session and 1.1 points of the idle guest (docs/backlog.md).
+
+Tests: `tests/idle-wait.test.ts` "an idle polls its wake word for its spin (`spinMs`) before it waits, and none at
+0" (the first wait starts after the poll, a wake-up within it ends the idle without a wait); planted bug, caught: `idle`
+polling `SPIN_MS` whatever `spinMs` says (1 fails). The plumbing to the page and the bench pages showed in the runs
+(each arm's CPU moved with its `vspin`); `tests/knobs.test.ts` pins `?vspin=` (it failed first, unpinned). A flake
+`scripts/ci.sh` showed meanwhile, fixed: the guest agent's GROW test sent a disk's two GROWs apart, and when the
+agent reaped the first's child before reading the second it answered both (agent/src/serve_test.rs; now one write, so
+one read; with a 50 ms gap between the sends the old form fails every time). CI: `scripts/ci.sh` (736 s),
+`scripts/ci-jit.sh` (245 s) and `scripts/ci-debian.sh` (333 s) passed, each alone.

@@ -227,6 +227,11 @@ export type BootOptions = {
    */
   vcpuYieldMs?: number;
   /**
+   * Parallel mode: how long an idle vCPU worker polls its wake word before it sleeps, in µs (web/idle-wait.ts
+   * `SPIN_MS`'s default; a measurement's knob, `?vspin=`).
+   */
+  vcpuSpinUs?: number;
+  /**
    * Realtime mode: throw if the vCPU sleeps this long with no timer deadline
    * and nothing signaled (a lost wake-up would otherwise hang the run).
    * Benchmarks set it; unset, an idle guest may sleep forever.
@@ -718,6 +723,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
         stall: [o.stall ?? []].flat().map((x) => ({ ...x, addr: ram + x.addr - RAM_BASE })),
         compileWorker: (o.jit ?? 0) !== 0 && o.compileWorker !== false,
         yieldMs: o.vcpuYieldMs ?? VCPU_YIELD_MS,
+        spinMs: o.vcpuSpinUs === undefined ? undefined : o.vcpuSpinUs / 1000,
         warm: o.warm,
       })
     : undefined;

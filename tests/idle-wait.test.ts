@@ -122,7 +122,7 @@ async function idleAt(h: ReturnType<typeof host>['h'], hst: Host, wake: Int32Arr
   const t = turns(100, hst);
   if (due) h.t += 100;
   const t0 = hst.now();
-  const p = idle(wake, Atomics.load(wake, 0), ms, t0, t, hst);
+  const p = idle(wake, Atomics.load(wake, 0), ms, t0, t, undefined, hst);
   if (p) await p;
   return { t, t0, yielded: p !== undefined };
 }
@@ -149,6 +149,21 @@ test('an idle without the turn due never waits in the event loop, and spins only
     const spun = h.waits.length ? h.t - h.waitEnd : h.t - t0;
     assert.ok(spun <= Math.max(SPIN_BOUND, Math.min(ms, 0.05)) + 0.001, `${ms} ms: spun ${(spun * 1000).toFixed(1)} µs`);
   }
+});
+
+test("an idle polls its wake word for its spin (`spinMs`) before it waits, and none at 0", () => {
+  for (const spin of [0, 0.02, 0.1]) {
+    const { h, hst, wake } = host(0.15);
+    const t0 = hst.now();
+    idle(wake, 0, 20, t0, turns(100, hst), spin, hst);
+    // The first wait's start: its timeout is SHARE of what was left then.
+    const first = t0 + 20 - h.waits[0] / SHARE;
+    assert.ok(first - t0 >= spin && first - t0 <= spin + 0.005, `spin ${spin * 1000} µs: waited after ${((first - t0) * 1000).toFixed(1)} µs`);
+  }
+  // A wake-up within the poll ends the idle without a wait.
+  const { h, hst, wake } = host(0.15, { wakeAt: 0.01 });
+  idle(wake, 0, 20, hst.now(), turns(100, hst), 0.02, hst);
+  assert.equal(h.waits.length, 0);
 });
 
 test("a wake-up within the idle's poll leaves the event loop's turn due", async () => {
@@ -185,7 +200,7 @@ test('short idles alone still take the turn, once it is overdue', async () => {
   const t = turns(100, hst);
   let taken = -1;
   while (h.t < 1000 && taken < 0) {
-    const p = idle(wake, 0, 1, hst.now(), t, hst);
+    const p = idle(wake, 0, 1, hst.now(), t, undefined, hst);
     if (p) await p;
     if (p && !t.due()) taken = h.t;
     h.t += 0.1; // the vCPU runs a little between idles
@@ -198,7 +213,7 @@ test('an idle counts from the exit: a host delay after it is not added to the de
   const t = turns(100, hst);
   const t0 = hst.now();
   h.t += 3; // the worker held up between the exit and its wait
-  assert.equal(idle(wake, 0, 2, t0, t, hst), undefined);
+  assert.equal(idle(wake, 0, 2, t0, t, undefined, hst), undefined);
   assert.ok(h.t - t0 < 3.01, `${h.t - t0}`);
   assert.equal(h.waits.length, 0);
 });

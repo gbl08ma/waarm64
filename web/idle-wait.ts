@@ -13,10 +13,13 @@ export const TAIL_MS = 0.04;
  */
 export const SHARE = 2 / 3;
 /**
- * How long an idle vCPU polls its wake word before sleeping on it (M7 loop 8: the stress's pingpong, a futex hand-off
- * per round, went from 34 to 10 µs a round in Node; 20 µs polled as well; the boots and userspace phases didn't move).
+ * How long an idle vCPU polls its wake word before sleeping on it (`VcpuJob.spinMs` overrides it). The poll catches a
+ * wake-up that comes soon (the atomics stress's pingpong, a futex hand-off a round: ~11 µs a round on the Mac with a
+ * poll of 10-100 µs, 2.5× that without; the dev VM needs 20); every other idle pays it whole: in Firefox's pages session
+ * 12% of the polls ended in a wake-up. 20 µs against M7 loop 8's 50: the pages session's renderer CPU −2.8%, an idle
+ * guest's −12%, the hand-offs as fast; 0 saved twice that and slowed them (bench/boot/REPORT.md "PERF loop 83").
  */
-export const SPIN_MS = 0.05;
+export const SPIN_MS = 0.02;
 
 export type Clock = () => number;
 export type Wait = (word: Int32Array, index: number, value: number, ms: number) => string;
@@ -92,7 +95,7 @@ export function yieldTurn(t: Turns, wake: Int32Array) {
 
 /**
  * An `IDLE` exit's wait: until `t0 + ms` (an off vCPU, `ms` undefined: a second) or a wake-up (`wake[0]` leaves
- * `value`). `t0` is the exit's time (`vm_run_cpu`'s return): what the worker did since isn't added. Polls first (a
+ * `value`). `t0` is the exit's time (`vm_run_cpu`'s return): what the worker did since isn't added. Polls first for `spinMs` (a
  * wake-up through `Atomics.wait` takes ~17 µs in the dev VM), then sleeps by `sleepUntil`. When a return to the event
  * loop is due, the first wait is there if it can end `LEAD_MS` before the deadline (of an off vCPU: always); else the
  * return stays due for a later exit, until it is overdue. Returns a promise when it waits in the event loop, else
@@ -104,11 +107,12 @@ export function idle(
   ms: number | undefined,
   t0: number,
   t: Turns,
+  spinMs = SPIN_MS,
   h: Host = HOST,
 ): Promise<unknown> | undefined {
   const off = ms === undefined;
   const end = t0 + (off ? 1000 : ms);
-  const spin = Math.min(end - t0, SPIN_MS);
+  const spin = Math.min(end - t0, spinMs);
   while (Atomics.load(wake, 0) === value && h.now() - t0 < spin);
   if (off) {
     if (t.due() && Atomics.load(wake, 0) === value) return t.pass(wake, value, end - h.now());

@@ -111,14 +111,23 @@ indexes of their instance).
   boundary with nothing new takes no lock: the signal word, the maintenance flag, the clock, the
   timer levels, the IRQ atomic.
 - **Signals:** RX and DEVICE are taken by the first vCPU that sees them (`fetch_and`); STOP isn't
-  cleared by the core (every vCPU must see it). **Wake words:** a vCPU with nothing to run
+  cleared by the core (every vCPU must see it). A host signal wakes every vCPU, and the idle ones that find it taken
+  return `IDLE` again with nothing retired: counted (PERF loop 83), ~300 such exits a second in Firefox's pages
+  session, 240 in a 4-vCPU boot, under one an idle guest's (whose idles end at their timers), ~1.7% of one host core at
+  most on the Mac (each ~11 µs in the core plus its poll). Waking one taker instead would need its own no-missed-wake
+  argument and a taker that isn't stalled; skipping the poll after such an exit gains less still, and those polls end
+  in a wake-up as often as any (16% against 12% on the pages session): neither is built. **Wake words:** a vCPU with nothing to run
   returns `IDLE` with its wake word as read *before* it looked for work; everything that makes
   work for it (an interrupt line going up, CPU_ON, a drained queue it waits on, a host signal)
   changes that state first, then bumps the word and notifies it, so the host's `Atomics.wait(word,
   wake)` can't miss a wake-up.
 - **WFI** returns `IDLE` (value: ns to the vCPU's own deadline) unless an interrupt is signaled
-  to it (the worker polls its wake word for 50 µs before `Atomics.wait`: a futex wake-up costs
-  ~17 µs in the dev VM, and the stress's pingpong went from 34 to 10 µs a hand-off), then sleeps to its deadline by
+  to it (the worker polls its wake word for 20 µs before `Atomics.wait`, `SPIN_MS`: a wake-up that comes soon, like the
+  atomics stress's pingpong's futex hand-offs, is caught without a futex wake, ~11 µs a round on the Mac with a poll of
+  10-100 µs and 2.5× that with none, the dev VM's needing 20; every other idle pays the poll whole, and only 12% of
+  them ended in a wake-up in Firefox's pages session, so 20 µs instead of M7 loop 8's 50 took 2.8% off the pages
+  session's renderer CPU and 12% off an idle guest's, the guest's speed unchanged; none took twice that but slowed the
+  hand-offs: bench/boot/REPORT.md "PERF loop 83"), then sleeps to its deadline by
   waits of 2/3 of the time left and a spin of the last 40 µs (`web/idle-wait.ts`, PERF loop 58): a timed wait comes
   back late by a share of its timeout (macOS's timer leeway: in Chromium ~130 µs at the median of a ~1 ms wait, ~470 µs
   of ~4 ms, up to ~50% at the p99; in Node's workers there nearer 50%; Lima's Linux ~180 µs), so one wait to the

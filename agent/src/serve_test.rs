@@ -1515,9 +1515,20 @@ fn grows_a_disks_last_partition_and_its_mounted_filesystem() {
         ask(&mut h, "waarm64-d1", 64 * MIB),
         ("waarm64-d1".into(), part::NOTHING, fs::NOTHING, 0, p1)
     );
-    // One GROW per disk at a time: a second for it while the first waits or runs is answered by the first's GROWN.
+    // One GROW per disk at a time: a second for it while the first waits or runs is answered by the first's GROWN. The
+    // three in one write, so the agent reads them in one read, before it can reap the first's child (sent apart, a
+    // first that ended before the second was read was answered, and the second again: seen in scripts/ci.sh under load).
+    let mut out = Vec::new();
     for s in ["waarm64-d1", "waarm64-d1", "waarm64-nope"] {
-        h.page.send(frame::GROW, &grow_frame(s, 64 * MIB));
+        assert!(frame::encode(
+            frame::GROW,
+            &grow_frame(s, 64 * MIB),
+            &mut out
+        ));
+    }
+    let mut at = 0;
+    while at < out.len() {
+        at += write(&h.page.fd, &out[at..]).unwrap();
     }
     let mut got = Vec::new();
     while let Some(p) = h.page.next(frame::GROWN, 1000) {

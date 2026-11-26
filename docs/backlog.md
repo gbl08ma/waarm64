@@ -1195,6 +1195,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   (MMU-off) `jit_new` vCPUs, so the transfer cache's probe, the forward and backward by-VA links, the miss function
   and the guarded chains' polls are covered only by the parallel boots and the spin tests. A `jit_new` vCPU at EL1
   with the MMU on (as `setupSpill`'s page tables, but through `jit_run_exit`) in the polled core would add them.
+- **An idle vCPU's poll that adapts** (PERF loop 83, bench/boot/REPORT.md): every idle polls its wake word 20 µs
+  (`SPIN_MS`) before it sleeps, and only 12% of those polls end in a wake-up in Firefox's pages session, none in an idle
+  guest (its idles end at their timers), against 16-30% where devices or futex hand-offs wake the vCPUs. A poll per
+  vCPU that drops after polls that caught nothing and comes back once a sleep ends by a wake-up soon after it began
+  would keep the hand-offs (the atomics stress's `pingpong`, `bench/boot/results/perf83/pingpong.ts`) and save what's
+  left of the poll's cost: ~4.5% of one core on the pages session's renderers (the 0 µs arm's −5.8% less the kept
+  −2.8%) and ~1.1 points of an idle 4-vCPU guest's host CPU on the Mac. Measure as loop 83 did (`idle-cpu.ts`, the
+  pages session's `cpuS`, the pingpong in the Mac's Node and the dev VM).
 - **Parallel `make`** as a scaling workload: `images/debian-tools` has gcc and make now, but no harness boots it at
   N vCPUs with a source tree and times `make -jN`; the 4-vCPU `go build` loop from `debian-go.waarm64snap` is the
   compile workload in use meanwhile.

@@ -50,6 +50,8 @@ export type VcpuJob = {
    * the vCPU threads").
    */
   yieldMs?: number;
+  /** How long an idle vCPU polls its wake word before it sleeps, in ms (default `SPIN_MS`: web/idle-wait.ts `idle`). */
+  spinMs?: number;
 };
 export type VcpuEnd =
   | { type: 'exit'; cpu: number; kind: number; value: bigint; x: bigint[] }
@@ -116,7 +118,8 @@ async function runCpu(j: VcpuJob, exports: WebAssembly.Exports): Promise<VcpuEnd
       case Exit.IDLE: {
         idleStalls?.forEach((f) => f()); // test only: a host stall with the vCPU OUT
         // Until its deadline or a wake-up; an off vCPU (no deadline) rechecks every second.
-        const asleep = idle(wake, Number(e[8]) | 0, e[2] === NONE ? undefined : Number(e[2]) / 1e6, back, turn);
+        const ms = e[2] === NONE ? undefined : Number(e[2]) / 1e6;
+        const asleep = idle(wake, Number(e[8]) | 0, ms, back, turn, j.spinMs);
         if (asleep) await asleep;
         continue;
       }

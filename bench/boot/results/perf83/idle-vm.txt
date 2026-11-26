@@ -1,0 +1,4 @@
+50 {"ncpus":4,"wallS":20.01,"cpuPct":11.84,"userPct":10.39,"sysPct":1.45,"idlesPerS":409,"mipsGuest":1.29}
+20 {"ncpus":4,"wallS":20.06,"cpuPct":10.83,"userPct":9.7,"sysPct":1.12,"idlesPerS":401,"mipsGuest":1.26}
+50 {"ncpus":4,"wallS":20,"cpuPct":12.12,"userPct":11.04,"sysPct":1.09,"idlesPerS":401,"mipsGuest":1.27}
+20 {"ncpus":4,"wallS":20.03,"cpuPct":10.96,"userPct":9.66,"sysPct":1.3,"idlesPerS":401,"mipsGuest":1.38}

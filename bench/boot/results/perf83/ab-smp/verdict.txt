@@ -1,0 +1,18 @@
+smp: 12 pairs against base
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  s0              12 +0.00% [-2.26%, +2.32%] open         -0.62% [-2.13%, +0.91%] open         -0.70% [-2.36%, +0.99%] open         -0.63% [-2.17%, +0.92%] open        
+  s20             12 -0.62% [-4.02%, +2.89%] open         -0.56% [-2.72%, +1.65%] open         -0.30% [-2.12%, +1.56%] open         -0.54% [-2.66%, +1.63%] open        
+  s100            12 -0.55% [-4.60%, +3.66%] open         -0.23% [-2.99%, +2.60%] open         +0.42% [-2.32%, +3.24%] open         -0.30% [-2.99%, +2.47%] open        
+  ended: the cap of 12 pairs
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  base                 9317       0.7172         2896       1244.9        360.8        82.93         2807   1168045632
+  s0                   9359       0.7178         3130       1235.8        360.5        82.82         2804   1167234424
+  s20                  9342       0.7175         2873       1238.4        360.7        82.77         2789   1165920321
+  s100                 9354       0.7181         3375       1236.5        362.9        82.57         2810   1165784576
+  arm          compiled %   interp %    overdue      parks    modules  worker ms   ready ms  ready p50  ready p99  ready top top of any   stall ms     of any stall ms/s   out ms/s
+  base              94.54       5.46          0       9893       2505        579       0.32          1          2         12         16          7          9        1.0         76
+  s0                94.56       5.44          0       9875       2505        578       0.33          1          2         12         16          8          8        1.5         78
+  s20               94.57       5.43          0       9811       2488        578       0.33          1          2         16         16          8          8        1.6         80
+  s100              94.52       5.47          0       9880       2509        575       0.32          1          2         16         16          8         14        1.1         80
+arms: base 9784749 bytes; s0 9784749 bytes ?vspin=0; s20 9784749 bytes ?vspin=20; s100 9784749 bytes ?vspin=100
+rule: a pair a fresh browser (warm-up same, 1 round), pairs 4-12, band ±0.5%, stop on wall, each interval's tail 2.00e-3 (0.01 over all its looks, an interval: several arms and measures each take that chance); Chromium 158.0.8127.88
