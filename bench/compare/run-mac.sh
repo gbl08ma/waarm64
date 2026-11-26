@@ -6,6 +6,8 @@
 # peers are opened on their own sites from there. Run nothing in the VM meanwhile (it shares the Mac's cores), and
 # bench/gpu/mac-leftovers.sh after.
 #   [MAC_TIMEOUT=s, the Mac side's bound, 2400] bench/compare/run-mac.sh <name> [bench/compare/run.ts args]   -> bench/compare/results/<name>.json
+# and the screenshots, bench/results/local/compare-*.png, both moved back (nothing of a run stays on the Mac:
+# bench/mac-out.sh), also from a failed run.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 name=$1; shift
@@ -23,7 +25,8 @@ rsync -a target/images/edk2/QEMU_EFI.fd target/images/edk2/LICENSES.txt "$HOST:$
 rsync -aL target/images/debian/disk.qcow2 "$HOST:$DEST/target/images/debian/"
 rsync -a target/images/agent/waarm64-agent.gz "$HOST:$DEST/target/images/agent/"
 commit=$(git rev-parse --short=12 HEAD)
+. bench/mac-out.sh
+trap 'rc=$?; mac_move "$HOST" "$DEST" bench/compare/results "bench/results/local/$name.json" || { m=$?; [ $rc -ne 0 ] || rc=$m; }; mac_move "$HOST" "$DEST" bench/results/local "bench/results/local/compare-*.png" 2>/dev/null || true; exit $rc' EXIT
 ssh "$HOST" "cd $DEST && export PATH=/opt/homebrew/bin:\$PATH WAARM64_TAILSCALE=0 WAARM64_COMMIT=$commit && \
   export CHROMIUM=\"$MAC_CHROME\" && \
   perl -e 'alarm shift; exec @ARGV' ${MAC_TIMEOUT:-2400} node --disable-warning=ExperimentalWarning bench/compare/run.ts --out \$PWD/bench/results/local/$name.json $*"
-rsync -a "$HOST:$DEST/bench/results/local/$name.json" bench/compare/results/

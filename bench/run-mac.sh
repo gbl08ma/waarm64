@@ -5,6 +5,8 @@
 # wasm core and the Alpine images are copied to ~/waarm64-bench there (~600 MB), the packages installed there; it
 # needs Node, npm and the Chromium that Playwright installed. Nothing else on the host is touched.
 #   [WASM=core.wasm] [MAC_TIMEOUT=s, the Mac side's bound, 580] bench/run-mac.sh <name> [bench/run.ts args]   -> bench/results/local/mac/<name>.json
+# The JSON is moved back (nothing of a run stays on the Mac: bench/mac-out.sh), and a --profile=<dir>'s profiles that
+# run.ts left there (it removes them unless it was ended) deleted, also after a failed run.
 # e.g. bench/run-mac.sh user-default --page bench/boot/index.html --only alpine_user_jit
 #      bench/run-mac.sh io-profile --page bench/io/index.html --input target/bench/io-raw.img --only io --profile=target/bench-profiles
 set -euo pipefail
@@ -26,14 +28,14 @@ rsync -a target/images/alpine target/images/alpine-user "$HOST:$DEST/target/imag
 rsync -a --exclude '*defconfig' --exclude 'System.map' target/images/linux target/images/buildroot "$HOST:$DEST/target/images/"
 rsync -a target/bench/coremark.bin target/bench/coremark-linux "$HOST:$DEST/target/bench/"
 # A page's chosen file (bench/io's `--input target/bench/…`), at the same path there.
-prev=
+prev= profiles=()
 for a in "$@"; do
-  case $prev in --input) rsync -a "$a" "$HOST:$DEST/$a" ;; esac
-  case $a in --input=*) rsync -a "${a#--input=}" "$HOST:$DEST/${a#--input=}" ;; esac
+  case $prev in --input) rsync -a "$a" "$HOST:$DEST/$a" ;; --profile) profiles+=("$a/profile-*") ;; esac
+  case $a in --input=*) rsync -a "${a#--input=}" "$HOST:$DEST/${a#--input=}" ;; --profile=*) profiles+=("${a#--profile=}/profile-*") ;; esac
   prev=$a
 done
+. bench/mac-out.sh
+trap 'rc=$?; mac_move "$HOST" "$DEST" "$(dirname "bench/results/local/mac/$name")" "bench/results/local/$name.json" || { m=$?; [ $rc -ne 0 ] || rc=$m; }; mac_rm "$HOST" "$DEST" "${profiles[@]}" || true; exit $rc' EXIT
 ssh "$HOST" "cd $DEST && export PATH=/opt/homebrew/bin:\$PATH WAARM64_TAILSCALE=0 && \
   export CHROMIUM=\"$MAC_CHROME\" && \
   perl -e 'alarm shift; exec @ARGV' ${MAC_TIMEOUT:-580} node --disable-warning=ExperimentalWarning bench/run.ts --out bench/results/local/$name.json $*"
-mkdir -p bench/results/local/mac
-rsync -a "$HOST:$DEST/bench/results/local/$name.json" bench/results/local/mac/

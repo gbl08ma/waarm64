@@ -42,7 +42,8 @@ page with the tests' Debian), runs it with the guest's own perl, and times each 
 script's first and last lines on the console; a fresh boot a round, the systems alternated, every kernel's checksum
 compared. The page's speed figures (`web/app/intro/speed.ts`) are its medians' ratios on the Mac host:
 `bench/compare/run-mac.sh <name> [args]` copies the page, the core, the firmware and the Debian image there and runs
-the same harness on its Chrome for Testing (the VM idle meanwhile; bench/gpu/mac-leftovers.sh after). ~17 min at size
+the same harness on its Chrome for Testing (the VM idle meanwhile; bench/gpu/mac-leftovers.sh after), its JSON moved
+back into `bench/compare/results/`. ~17 min at size
 8 on either; alone on the machine, under `timeout`.
 
 **A demo as a visitor meets it** (`bench/demo/`, beside the harness; journal in `bench/demo/REPORT.md`):
@@ -236,8 +237,11 @@ and a Suspend, then the page opened
   (frontend.md "Errors": a tab that went away with its machine running), which a closed browser leaves and which holds the next run's autostart on "the tab closed while
   it was running"; a run killed before its end leaves it, and the next one drops it first.
 - **On the Mac's GPU:** `bench/snapz/probe-mac.sh <outdir> <name>=<web dir>...` (arms by their web/ trees, alternated
-  by rounds; the disks and warm snapshot `bench/gpu/sway-mac.sh` left there, hard-linked; no memory: no /proc). The
-  warm snapshot's caps are SwiftShader's, so it loads with 3D off there: a load's start is measured, not the 3D state.
+  by rounds; the desktop's disks copied there, hard links to `bench/gpu/sway-mac.sh`'s copies when they're the same
+  files, and the warm snapshot, `SNAPSHOT` (default `target/snapbench/pages.waarm64snap`), each at its fixed path; no
+  memory: no /proc; each round's JSON and log moved into `<outdir>`, the probe's profile and saves deleted there: devenv.md
+  "The Mac host"). The warm snapshot's caps are SwiftShader's, so it loads with 3D off there: a load's start is
+  measured, not the 3D state.
 - **The 3D read-back alone:** `bench/snapz/readback.ts` (`WEB=<dir>` an arm's web/, `ROUNDS`, `SAVES`) loads the warm
   desktop's 40 levels into a VirglRenderer on a WebGL2 canvas and times `save()`; `bench/snapz/readback-mac.sh
   <outdir> <name>=<web dir>...` on the Mac's GPU (bench/boot/REPORT.md "PERF loop 85").
@@ -361,7 +365,8 @@ and instructions; bench/boot/REPORT.md "BENCH loop 2"). It prints a verdict and 
   a real cost in cores and energy that the clock of one vCPU doesn't pay. Instructions decide at once when the
   change is to how many instructions the same work takes, and say nothing of waiting, caches or tiers.
 - **Running it:** in the background, alone: it takes the CI lock exclusive (the dev VM shares the Mac's cores), is
-  bounded on the Mac and here, and ends with `bench/gpu/mac-leftovers.sh --kill`. `<outdir>/ab.json` has every
+  bounded on the Mac and here, moves the run's output back from there (also from a run that was ended), and ends
+  with `bench/gpu/mac-leftovers.sh --kill`. `<outdir>/ab.json` has every
   sample in the order run (`node bench/ab.ts --analyze <outdir>` prints the verdict again), `log.txt` each pair as it
   ran. Build each arm into a file of its own first (`cp` the wasm aside; restore the source and rebuild after).
 
@@ -466,8 +471,8 @@ at 160 MiB against 98.6% at 320 in all six sessions of 320, the A/A within 0.1 p
   benchmark: [v8.md](v8.md)). For what a macOS user gets, and before ranking work by a profile
   taken here, run the page on the Mac host's Chromium: `bench/run-mac.sh <name> --page
   bench/boot/index.html --only alpine_user_jit` (it copies the pages, the core and the Alpine and
-  Buildroot images to `~/waarm64-bench` there; `WASM=` picks a core; the Mac side's run is bounded by `MAC_TIMEOUT`, 580 s by default; results land in
-  `bench/results/local/mac/`). `--config bounds-checks` there shows the checks' cost on one machine.
+  Buildroot images to `~/waarm64-bench` there; `WASM=` picks a core; the Mac side's run is bounded by `MAC_TIMEOUT`, 580 s by default; results are
+  moved back into `bench/results/local/mac/`, as every `*-mac.sh` moves its run's output: devenv.md "The Mac host"). `--config bounds-checks` there shows the checks' cost on one machine.
 - Benchmarks run in the dev VM on the M4. Keep the `oracle` VM idle, check `ps` for leftover
   experiments first, and don't rebuild or edit served sources while a benchmark runs.
 - **Keep every benchmark command under the Bash tool's ~600 s cap** (fewer boots per call, or

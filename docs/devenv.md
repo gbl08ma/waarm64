@@ -13,17 +13,52 @@ the x86_64 desktop (which the user needs for other work).
 - From outside: `ssh macmini.lan /opt/homebrew/bin/limactl shell dev`. Inside, `macmini.lan` points at the Mac host
   (`~/.ssh/config`). The `oracle` VM (Debian 13, 4 vCPUs, 4 GiB) shares the Mac:
   `ssh macmini.lan /opt/homebrew/bin/limactl shell oracle <cmd>`.
-- The Mac host runs real-GPU benchmarks from `~/waarm64-gpu-bench` (`bench/gpu/sway-mac.sh` copies what they need;
-  nothing is installed there; its disk has little room: keep it small). Their browser is the current Stable Chrome
-  for Testing, which `bench/mac-chrome.sh` (every `*-mac.sh` sources it) fetches into `~/waarm64-chrome/<version>/` when
-  Stable moves, not Playwright's own download: that lags Stable and is an early build of its milestone (153.0.8010.12
-  read clobbered immediates in indirect dispatches, which 153's release didn't: GD G4). After every run on the Mac (not the VM's own CI,
-  which can't use its GPU), `bench/gpu/mac-leftovers.sh` says the Mac's GPU utilization, its load, any Chrome for Testing no run owns
-  and any QEMU no ssh session or Lima owns (an orphaned `tests/baremetal/oracle.sh --hvf` run's; `--kill` ends those, by PID): a run that hangs the GPU leaves its browser behind (the harness's alarm ends node,
-  not Chrome), and a GPU held at 100% throttles the whole Mac, the dev VM's CI with it (GD G4: five such browsers made
-  CI's timing tests fail for an hour). A GPU process stuck exiting can't be ended: only a restart of the Mac frees it.
+- The Mac host runs the real-GPU and macOS benchmarks: [The Mac host](#the-mac-host).
 - Side checkouts: `../waarm64-exp` and `../waarm64-base` (detached worktrees for A/B experiments).
 - Benchmark numbers from the x86_64 desktop (M0 to M5 step 7) aren't comparable with the VM's.
+
+## The Mac host
+
+The Mac (`macmini.lan`) runs what needs its GPU or macOS's V8 (no explicit wasm bounds checks: [v8.md](v8.md)). The
+`*-mac.sh` scripts copy what a run needs into a mirror in its home and run it there; nothing is installed there (Node,
+npm and Homebrew's tools were there already). **Its disk has little room** (its data volume reached 94% on
+2026-11-26, from per-run output left behind): keep it small. The browser is the current Stable Chrome for Testing,
+which `bench/mac-chrome.sh` (every `*-mac.sh` sources it) fetches into `~/waarm64-chrome/<version>/` when Stable moves,
+not Playwright's own download: that lags Stable and is an early build of its milestone (153.0.8010.12 read clobbered
+immediates in indirect dispatches, which 153's release didn't: GD G4).
+
+Its directories (`bench/mac-out.sh` lists the mirrors, ours besides, and where runs write, for `mac-leftovers.sh`):
+
+| Directory | Whose | What it holds |
+|---|---|---|
+| `~/waarm64-bench` | `bench/run-mac.sh`, `bench/ab-mac.sh`, `bench/compare/run-mac.sh` (and `bench/boot/results/perf83/idle-mac.sh` after them) | the pages, the packages, the core, the A/B arms' cores (`target/ab/`), the Alpine and Buildroot images, the Debian image and firmware |
+| `~/waarm64-bench-<tree>` | `bench/ab-mac.sh` (an arm `@<tree>`) | that checkout's host code and pages; its images hard links to `~/waarm64-bench`'s |
+| `~/waarm64-gpu-bench` | `bench/gpu/sway-mac.sh` (and `bench/gpu/ab-mac.sh`, `bench/vulkan/green.sh` through it), `bench/gpu/run-mac.sh`, `bench/vulkan/mac*.sh`, `bench/video/*-mac.sh` | the pages, the packages, the core, `venus.wasm`, the disks at their paths in the repository (the desktop guests, Debian, dEQP's, Godot's, vkd3d's, the media disk, …); `target/in/`: an input from outside the repository (an image at an absolute path, `FROM_SNAPSHOT`), alone in its directory; `target/replay/`, `target/tint-time/`: those scripts' inputs; `vulkan/` (LunarG's SDK, the scene and its build) and `vulkan-web/`: `bench/vulkan/mac.sh`'s |
+| `~/waarm64-snapz-bench` | `bench/snapz/probe-mac.sh`, `bench/snapz/readback-mac.sh` | the probe's disks (hard links to `~/waarm64-gpu-bench`'s when they're the same files) and warm snapshot; `arms/`: the read-back's arms' web/ trees (the last run's) |
+| `~/waarm64-chrome` | `bench/mac-chrome.sh` | Chrome for Testing, the two newest versions |
+| `~/waarm64-net-test` | `bench/net/local-ipv6.ts mac` | the network helper |
+| `~/waarm64-tailcat` | by hand ([testing.md](testing.md): the exit node's check) | tailcat, built here for macOS |
+| `/tmp/waarm64-baremetal`, `/tmp/waarm64-harness` | `tests/baremetal/oracle.sh --hvf`, `tools/corpus/run.ts` | the oracles' inputs |
+
+All of it is input at fixed paths, which each run overwrites, so it doesn't pile up (except by a new name: a new
+image, another tree's mirror). **A run writes only its output, and only under a mirror's `bench/results/local/`,
+`vulkan/results/` or `vulkan-web/results/`**, `target/snapz/` (the probe's profile, saves and copies) and a `bench/run.ts
+--profile` directory's `profile-*`. Each script moves its run's output back here at its end (`rsync
+--remove-source-files`: what arrived is deleted there, what didn't stays) into its local out directory, also when the run
+failed or the script was ended by a timeout (an `EXIT` trap: `bench/mac-out.sh`'s `mac_move_at_exit`), and deletes what
+it doesn't bring back (the probe's profile and saves). A profile kept on purpose (`sway-mac.sh`'s `WAARM64_PROFILE`) is
+the user's, not a run's. A new script that runs on the Mac does the same: inputs at fixed paths, its output moved back
+through `bench/mac-out.sh`, any new directory added to its lists.
+
+After every run on the Mac (not the VM's own CI, which can't use its GPU), **`bench/gpu/mac-leftovers.sh`** reports:
+first the disk (any per-run output left, from a run that was killed or couldn't move it; each of our directories'
+size; any `~/waarm64*` directory no script owns, reported and never deleted; the data volume's free space, a warning
+under 40 GiB), then the GPU's utilization, the load, any Chrome for Testing no run owns and any QEMU no ssh session or
+Lima owns (an orphaned `tests/baremetal/oracle.sh --hvf` run's); its last line sums it up. `--kill` ends those
+processes, by PID, and deletes the per-run output, nothing else. A run that hangs the GPU leaves its browser behind
+(the harness's alarm ends node, not Chrome), and a GPU held at 100% throttles the whole Mac, the dev VM's CI with it
+(GD G4: five such browsers made CI's timing tests fail for an hour). A GPU process stuck exiting can't be ended: only a
+restart of the Mac frees it.
 
 ## Worktrees
 

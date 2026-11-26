@@ -8,7 +8,7 @@
 # variables: WORKLOADS (default `node`; `user`, `boot`, `smp`, several with commas), MIN, CAP (pairs: 4, 12), BAND (0.5, percent), OVERALL (0.01),
 # STOP (`cycles,wall`; `wall` on `smp`), WARM (`same`), ROUNDS (1), BUDGET (1500: seconds for the whole run, after which a workload
 # ends at its pair and the ones after it aren't run).
-# Into <outdir>/: ab.json (every sample), verdict.txt (printed too), log.txt. Bounded on the Mac (the budget and
+# Into <outdir>/: ab.json (every sample), verdict.txt (printed too), log.txt (moved from the Mac). Bounded on the Mac (the budget and
 # 400 s) and here; takes the machine's CI lock exclusive (the dev VM shares the Mac's cores: never beside
 # scripts/ci*.sh or another Mac run) and runs bench/gpu/mac-leftovers.sh --kill at its end. Run it in the background.
 set -euo pipefail
@@ -66,13 +66,19 @@ for arm in "$@"; do
 done
 aa=; [[ ${AA:-0} == 0 ]] || aa=--aa
 code=0
+. bench/mac-out.sh
+# A run ended before its move below (a timeout, a signal) still brings back what it wrote (bench/mac-out.sh).
+moved=
+trap '[[ -n $moved ]] || mac_move "$HOST" "$DEST" "$out" bench/results/local/ab-run/ > /dev/null 2>&1 || true' EXIT
 timeout $((budget + 500)) ssh "$HOST" "cd $DEST && export PATH=/opt/homebrew/bin:\$PATH WAARM64_TAILSCALE=0 && \
   export CHROMIUM=\"$MAC_CHROME\" && rm -rf bench/results/local/ab-run && \
   perl -e 'alarm shift; exec @ARGV' $((budget + 400)) node --disable-warning=ExperimentalWarning bench/ab.ts --out bench/results/local/ab-run \
     --workloads ${WORKLOADS:-node} --min ${MIN:-4} --cap ${CAP:-12} --band ${BAND:-0.5} --overall ${OVERALL:-0.01} ${STOP:+--stop $STOP} --budget $budget --warm ${WARM:-same} --rounds ${ROUNDS:-1} $aa \
     $(printf "'%s' " "${args[@]}")" > /dev/null 2> "$out/log.txt" || code=$?
-# The results first, then the verdict from its file: whoever reads this script's output may be gone by now.
-rsync -a "$HOST:$DEST/bench/results/local/ab-run/" "$out/" || true
+# The results first (moved: nothing of a run stays on the Mac, bench/mac-out.sh), then the verdict from its file:
+# whoever reads this script's output may be gone by now.
+moved=1
+mac_move "$HOST" "$DEST" "$out" bench/results/local/ab-run/ || true
 # Nothing below may end the script before its clean-up and its own exit code: a reader gone, leftovers found.
 cat "$out/verdict.txt" 2> /dev/null || true
 [[ $code -eq 0 ]] || { echo "the run failed (exit $code); the end of $out/log.txt:"; tail -5 "$out/log.txt"; } || true

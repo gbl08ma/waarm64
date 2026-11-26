@@ -58,6 +58,8 @@ theory of the answer):
   gates without changing the code (loop 24's eager table, +12 ms `emitNs`).
 - `bench/gpu/mac-leftovers.sh` after every Mac run (`--kill` allowed); a killed run can leave its node harness behind:
   find it with `ps`, kill it by PID.
+- A loop creates no new directory on the Mac (or removes it at its end), and after its Mac runs the disk report of
+  `bench/gpu/mac-leftovers.sh` shows no per-run output left (docs/devenv.md "The Mac host").
 - Check each arm by a changed function's size (`tools/wasm-sizes.ts`), not `cmp`. `../waarm64-base` (a detached side
   checkout for base arms) shares `target/`: touch a core source after building there.
 - State the memory cost next to every speedup; ask the user before anything past a few tens of MiB.

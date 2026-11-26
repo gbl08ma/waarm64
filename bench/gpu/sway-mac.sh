@@ -3,6 +3,9 @@
 # Chromium, headless, temporary profile) with its GPU, from a copy of what the page needs in ~/waarm64-gpu-bench there
 # (as run-mac.sh: Node and playwright-core there; nothing else on the host is touched). The disk image is copied once.
 #   bench/gpu/sway-mac.sh <virgl|pixman|llvmpipe> <image.qcow2> <name>   -> bench/results/local/<name>/ (VIRGL_GPU as sway-load.ts)
+# and bench/results/local/<name>.* (log, vmstat, macos, gpu, rss), moved back at the end, also of a failed run: nothing
+# of a run stays on the Mac (bench/mac-out.sh). An input from outside the repository (an image at an absolute path,
+# FROM_SNAPSHOT) is at a fixed place there, target/in/, alone in its directory: the next run's replaces it.
 # SCRIPT=firefox-load.ts runs the Firefox harness instead (PHASES, CHURN, CHURN_S, PAGES, WARM_S, TIMELINE_ALL, PROFILE, SYSCALLS, QUERY, CHROMIUM_JS_FLAGS passed on), SCRIPT=../audio/avsync.ts the
 # A/V sync one (CLIPS, PHASE_S, MEDIA, MPV_ARGS, MPV_VARIANTS, SHIM, PROFILE, SYSCALLS, TIMELINE, DEBUG (DEBUG=pw:browser logs Chromium's output, e.g. CHROMIUM_ARGS=--js-flags=--trace-gc), FF_PREFS, VARIANTS, ROUNDS, NCPUS passed on; CHROMIUM_ARGS=--mute-audio keeps the Mac's speakers quiet), SCRIPT=../video/v1.ts
 # video V1's check (mode `-`: the script takes none; FRAMES, CLIPS, SHIM, CAPTURE passed on; the media disk, target/video/media.ext4, is
@@ -25,18 +28,33 @@ ssh "$HOST" "mkdir -p $DEST/tests" && rsync -a tests/page-ask.ts "$HOST:$DEST/te
 . bench/mac-packages.sh && mac_packages "$HOST" "$DEST"
 . bench/mac-chrome.sh && mac_chrome "$HOST"   # the current Stable Chrome for Testing there
 rsync -a "${WASM:-target/wasm32-unknown-unknown/release/waarm64_core.wasm}" "$HOST:$DEST/target/wasm32-unknown-unknown/release/waarm64_core.wasm"
+. bench/mac-out.sh
+# A file at target/in/<dir>/ there, under its own name, alone: the last run's input of another name deleted first (an
+# rsync filter that deletes the rest hangs the Mac's openrsync).
+put_alone() { # <file> <dir>
+  local n
+  n=$(basename "$1")
+  mac_bash "$HOST" "mkdir -p $DEST/target/in/$2 && cd $DEST/target/in/$2 && shopt -s nullglob dotglob && for f in *; do [ \"\$f\" = \"$n\" ] || rm -rf -- \"\$f\"; done"
+  rsync -a "$1" "$HOST:$DEST/target/in/$2/$n"
+}
 SNAP=
 if [ -n "${FROM_SNAPSHOT:-}" ]; then   # firefox-load.ts from a snapshot: the file, under its own name
-  SNAP=bench/results/local/$(basename "$FROM_SNAPSHOT")
-  rsync -a "$FROM_SNAPSHOT" "$HOST:$DEST/$SNAP"
+  SNAP=target/in/snapshot/$(basename "$FROM_SNAPSHOT")
+  put_alone "$FROM_SNAPSHOT" snapshot
 fi
 rsync -a target/images/edk2 "$HOST:$DEST/target/images/"
 rsync -a target/images/debian/disk.qcow2 "$HOST:$DEST/target/images/debian/"   # the page's own machine, which starts first
 # At its own path (relative to the repository), else under its own name: a snapshot loads only with the disk it was
 # taken on open, by the URL the page opened it at (web/app/main.ts).
-case $IMAGE in /*|../*) DISK=bench/results/local/$(basename "$IMAGE") ;; *) DISK=$IMAGE ;; esac
-ssh "$HOST" "mkdir -p $DEST/$(dirname "$DISK")"
-rsync -a "$IMAGE" "$HOST:$DEST/$DISK"
+case $IMAGE in
+  /*|../*)
+    DISK=target/in/disk/$(basename "$IMAGE")
+    put_alone "$IMAGE" disk ;;
+  *)
+    DISK=$IMAGE
+    ssh "$HOST" "mkdir -p $DEST/$(dirname "$DISK")"
+    rsync -a "$IMAGE" "$HOST:$DEST/$DISK" ;;
+esac
 if [ -f "${VENUS:-target/vk/venus.wasm}" ]; then   # Venus's renderer (vk/build.sh; VENUS=<venus.wasm> another build's): a machine with Vulkan (`gpu=virgl,vulkan`)
   ssh "$HOST" "mkdir -p $DEST/target/vk" && rsync -a "${VENUS:-target/vk/venus.wasm}" "$HOST:$DEST/target/vk/venus.wasm"
 fi
@@ -76,10 +94,11 @@ if [ -f target/ffpages/pages.ext4 ]; then   # firefox-load.ts's real pages (benc
   ssh "$HOST" "mkdir -p $DEST/target/ffpages" && rsync -a target/ffpages/pages.ext4 "$HOST:$DEST/target/ffpages/"
 fi
 rc=0
+# The run's output moved back here and deleted there, also when it failed or this script was ended; a failed move
+# fails a run that passed (what didn't arrive stays there, for bench/gpu/mac-leftovers.sh to report).
+mac_move_at_exit "$HOST" "$DEST" "$(dirname "bench/results/local/$NAME")" "bench/results/local/$NAME" "bench/results/local/$NAME.*"
 ssh "$HOST" "cd $DEST && export PATH=/opt/homebrew/bin:\$PATH WAARM64_TAILSCALE=0 VIRGL_GPU=${VIRGL_GPU:-virgl-null} PHASES=${PHASES:-} CHURN='${CHURN:-}' CHURN_S=${CHURN_S:-} WARM_S=${WARM_S:-30} HEADED=${HEADED:-} CLIPS=${CLIPS:-} FRAMES=${FRAMES:-} PHASE_S=${PHASE_S:-} MEDIA=${MEDIA:-} PROFILE=${PROFILE:-} SYSCALLS=${SYSCALLS:-} TIMELINE=${TIMELINE:-} DEBUG=${DEBUG:-} FF_PREFS='${FF_PREFS:-}' VARIANTS='${VARIANTS:-}' MPV_ARGS='${MPV_ARGS:-}' MPV_VARIANTS='${MPV_VARIANTS:-}' MPV_ARMS='${MPV_ARMS:-}' PRE='${PRE:-}' PAIRS='${PAIRS:-}' SHOT2=${SHOT2:-} GRAB=${GRAB:-} REGRAB=${REGRAB:-} DIAG=${DIAG:-} MPV_ENV='${MPV_ENV:-}' GUEST_ENV='${GUEST_ENV:-}' CHECK=${CHECK:-} HOLD=${HOLD:-} GLQ=${GLQ:-300,4,640,480} ROUNDS=${ROUNDS:-1} NCPUS=${NCPUS:-4} DEMOS=${DEMOS:-} RENDERERS=${RENDERERS:-} FISH='${FISH-1 100 1000 10000}' TOOLKIT='${TOOLKIT-2000 8000}' MSAA='${MSAA:-1}' WARMUP=${WARMUP:-} SAMPLES=${SAMPLES:-} FRAMES=${FRAMES:-} SHIM=${SHIM:-} REPLAY=${REPLAY:-} GPU_KNOBS=${GPU_KNOBS:-} APPS='${APPS:-}' RAM_MIB=${RAM_MIB:-} SCREEN=${SCREEN:-} WAYS='${WAYS:-}' FORMAT=${FORMAT:-} CAPTURE=${CAPTURE:-} CHROMIUM_ARGS='${CHROMIUM_ARGS:-}' CHROMIUM_JS_FLAGS='${CHROMIUM_JS_FLAGS:-}' TIMELINE_ALL=${TIMELINE_ALL:-} PAGES=${PAGES:-} QUERY='${QUERY:-}' STRIDE=${STRIDE:-} OFFSET=${OFFSET:-} CASES=${CASES:-} DISK2=${DISK2:-} LIMIT_S=${LIMIT_S:-} DETAIL=${DETAIL:-} DETAIL_NOTSUPPORTED=${DETAIL_NOTSUPPORTED:-} QPA=${QPA:-} WAARM64_PROFILE=${WAARM64_PROFILE:-} RUNS='${RUNS:-}' RUN_S=${RUN_S:-} SHOT_S=${SHOT_S:-} LOG_LINES=${LOG_LINES:-} GODOT_ENV='${GODOT_ENV:-}' STORE_DUMP=${STORE_DUMP:-} PROJECTS='${PROJECTS:-}' ARMS='${ARMS:-}' ARM_S=${ARM_S:-} SETTLE_S=${SETTLE_S:-} FIRST_S=${FIRST_S:-} TESTS='${TESTS:-}' FAILED=${FAILED:-} FROM_SNAPSHOT=$SNAP JITLOG=${JITLOG:-} MEMLOG=${MEMLOG:-} MEMLOG_UASM=${MEMLOG_UASM:-} WAARM64_GUEST_USER=${WAARM64_GUEST_USER:-} BROWSE_S=${BROWSE_S:-} DWELL_S=${DWELL_S:-} CHUNK_S=${CHUNK_S:-} RESTART_S=${RESTART_S:-} && [ -n \"\$BROWSE_S\" ] || unset BROWSE_S; [ -n \"\$RESTART_S\" ] || unset RESTART_S; [ -n \"\$DWELL_S\" ] || unset DWELL_S; [ -n \"\$CHUNK_S\" ] || unset CHUNK_S; [ -n \"\$FROM_SNAPSHOT\" ] || unset FROM_SNAPSHOT; [ -n \"\$MEMLOG\" ] || unset MEMLOG; [ -n \"\$MEMLOG_UASM\" ] || unset MEMLOG_UASM; [ -n \"\$JITLOG\" ] || unset JITLOG; [ -n \"\$WAARM64_GUEST_USER\" ] || unset WAARM64_GUEST_USER; [ -n \"\$RUNS\" ] || unset RUNS; [ -n \"\$TESTS\" ] || unset TESTS; [ -n \"\$FAILED\" ] || unset FAILED; [ -n \"\$STORE_DUMP\" ] || unset STORE_DUMP; [ -n \"\$PROJECTS\" ] || unset PROJECTS; [ -n \"\$ARMS\" ] || unset ARMS; [ -n \"\$ARM_S\" ] || unset ARM_S; [ -n \"\$SETTLE_S\" ] || unset SETTLE_S; [ -n \"\$FIRST_S\" ] || unset FIRST_S; [ -n \"\$RUN_S\" ] || unset RUN_S; [ -n \"\$SHOT_S\" ] || unset SHOT_S; [ -n \"\$LOG_LINES\" ] || unset LOG_LINES; [ -n \"\$STRIDE\" ] || unset STRIDE; [ -n \"\$WAARM64_PROFILE\" ] || unset WAARM64_PROFILE; [ -n \"\$WARMUP\" ] || unset WARMUP; [ -n \"\$DEMOS\" ] || unset DEMOS; [ -n \"\$RENDERERS\" ] || unset RENDERERS; [ -n \"\$SAMPLES\" ] || unset SAMPLES; [ -n \"\$FRAMES\" ] || unset FRAMES; [ -n \"\$OFFSET\" ] || unset OFFSET; [ -n \"\$CASES\" ] || unset CASES; [ -n \"\$DISK2\" ] || unset DISK2; [ -n \"\$LIMIT_S\" ] || unset LIMIT_S; [ -n \"\$DETAIL\" ] || unset DETAIL; [ -n \"\$DETAIL_NOTSUPPORTED\" ] || unset DETAIL_NOTSUPPORTED; [ -n \"\$QPA\" ] || unset QPA; [ -n \"\$SHIM\" ] || unset SHIM; [ -n \"\$CAPTURE\" ] || unset CAPTURE; [ -n \"\$PHASES\" ] || unset PHASES; [ -n \"\$CHURN\" ] || unset CHURN; [ -n \"\$CHURN_S\" ] || unset CHURN_S; [ -n \"\$CLIPS\" ] || unset CLIPS; [ -n \"\$FRAMES\" ] || unset FRAMES; [ -n \"\$PHASE_S\" ] || unset PHASE_S; [ -n \"\$MEDIA\" ] || unset MEDIA; [ -n \"\$PROFILE\" ] || unset PROFILE; [ -n \"\$SYSCALLS\" ] || unset SYSCALLS; [ -n \"\$TIMELINE\" ] || unset TIMELINE; [ -n \"\$DEBUG\" ] || unset DEBUG; [ -n \"\$FF_PREFS\" ] || unset FF_PREFS; [ -n \"\$VARIANTS\" ] || unset VARIANTS; [ -n \"\$HEADED\" ] || unset HEADED; [ -n \"\$PAGES\" ] || unset PAGES; [ -n \"\$APPS\" ] || unset APPS; [ -n \"\$RAM_MIB\" ] || unset RAM_MIB; [ -n \"\$WAYS\" ] || unset WAYS; [ -n \"\$MPV_ARMS\" ] || unset MPV_ARMS; [ -n \"\$PAIRS\" ] || unset PAIRS; [ -n \"\$SHOT2\" ] || unset SHOT2; \
   export CHROMIUM=\"$MAC_CHROME\" && \
   rm -rf bench/results/local/$NAME bench/results/local/$NAME.rss && { vm_stat 1 | perl -ne '\$|=1; print time(), \" \", \$_' > bench/results/local/$NAME.vmstat & } && { [ -z \"${RSSLOG:-}\" ] || { bash bench/gpu/mac-rss.sh bench/results/local/$NAME.rss ${MAC_TIMEOUT:-500} & echo \$! > bench/results/local/$NAME.rsspid; }; } && perl -e 'alarm shift; exec @ARGV' ${MAC_TIMEOUT:-500} node --disable-warning=ExperimentalWarning bench/gpu/${SCRIPT:-sway-load.ts} $MODE $DISK bench/results/local/$NAME > bench/results/local/$NAME.log 2>&1; \
   rc=\$?; [ -f bench/results/local/$NAME.rsspid ] && kill \$(cat bench/results/local/$NAME.rsspid) && rm bench/results/local/$NAME.rsspid; sw_vers -productVersion > bench/results/local/$NAME.macos; pkill -x vm_stat; sysctl vm.swapusage >> bench/results/local/$NAME.vmstat; system_profiler SPDisplaysDataType | grep -E 'Chipset|Metal|Cores' > bench/results/local/$NAME.gpu; exit \$rc" || rc=$?
-mkdir -p bench/results/local
-rsync -a "$HOST:$DEST/bench/results/local/$NAME" "$HOST:$DEST/bench/results/local/$NAME.*" bench/results/local/
 exit $rc
