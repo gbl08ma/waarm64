@@ -9217,3 +9217,98 @@ polling `SPIN_MS` whatever `spinMs` says (1 fails). The plumbing to the page and
 agent reaped the first's child before reading the second it answered both (agent/src/serve_test.rs; now one write, so
 one read; with a 50 ms gap between the sends the old form fails every time). CI: `scripts/ci.sh` (736 s),
 `scripts/ci-jit.sh` (245 s) and `scripts/ci-debian.sh` (333 s) passed, each alone.
+
+## PERF loop 85: a load's start and a save's 3D read-back (2026-11-26)
+
+The PERF queue's row 20 (docs/backlog.md "Snapshots": "What is left of a load's start", "What stays on the machine
+worker during the pause"): three parts, each measured before anything was built. The dev VM (M4, Lima, 8 vCPUs),
+Chromium 155.0.8059.84 headless (SwiftShader), the persistent profile `target/snapz/profile`; the Mac host, Chrome for
+Testing 158.0.8127.88 headless on its GPU (ANGLE Metal, Apple M4). Raw: `results/perf85/` (`diag.py` and `diag/`,
+the marks on loop 84's tree and what they gave; `diag-new.py`, the same on this loop's; `rounds/` and
+`ab-desktop.txt`, the probe's A/B, `run-ab.sh` its driver; `mac-probe/`, `vm-readback/`, `mac-readback/`;
+`tools/`, the one-off measurements; `summary.json`).
+
+**What each part was** (`diag.py`: `[d85]` marks on the page, the GPU worker, the device worker, the machine worker's
+HEAD and the renderer's read-back; the desktop's warm snapshot through `bench/snapz/probe.ts`, `OPS=load,kept`):
+
+| part | measured | share |
+|---|---|---|
+| the start message waiting for the GPU worker's caps | the page's `Runner.start` to the GPU worker's `ready` 80-138 ms, then the lock, the disks and the folders 2-3 ms, then the start | see below: hidden behind the machine worker's own module load |
+| two HEADs a remote disk | dev server 1-2 ms each; a demo's chunked disk (disks.waarm64.com, `tools/demo.ts`): the machine worker's HEAD 1.5-2.2 ms and the device worker's manifest GET 1.0-1.5 ms, both from the browser's cache (the page's own check GETs the manifest, `max-age=300`); **a plain file on a server** (`tools/heads.ts`): every HEAD a round trip, 36-89 ms from the dev VM (a HEAD is never answered from the cache, an `immutable` file's either), and the device worker's sync one is on the start's path (`Devices.open`) | one round trip a remote plain disk a start: ~3-7% of a 1.2 s load; under the floor for the demos |
+| the 3D read-back copying each level twice | the kept save's `state` 206-224 ms: `readPixels` 75-79, the packing 73-75, the rest (allocations, buffers' copies, objects, transfer) ~60; by format (`diag2-desktop.log`), the three 2048² R8 glyph atlases 85 ms of it (34 ms reading RGBA, four times their bytes, 51 ms packing them in JS at ~4 ns a byte), RGBA8/BGRA8 88 MB a plain second copy | ~15% of the 0.99 s pause |
+
+**Built:**
+1. **The read-back reads a level straight into the saved bytes** when the GL reads it as stored (web/virgl-renderer.ts
+   `readsAsStored`, docs/graphics.md "Snapshots with 3D in use"): the format's reader reads its own upload format and
+   type at its size (RGBA8 and the BGR formats on it, RGB10_A2, the 32-bit RGBA ones), or the GL's own read pair
+   (`IMPLEMENTATION_COLOR_READ_FORMAT`/`_TYPE`, asked once per internal format) is that pair: R8 as RED bytes, RG8 as
+   RG, RGB565 and RGBA4 as shorts, the same on SwiftShader and on the Mac's Metal (`tools/readfmt.ts`). A packed box
+   only (a guest's strided read is packed as before); the scratch buffer is made only for the others. A guest's packed
+   read-back takes the same path. `bench/snapz/readback.ts` (new: the desktop's 40 levels, 103 MB, loaded into a
+   renderer in the page and saved; 5 saves a round, a browser a round, arms alternated), medians of the rounds'
+   medians, ms:
+
+   | | base (bc6852bf) | new | |
+   |---|---|---|---|
+   | dev VM, SwiftShader, 5 rounds | 143.0 (141.2-155.7) | 44.1 (42.3-46.4) | 3.2x |
+   | Mac, Metal, 5 rounds (`readback-mac.sh`) | 130.6 (127.2-131.9) | 39.2 (38.9-40.2) | 3.3x |
+
+2. **One HEAD a remote disk a start:** the machine worker's check (`checkDisks`) keeps each server's answer (size,
+   validator: `DiskHead`), and the device worker's `httpSource` takes it from the disk's spec (`BlkSpec.head`,
+   web/app/worker-devices.ts `finishSpecs`) instead of its own sync HEAD (docs/devices.md "blk"). Not measured on the
+   probe (its disks are the dev server's, ~1 ms a HEAD): the gain is the round trip above, for a plain file on a
+   server; the demos' chunked disks had none to lose.
+3. **The start message goes without waiting for the GPU worker** (web/app/run/runner.ts `#gpu`): the caps go in it if
+   the GPU worker was ready first, else in a `caps` message after it, which the machine worker waits for before it
+   makes the devices (`startCaps`: after its fetch and a snapshot's check pass, before anything is touched); a GPU
+   worker that fails after the start ends that worker and the machine starts again as 2D, as before. Measured
+   (`diag-new.py`): the page now posts the start 8-17 ms after `Runner.start`, but the machine worker's own module
+   load (the dev server compiles its graph per request) ends ~95-110 ms after it, beside the GPU worker's (~100 ms
+   to its `init`, 15 ms to `ready`): on the dev server the two loaded side by side before too, and the wait was
+   mostly hidden. The probe's load (below): the dev VM 1,166 → 1,159 ms, the Mac 801 → 791 (−0.6%, −1.2%, within or
+   at the floor). Kept as small and tested: a fresh browser's first WebGL2 context on the Mac's GPU takes 27-178 ms
+   (`tools/glstart.ts`; 10 ms on SwiftShader), so where the machine worker's modules load faster than that (a
+   build's bundle, not measured: the dev VM's `npm start` serves the user's) the start no longer waits on it.
+
+**The probe, before and after** (desktop, the dev VM, `OPS=load,kept`, `SETTLE_S=20`, a browser a round, base new new
+base base new new base; medians (ranges) of 4, ms; memory = the browser's RSS at the save's peak over the sample
+before it, MiB):
+
+| | base (bc6852bf) | new |
+|---|---|---|
+| load: wall (the file chosen to `running`) | 1,166 (1,155-1,259) | 1,159 (1,155-1,162) |
+| ... the worker's `total` | 963 (951-1,107) | 970 (951-971) |
+| kept snapshot: paused | 993 (982-1,026) | **874** (862-887) |
+| ... `state` (the 3D read-back in it) | 222 (215-227) | **107** (104-109) |
+| ... memory added | +151 (141-184) | +128 (123-128) |
+
+The pause 12% shorter, the save's memory 23 MiB lower (no scratch buffers). On the Mac (`mac-probe/`,
+`bench/snapz/probe-mac.sh`, new: `OPS=load`, 3 rounds an arm, base's first the profile's first): load wall 801
+(798-1,082) → 791 (756-793); the warm snapshot's caps are SwiftShader's, so it loads with 3D off there and the
+Mac's pause has no 3D state to measure (the read-back's Mac numbers are `readback.ts`'s, above).
+
+**Tests:** tests/virgl.test.ts "a read-back of texels the GL reads as stored goes straight into the bytes…" (a mock GL
+whose `readPixels` answers by position and layer: an array's layers at their places, a strided read at its stride,
+R8 straight with RED as the read pair and packed without, the same bytes, another read type not straight); the
+browser's snapshotFormats ("every format's contents… saved as they were loaded") and the trace saves on SwiftShader;
+tests/sync-xhr.test.ts (an HTTP source opened with a HEAD makes none; without, one); tests/worker-devices.test.ts
+(new: `finishSpecs` puts the late caps and each URL disk's HEAD on its device and nothing else; `startCaps`);
+tests/page-template-first.test.ts (the stand-in GPU worker failing before the start and after it, the 3D restore
+ended without caps and a boot after it; ready after the start, its caps following and the restore going on;
+tests/demo-fixture.ts's stand-in machine worker answers a 3D start without caps only once they come);
+tests/page-restore.test.ts's "a start opens its machine's record as it is once it holds the machine's lock" made its
+window with the GPU worker's start, which no longer comes first: it now holds the start's take of the lock instead
+(planted: the record not read again under the lock, caught). **Planted
+bugs**, each caught, the source restored: the straight read for any stride (the strided assertion), every layer into
+the first (the mock test and snapshotFormats), the read pair matched by format alone (the read-type assertion),
+`httpSource` ignoring the head (sync-xhr), `finishSpecs` not passing the head (worker-devices), `startCaps` taking
+the start's caps only (worker-devices), the start never owing its caps (the template's late-caps test).
+
+**The probe itself:** it leaves the page by a navigation at its end (a closed browser left the running machine's mark,
+which held the next run's autostart on "the tab closed while it was running") and drops a leftover mark first; it
+reads no memory where there's no /proc (the Mac).
+
+CI: `scripts/ci.sh` (708 s; its first runs failed on two files past the page's 300 lines and on
+tests/page-restore.test.ts's window, both fixed above), `scripts/ci-debian.sh` (258 s), `scripts/ci-machines.sh`
+(335 s), `scripts/ci-graphics.sh` (318 s) and `scripts/ci-deqp.sh` (655 s) passed, each alone.
+

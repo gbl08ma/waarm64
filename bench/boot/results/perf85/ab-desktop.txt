@@ -1,0 +1,17 @@
+== round 1: base at bc6852bf
+rc=0 round 0 load {"wallMs":1259,"phases":{"check":419,"checkRead":322,"checkCrc":408,"state":73,"ram":438,"disk":74,"pool":6 round 0 kept {"wallMs":1486,"kind":"kept","bytes":678509120,"pausedMs":1026,"stateMs":227,"blobBytes":114309668,"hintMs" 
+== round 2: new at 88e83de6
+rc=0 round 0 load {"wallMs":1155,"phases":{"check":334,"checkRead":244,"checkCrc":384,"state":75,"ram":387,"disk":65,"pool":6 round 0 kept {"wallMs":1219,"kind":"kept","bytes":678420115,"pausedMs":887,"stateMs":109,"blobBytes":114309668,"hintMs": 
+== round 3: new at 88e83de6
+rc=0 round 0 load {"wallMs":1158,"phases":{"check":321,"checkRead":241,"checkCrc":381,"state":76,"ram":404,"disk":72,"pool":6 round 0 kept {"wallMs":1198,"kind":"kept","bytes":678692020,"pausedMs":874,"stateMs":104,"blobBytes":114309668,"hintMs": 
+== round 4: base at bc6852bf
+rc=0 round 0 load {"wallMs":1164,"phases":{"check":326,"checkRead":242,"checkCrc":380,"state":70,"ram":388,"disk":66,"pool":6 round 0 kept {"wallMs":1247,"kind":"kept","bytes":678685180,"pausedMs":993,"stateMs":222,"blobBytes":114309668,"hintMs": 
+== round 5: base at bc6852bf
+rc=0 round 0 load {"wallMs":1155,"phases":{"check":321,"checkRead":242,"checkCrc":382,"state":70,"ram":399,"disk":65,"pool":6 round 0 kept {"wallMs":1284,"kind":"kept","bytes":678570925,"pausedMs":982,"stateMs":215,"blobBytes":114309668,"hintMs": 
+== round 6: new at 88e83de6
+rc=0 round 0 load {"wallMs":1162,"phases":{"check":330,"checkRead":246,"checkCrc":372,"state":70,"ram":397,"disk":74,"pool":6 round 0 kept {"wallMs":1181,"kind":"kept","bytes":678572421,"pausedMs":862,"stateMs":107,"blobBytes":114309668,"hintMs": 
+== round 7: new at 88e83de6
+rc=0 round 0 load {"wallMs":1159,"phases":{"check":322,"checkRead":237,"checkCrc":382,"state":68,"ram":397,"disk":67,"pool":6 round 0 kept {"wallMs":1235,"kind":"kept","bytes":678570730,"pausedMs":874,"stateMs":107,"blobBytes":114309668,"hintMs": 
+== round 8: base at bc6852bf
+rc=0 round 0 load {"wallMs":1166,"phases":{"check":321,"checkRead":239,"checkCrc":385,"state":70,"ram":391,"disk":67,"pool":6 round 0 kept {"wallMs":1336,"kind":"kept","bytes":678513759,"pausedMs":989,"stateMs":221,"blobBytes":114309668,"hintMs": 
+ALLDONE

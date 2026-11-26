@@ -28,7 +28,7 @@ type Lz = Awaited<ReturnType<typeof lzCodec>>;
  * What a start fetches: the core, and without a snapshot the kernel and initrd (whole) and the saved variable store
  * (a snapshot has it in its RAM, and needs no kernel); the disks are only checked. The guest agent is fetched only for a
  * `firmware` machine with it on (web/app/guest-agent.ts) and without a snapshot (a restored guest has its own); without
- * it (not built) the machine runs as it would, with no agent.
+ * it (not built) the machine runs as it would, with no agent. `heads`: what the disks' servers said of them (`checkDisks`).
  */
 export async function fetchParts(m: StartMessage, machine: Machine, snapshot: boolean, stopped: () => boolean) {
   const flash =
@@ -43,8 +43,8 @@ export async function fetchParts(m: StartMessage, machine: Machine, snapshot: bo
   const agent = m.config.devices.agent && machine.firmware && !snapshot ? agentBinary() : undefined;
   const images = snapshot ? [] : [machine.kernel, ...(machine.initrd ? [machine.initrd] : [])];
   const [wasm, kernel = new Uint8Array(0), initrd] = await download([CORE, ...images], machine, stopped);
-  await disks;
-  return { wasm, kernel, initrd, flash, agent };
+  const heads = await disks;
+  return { wasm, kernel, initrd, flash, agent, heads };
 }
 
 /** The machine a start makes: its vCPUs, RAM (MiB, and its split over memory 0 and the spill memories), transports, CPU features. */

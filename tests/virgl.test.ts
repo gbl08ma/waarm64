@@ -1005,6 +1005,61 @@ test('virgl renderer: an upload to DEPTH32F_STENCIL8, which WebGL2 takes no data
   assert.deepEqual(aligns.filter((v) => v !== 1), [], 'UNPACK_ALIGNMENT stays 1');
 });
 
+test('virgl renderer: a read-back of texels the GL reads as stored goes straight into the bytes, a layer at its place; a strided one and another read pair are packed as before', () => {
+  const byName = (n: string) => [...FORMATS.values()].find((f) => f.name === n)!;
+  const run = (name: string, o: { arraySize?: number; params?: Record<number, unknown> }, box: { w: number; h: number; d: number }, stride = 0) => {
+    const f = byName(name);
+    const gl = mockGl({ params: o.params });
+    gl.keepLog = true;
+    // readPixels answers each pixel as (x, y, the layer attached, component), into the view it's given: what a GL
+    // reading the level as stored would give, so both paths' bytes can be compared.
+    let layer = 0;
+    const reads: [number, number][] = [];
+    (gl as unknown as Record<string, unknown>).framebufferTextureLayer = (_t: number, _p: number, _x: unknown, _l: number, at: number) => { layer = at; };
+    (gl as unknown as Record<string, unknown>).framebufferTexture2D = () => { layer = 0; };
+    (gl as unknown as Record<string, unknown>).readPixels = (_x: number, _y: number, w: number, h: number, format: number, type: number, view: ArrayBufferView) => {
+      reads.push([format, type]);
+      const b = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+      const per = format === E.RGBA ? 4 : f.bpp;
+      for (let y = 0; y < h; y++)
+        for (let x = 0; x < w; x++) for (let c = 0; c < per; c++) b[(y * w + x) * per + c] = c < f.bpp ? (x + 8 * y + 64 * layer + 3 * c) & 0xff : 0xee;
+    };
+    const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)] });
+    const target = (o.arraySize ?? 1) > 1 ? 7 : 2;
+    r.createResource({ id: 1, target, format: f.id, bind: 2, width: 4, height: 3, depth: 1, arraySize: o.arraySize ?? 1, lastLevel: 0, samples: 0, flags: 0 });
+    const res = (r as unknown as { resources: Map<number, unknown> }).resources.get(1);
+    const out = (r as unknown as { readback(r: unknown, l: number, b: object, s: number, ls: number): Uint8Array }).readback(res, 0, { x: 0, y: 0, z: 0, ...box }, stride, 0);
+    return { out, reads };
+  };
+  const expected = (bpp: number, box: { w: number; h: number; d: number }, stride = box.w * bpp) => {
+    const e = new Uint8Array(stride * box.h * box.d - (stride - box.w * bpp));
+    for (let z = 0; z < box.d; z++)
+      for (let y = 0; y < box.h; y++)
+        for (let x = 0; x < box.w; x++) for (let c = 0; c < bpp; c++) e[z * stride * box.h + y * stride + x * bpp + c] = (x + 8 * y + 64 * z + 3 * c) & 0xff;
+    return e;
+  };
+  const same = (a: Uint8Array, b: Uint8Array) => a.length === b.length && Buffer.compare(a, b) === 0;
+  // RGBA8 (B8G8R8A8's GL format): read as stored, straight, every layer of an array at its own place.
+  const box = { w: 4, h: 3, d: 3 };
+  const a = run('B8G8R8A8_UNORM', { arraySize: 3 }, box);
+  assert.ok(same(a.out, expected(4, box)), 'each layer where it belongs');
+  assert.equal(a.reads.length, 3);
+  // Strided (a guest's transfer with its own stride): rows at the stride, as the copy put them.
+  const s = run('B8G8R8A8_UNORM', {}, { w: 3, h: 3, d: 1 }, 16);
+  assert.ok(same(s.out, expected(4, { w: 3, h: 3, d: 1 }, 16)), 'rows at the guest\'s stride');
+  // R8: straight where the GL's own read pair is RED bytes; read as RGBA and packed where it isn't: the same bytes.
+  const own = { [E.IMPLEMENTATION_COLOR_READ_FORMAT]: E.RED, [E.IMPLEMENTATION_COLOR_READ_TYPE]: E.UNSIGNED_BYTE };
+  const r8 = { w: 4, h: 3, d: 2 };
+  const straight = run('R8_UNORM', { arraySize: 2, params: own }, r8);
+  const packed = run('R8_UNORM', { arraySize: 2 }, r8);
+  assert.deepEqual(straight.reads, [[E.RED, E.UNSIGNED_BYTE], [E.RED, E.UNSIGNED_BYTE]], 'RED bytes, read as stored');
+  assert.deepEqual(packed.reads, [[E.RGBA, E.UNSIGNED_BYTE], [E.RGBA, E.UNSIGNED_BYTE]], 'RGBA, packed again');
+  assert.ok(same(straight.out, expected(1, r8)) && same(packed.out, expected(1, r8)), 'the same bytes either way');
+  // A read pair of another type (RED as floats) is no straight read.
+  const other = run('R8_UNORM', { params: { ...own, [E.IMPLEMENTATION_COLOR_READ_TYPE]: E.FLOAT } }, { w: 4, h: 3, d: 1 });
+  assert.deepEqual(other.reads, [[E.RGBA, E.UNSIGNED_BYTE]]);
+});
+
 test('virgl renderer: integer formats blit through GL\'s blit, and RGB10_A2UI reads back packed (dEQP-GLES3 fbo.blit)', () => {
   const byName = (n: string) => [...FORMATS.values()].find((f) => f.name === n)!;
   // RGB10_A2UI: four integers read, packed again.

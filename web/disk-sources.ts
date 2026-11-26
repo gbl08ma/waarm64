@@ -22,20 +22,33 @@ export type Source = {
   kept?: { block: number; has(k: number): boolean };
 };
 
+/** What a server's HEAD said of an image: its size and what says it changed (its ETag, or its modification time). */
+export type DiskHead = { size: number; validator?: string };
+
+/** A HEAD's answer as a `DiskHead`, by its headers (`get`: a `Response`'s or an `XMLHttpRequest`'s). */
+export const headOf = (get: (name: string) => string | null): DiskHead => ({
+  size: Number(get('content-length')),
+  validator: get('etag') ?? get('last-modified') ?? undefined,
+});
+
 /**
  * An image over HTTP range requests: synchronous XHRs (workers only), which block the thread, or `fetch` (`readAsync`),
  * which doesn't: the device worker in realtime mode reads by `fetch`, several requests at once, and the rest (the
  * deterministic mode, the image's header and tables at its opening, the disk jobs' workers) synchronously. The device
- * worker reads it through a block cache (web/blockcache.ts).
+ * worker reads it through a block cache (web/blockcache.ts). `head`: the server's answer to a HEAD made already (the
+ * machine worker's check that the disk is there, web/app/worker-fetch.ts `checkDisks`), else one is made here.
  */
-export function httpSource(url: string): Source & { validator?: string } {
-  // Bounded as `fetchBytes` is (`syncXhr`): a read every try of which timed out fails.
-  const head = syncXhr('HEAD', url);
-  if (head?.status !== 200) throw new Error(`${url}: ${head?.status ?? 'no answer'}`);
+export function httpSource(url: string, head?: DiskHead): Source & { validator?: string } {
+  if (!head) {
+    // Bounded as `fetchBytes` is (`syncXhr`): a read every try of which timed out fails.
+    const x = syncXhr('HEAD', url);
+    if (x?.status !== 200) throw new Error(`${url}: ${x?.status ?? 'no answer'}`);
+    head = headOf((n) => x.getResponseHeader(n));
+  }
   return {
-    size: Number(head.getResponseHeader('content-length')),
-    // What says the file changed (for the cache kept in OPFS): its ETag, or its modification time.
-    validator: head.getResponseHeader('etag') ?? head.getResponseHeader('last-modified') ?? undefined,
+    size: head.size,
+    // What says the file changed (for the cache kept in OPFS).
+    validator: head.validator,
     read(off, len) {
       const x = syncXhr('GET', url, `bytes=${off}-${off + len - 1}`);
       const b = x?.response as ArrayBuffer | null | undefined;
@@ -52,10 +65,10 @@ export function httpSource(url: string): Source & { validator?: string } {
  * A disk on a web server, as the device worker reads it: a chunked image (by its manifest) or a file, through the block
  * cache, over the blocks kept in OPFS where the image has an identity that changes with it (a chunked image's id, a
  * server's validator) and this browser has room (web/diskcache.ts). `chunked`: a chunked image's content id, which its
- * manifest must name.
+ * manifest must name; `head`, a file's HEAD made already (`httpSource`).
  */
-export async function remoteSource(url: string, keep: boolean, realtime: boolean, chunked?: string) {
-  const src = isManifestUrl(url) ? chunkedSource(url, undefined, chunked) : httpSource(url);
+export async function remoteSource(url: string, keep: boolean, realtime: boolean, chunked?: string, head?: DiskHead) {
+  const src = isManifestUrl(url) ? chunkedSource(url, undefined, chunked) : httpSource(url, head);
   const identity =
     'manifest' in src
       ? cacheIdentity({ chunked: src.manifest.id })

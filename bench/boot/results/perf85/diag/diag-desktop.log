@@ -1,0 +1,91 @@
+1:05:14 PM [vite] (client) [console.error] [d85] page.start 1795698314418.4
+[page console] [d85] page.start 1795698314418.4
+[page console] [d85] gpu.init 1795698314518.9
+1:05:14 PM [vite] (client) [console.error] [d85] page.gpuReady 1795698314538.6
+1:05:14 PM [vite] (client) [console.error] [d85] page.begin 1795698314538.8
+[page console] [d85] gpu.ready 1795698314538.4
+[page console] [d85] page.gpuReady 1795698314538.6
+[page console] [d85] page.begin 1795698314538.8
+1:05:14 PM [vite] (client) [console.error] [d85] page.owned 1795698314539.5
+[page console] [d85] page.owned 1795698314539.5
+1:05:14 PM [vite] (client) [console.error] [d85] page.opened 1795698314580.9
+[page console] [d85] page.opened 1795698314580.9
+1:05:14 PM [vite] (client) [console.error] [d85] page.prepared 1795698314581.7
+1:05:14 PM [vite] (client) [console.error] [d85] page.postStart 1795698314581.8
+[page console] [d85] page.prepared 1795698314581.7
+[page console] [d85] page.postStart 1795698314581.8
+[page console] [d85] mw.head 1.6 ms http://127.0.0.1:8231/target/archarm/desktop.qcow2
+[page console] [d85] mw.head 1.7 ms http://127.0.0.1:8231/target/ffpages/pages.ext4
+[page console] [d85] dw.head 1.4 ms http://127.0.0.1:8231/target/archarm/desktop.qcow2
+[page console] [d85] dw.head 0.8 ms http://127.0.0.1:8231/target/ffpages/pages.ext4
+stored machine 78ac2ddece9c file /home/gabriel.guest/Development/waarm64/target/snapz/desktop-956ac0ce5360.waarm64snap
+1:05:16 PM [vite] (client) [console.error] [d85] page.start 1795698316756.6
+[page console] [d85] page.start 1795698316756.6
+[page console] [d85] gpu.init 1795698316811.3
+1:05:16 PM [vite] (client) [console.error] [d85] page.gpuReady 1795698316836.2
+1:05:16 PM [vite] (client) [console.error] [d85] page.begin 1795698316836.4
+[page console] [d85] gpu.ready 1795698316835.8
+1:05:16 PM [vite] (client) [console.error] [d85] page.owned 1795698316836.6
+[page console] [d85] page.gpuReady 1795698316836.2
+[page console] [d85] page.begin 1795698316836.4
+[page console] [d85] page.owned 1795698316836.6
+1:05:16 PM [vite] (client) [console.error] [d85] page.opened 1795698316839.3
+1:05:16 PM [vite] (client) [console.error] [d85] page.prepared 1795698316839.4
+1:05:16 PM [vite] (client) [console.error] [d85] page.postStart 1795698316839.5
+[page console] [d85] page.opened 1795698316839.3
+[page console] [d85] page.prepared 1795698316839.4
+[page console] [d85] page.postStart 1795698316839.5
+[page console] [d85] mw.head 2.4 ms http://127.0.0.1:8231/target/archarm/desktop.qcow2
+[page console] [d85] mw.head 2.6 ms http://127.0.0.1:8231/target/ffpages/pages.ext4
+[page console] [d85] dw.head 2.2 ms http://127.0.0.1:8231/target/archarm/desktop.qcow2
+[page console] [d85] dw.head 1.2 ms http://127.0.0.1:8231/target/ffpages/pages.ext4
+round 0 load {"wallMs":1382,"phases":{"check":380,"checkRead":272,"checkCrc":399,"state":72,"ram":532,"disk":73,"pool":6,"read":375,"crc":427,"unpack":718,"apply":661,"prepare":32,"start":123,"total":1212}}
+[page console] [d85] gpu.save ms 222.2 readPixels 76.7 pack 73.7 directBytes 88354956 otherBytes 55181568 levels 40
+round 0 kept {"wallMs":1799,"kind":"kept","bytes":678546402,"pausedMs":1268,"stateMs":228,"blobBytes":114309668,"hintMs":16,"hinted":914358272,"id":"f3bde3dfc56a","phases":{"state":228,"blobs":46,"ram":841,"disk":148,"pool":6,"scan":294,"compress":3144,"crc":318,"sink":536,"poolWait":0,"poolReady":39,"pause":0,"copy":0,"close":414},"memory":{"before":{"rssMiB":3291,"pssMiB":2668},"peak":{"rssMiB":3425,"pssMiB":2799}}}
+1:05:39 PM [vite] (client) [console.error] [d85] page.start 1795698340004.0
+[page console] [d85] page.start 1795698340004.0
+[page console] [d85] gpu.init 1795698339998.3
+1:05:40 PM [vite] (client) [console.error] [d85] page.gpuReady 1795698340142.3
+1:05:40 PM [vite] (client) [console.error] [d85] page.begin 1795698340142.3
+[page console] [d85] gpu.ready 1795698340017.8
+1:05:40 PM [vite] (client) [console.error] [d85] page.owned 1795698340142.4
+[page console] [d85] page.gpuReady 1795698340142.3
+[page console] [d85] page.begin 1795698340142.3
+[page console] [d85] page.owned 1795698340142.4
+1:05:40 PM [vite] (client) [console.error] [d85] page.opened 1795698340144.6
+1:05:40 PM [vite] (client) [console.error] [d85] page.prepared 1795698340144.7
+1:05:40 PM [vite] (client) [console.error] [d85] page.postStart 1795698340144.7
+[page console] [d85] page.opened 1795698340144.6
+[page console] [d85] page.prepared 1795698340144.7
+[page console] [d85] page.postStart 1795698340144.7
+[page console] [d85] mw.head 1.9 ms http://127.0.0.1:8231/target/archarm/desktop.qcow2
+[page console] [d85] mw.head 2.0 ms http://127.0.0.1:8231/target/ffpages/pages.ext4
+[page console] [d85] dw.head 1.8 ms http://127.0.0.1:8231/target/archarm/desktop.qcow2
+[page console] [d85] dw.head 1.2 ms http://127.0.0.1:8231/target/ffpages/pages.ext4
+round 1 load {"wallMs":1366,"phases":{"check":356,"checkRead":263,"checkCrc":389,"state":77,"ram":432,"disk":133,"pool":6,"read":282,"crc":435,"unpack":748,"apply":413,"prepare":39,"start":85,"total":1122}}
+[page console] [d85] gpu.save ms 211.4 readPixels 76.9 pack 73.6 directBytes 88354956 otherBytes 55181568 levels 40
+round 1 kept {"wallMs":1384,"kind":"kept","bytes":678525079,"pausedMs":1007,"stateMs":218,"blobBytes":114309668,"hintMs":19,"hinted":914358272,"id":"6d3dd8faccd7","phases":{"state":218,"blobs":46,"ram":634,"disk":106,"pool":6,"scan":242,"compress":2930,"crc":274,"sink":274,"poolWait":5,"poolReady":45,"pause":1,"copy":0,"close":244},"memory":{"before":{"rssMiB":3207,"pssMiB":2588},"peak":{"rssMiB":3349,"pssMiB":2722}}}
+1:06:02 PM [vite] (client) [console.error] [d85] page.start 1795698362817.9
+[page console] [d85] page.start 1795698362817.9
+[page console] [d85] gpu.init 1795698362791.0
+1:06:02 PM [vite] (client) [console.error] [d85] page.gpuReady 1795698362932.5
+1:06:02 PM [vite] (client) [console.error] [d85] page.begin 1795698362932.6
+1:06:02 PM [vite] (client) [console.error] [d85] page.owned 1795698362932.7
+[page console] [d85] gpu.ready 1795698362808.0
+[page console] [d85] page.gpuReady 1795698362932.5
+[page console] [d85] page.begin 1795698362932.6
+[page console] [d85] page.owned 1795698362932.7
+1:06:02 PM [vite] (client) [console.error] [d85] page.opened 1795698362934.5
+1:06:02 PM [vite] (client) [console.error] [d85] page.prepared 1795698362934.6
+1:06:02 PM [vite] (client) [console.error] [d85] page.postStart 1795698362934.6
+[page console] [d85] page.opened 1795698362934.5
+[page console] [d85] page.prepared 1795698362934.6
+[page console] [d85] page.postStart 1795698362934.6
+[page console] [d85] mw.head 1.6 ms http://127.0.0.1:8231/target/archarm/desktop.qcow2
+[page console] [d85] mw.head 1.8 ms http://127.0.0.1:8231/target/ffpages/pages.ext4
+[page console] [d85] dw.head 1.4 ms http://127.0.0.1:8231/target/archarm/desktop.qcow2
+[page console] [d85] dw.head 0.8 ms http://127.0.0.1:8231/target/ffpages/pages.ext4
+round 2 load {"wallMs":1156,"phases":{"check":332,"checkRead":250,"checkCrc":380,"state":75,"ram":397,"disk":65,"pool":6,"read":224,"crc":428,"unpack":727,"apply":340,"prepare":31,"start":80,"total":980}}
+[page console] [d85] gpu.save ms 206.0 readPixels 75.1 pack 73.1 directBytes 88354956 otherBytes 55181568 levels 40
+round 2 kept {"wallMs":1336,"kind":"kept","bytes":678632569,"pausedMs":992,"stateMs":212,"blobBytes":114309668,"hintMs":14,"hinted":914358272,"id":"0299e6e1e7b8","phases":{"state":212,"blobs":46,"ram":629,"disk":101,"pool":6,"scan":234,"compress":2932,"crc":278,"sink":298,"poolWait":3,"poolReady":38,"pause":1,"copy":0,"close":210},"memory":{"before":{"rssMiB":3217,"pssMiB":2589},"peak":{"rssMiB":3409,"pssMiB":2775}}}
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/perf85/diag-desktop.json

@@ -3,15 +3,25 @@
 // a fresh profile (a chunked image's disk) with its definition and a snapshot file of it.
 import type { Browser, Page } from 'playwright-core';
 
-export type Start = { disks: { overlay?: string }[]; plan?: { slot: number; action: string; overlay?: string }[]; snapshot: boolean };
+export type Start = {
+  disks: { overlay?: string }[];
+  plan?: { slot: number; action: string; overlay?: string }[];
+  snapshot: boolean;
+  /** A 3D start (the GPU worker's port), with its caps in it, or after it (a `caps` message); its worker terminated. */
+  three: boolean;
+  caps: boolean;
+  capsAfter: boolean;
+  ended: boolean;
+};
 
 /**
  * The machine worker as a stand-in: each start recorded (`window.__starts`) and answered "off" (`live`: "running", a
  * machine that runs on), a snapshot's start first with `loaded` (it loaded) but for the first `cut` of them (cut off
- * before that: the tab closed in its check pass); a stop, "stopped". `gpuFails`: the GPU worker too, which answers its
- * `init` with `failed` (3D can't start in this browser).
+ * before that: the tab closed in its check pass); a stop, "stopped". `gpu`: the GPU worker too, which answers its
+ * `init` with `failed` at once (`fails`: 3D can't start in this browser) or once the machine's start was posted
+ * (`failsAfter`), or with `ready` once the start was posted (`readyAfter`: its caps follow the start).
  */
-export const standIn = (page: Page, live = false, gpuFails = false, cut = 0) => page.addInitScript(([live, gpuFails, cut]) => {
+export const standIn = (page: Page, live = false, gpu: false | 'fails' | 'failsAfter' | 'readyAfter' = false, cut = 0) => page.addInitScript(([live, gpu, cut]) => {
   let cuts = cut;
   const Real = window.Worker;
   const starts: unknown[] = [];
@@ -19,28 +29,54 @@ export const standIn = (page: Page, live = false, gpuFails = false, cut = 0) => 
   window.Worker = class extends Real {
     #fake: boolean;
     #gpu: boolean;
+    #start: { capsAfter: boolean; ended: boolean } | undefined;
+    #snapshot = false;
     constructor(url: string | URL, options?: WorkerOptions) {
       super(url, options);
       this.#fake = /\/app\/worker\.ts/.test(String(url));
-      this.#gpu = gpuFails && /\/gpu-worker\.ts/.test(String(url));
+      this.#gpu = !!gpu && /\/gpu-worker\.ts/.test(String(url));
+    }
+    terminate() {
+      if (this.#start) this.#start.ended = true;
+      super.terminate();
     }
     postMessage(m: unknown, t?: unknown) {
       const answer = (data: unknown) => setTimeout(() => this.onmessage?.(new MessageEvent('message', { data })));
       if (this.#gpu) {
-        if ((m as { type?: string }).type === 'init') answer({ type: 'failed', reason: 'the test says no' });
+        if ((m as { type?: string }).type !== 'init') return;
+        const reply = gpu === 'readyAfter' ? { type: 'ready', caps: new Uint8Array(4), renderer: 'the test' } : { type: 'failed', reason: 'the test says no' };
+        if (gpu === 'fails') return answer(reply);
+        // Once the machine's start went (a condition, not a time): the GPU worker's start outlasting the page's own.
+        const n = starts.length;
+        const wait = setInterval(() => {
+          if (starts.length > n) {
+            clearInterval(wait);
+            answer(reply);
+          }
+        }, 5);
         return;
       }
       if (!this.#fake) return super.postMessage(m as never, t as never);
-      const msg = m as { type?: string; disks?: { overlay?: string }[]; plan?: unknown; snapshot?: unknown };
-      if (msg.type === 'start') {
-        starts.push({ disks: (msg.disks ?? []).map((d) => ({ overlay: d.overlay })), plan: msg.plan, snapshot: !!msg.snapshot });
-        if (msg.snapshot && cuts-- <= 0) answer({ type: 'loaded', phases: {} });
+      const msg = m as { type?: string; disks?: { overlay?: string }[]; plan?: unknown; snapshot?: unknown; ports?: { renderer?: unknown }; caps?: unknown };
+      // A start answered as the worker does once it can go on: a 3D one without its caps waits for them (`caps`).
+      const go = (snapshot: boolean) => {
+        if (snapshot && cuts-- <= 0) answer({ type: 'loaded', phases: {} });
         answer({ type: 'state', state: live ? 'running' : 'off' });
+      };
+      if (msg.type === 'caps' && this.#start && !this.#start.capsAfter) {
+        this.#start.capsAfter = true;
+        go(this.#snapshot);
+      }
+      if (msg.type === 'start') {
+        this.#start = { capsAfter: false, ended: false };
+        this.#snapshot = !!msg.snapshot;
+        starts.push(Object.assign(this.#start, { disks: (msg.disks ?? []).map((d) => ({ overlay: d.overlay })), plan: msg.plan, snapshot: !!msg.snapshot, three: !!msg.ports?.renderer, caps: !!msg.caps }));
+        if (!msg.ports?.renderer || msg.caps) go(!!msg.snapshot);
       }
       if (msg.type === 'stop') answer({ type: 'stopped' });
     }
   };
-}, [live, gpuFails, cut] as const);
+}, [live, gpu, cut] as const);
 
 /** A template's machine made in a fresh profile (`display`: its graphics): its definition, a snapshot file of it, the snapshot's shape hash. */
 export async function makeTemplate(browser: Browser, base: string, display: '2d' | '3d' = '2d'): Promise<{ def: { disks: object[] } & Record<string, unknown>; snapshot: number[]; hash: string }> {

@@ -1619,18 +1619,16 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   (pages copied out of each instance into guest RAM, shared memory both: V8's word-by-word copy, and fresh RAM's
   page faults). A frame index at the file's end would let the restore pass's workers read their frames themselves.
   The disk's blocks are ~0.1 s since loop 5, the machine's start ~0.12 s since loop 7.
-- **What is left of a load's start** (bench/boot/REPORT.md "SNAPZ loop 7", desktop / Debian, ms): before the
-  machine worker's start, on the page, the GPU worker's WebGL start (53-100), which the start message waits for
-  (its caps): the worker could fetch, compile and check the file meanwhile and take the caps before `bootVm`; the
-  file's handling on the page ~45-75. After `running`: the vCPU workers run ~120 ms later (their modules on the
+- **What is left of a load's start** (bench/boot/REPORT.md "SNAPZ loop 7" and "PERF loop 85", desktop / Debian, ms):
+  before the machine worker's start, the machine worker's own module load (~95-110 on the dev server, beside the GPU
+  worker's: the start message no longer waits for its caps, PERF loop 85) and the file's handling on the page
+  ~45-75; a build's bundles load faster, not measured (the dev VM's `npm start` serves the user's). After `running`: the vCPU workers run ~120 ms later (their modules on the
   dev server; starting them beside the check pass cost it 80-100 ms more than it saved, `variants/`: worth trying
   once the pool's work is over, or with fewer pool workers); the desktop's 3D state `load` in the GPU worker
   51-108, its first present right after (the state could go to the GPU worker before the RAM fill: it doesn't read
   guest RAM, but the device worker owns the port). Inside `start`: the memories grown 12-18, `Devices.open` 20-25
   (the overlays' OPFS handles), the core instantiated 1-6. The worker numbers are the dev server's (modules
-  compiled per request, `Cache-Control: no-store`); a build's bundles start faster, not measured. A disk on a
-  remote server gets two HEADs a start (the machine worker's `checkDisks`, then the device worker's sync one):
-  the device worker could take the first's answer (one network round trip less).
+  compiled per request, `Cache-Control: no-store`); a build's bundles start faster, not measured.
 - **A save's memory left** (bench/boot/REPORT.md "SNAPZ loop 4"): a file save stages through OPFS now, so the
   download's ~1.1 GiB is gone; every desktop save adds ~190-240 MiB while it runs (the pool's six instances and, for
   a 3D machine, its read-back state: 109 MB of BLOB contents held through the save), and a picked file's ~310 MiB
@@ -1639,8 +1637,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   idle browser): Blob slices written by the browser, file to file; nothing faster was found from the page. A
   download's staging file stays until the next file save or the page's end (then removed at its next start): one
   snapshot's worth of the storage held meanwhile.
-- **What stays on the machine worker during the pause** (the desktop's 1.07 s): the devices' state 0.23 s (the 3D
-  read-back), the BLOB frames 0.05, the disk's blocks 0.11-0.18 (their reads are ~0.01 s since loop 5: the rest
+- **What stays on the machine worker during the pause** (the desktop's ~0.87 s since PERF loop 85): the devices'
+  state 0.11 s (the 3D read-back ~0.04 of it, since its straight reads; the buffers' copies, the objects and the
+  transfer the rest), the BLOB frames 0.05, the disk's blocks 0.11-0.18 (their reads are ~0.01 s since loop 5: the rest
   is the frames' copies, compression and messages),
   and RAM's ~0.67 s wall of which the frames' writing (the sink, in order) ~0.25. BLOB and DISK frames could go
   through the pool as `bytes` jobs (a copy each way): ~0.1 s at most.

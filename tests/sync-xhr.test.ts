@@ -78,3 +78,23 @@ test('on a window, where a synchronous request refuses a timeout, none is set', 
     [0],
   );
 });
+
+test("an HTTP source opened with the machine worker's HEAD makes none of its own: its size and validator are that one's", () => {
+  const sent = fake([206]);
+  const src = httpSource('http://h/disk.img', { size: 8, validator: '"v1"' });
+  assert.equal(sent.length, 0, 'no HEAD');
+  assert.equal(src.size, 8);
+  assert.equal(src.validator, '"v1"');
+  assert.equal(src.read(0, 8)?.length, 8, 'its reads as before');
+  assert.deepEqual(
+    sent.map((s) => s.method),
+    ['GET'],
+  );
+  // Without one, the HEAD as before.
+  const again = fake([200]);
+  assert.equal(httpSource('http://h/disk.img').size, 8);
+  assert.deepEqual(
+    again.map((s) => s.method),
+    ['HEAD'],
+  );
+});

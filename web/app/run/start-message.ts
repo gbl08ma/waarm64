@@ -79,7 +79,11 @@ export type StartWith = {
   size?: { width: number; height: number };
   layout?: KeyboardLayout;
   folders?: FolderSpec[];
-  three?: { renderer: MessagePort; caps: Uint8Array };
+  /**
+   * A 3D machine's renderer port and caps; none yet: the start message goes without them, and `owed` (set once it went)
+   * says a `caps` message brings them after it.
+   */
+  three?: { renderer: MessagePort; caps?: Uint8Array; owed?: boolean };
   snapshot?: File;
   resume: boolean;
   about?: Start['about'];

@@ -2,6 +2,7 @@
 // their progress posted), the disks' presence; a file that isn't there is a failure a user can act on.
 import coreSize from 'virtual:waarm64-core-size';
 import { CORE } from '../deflate.ts';
+import { headOf, type DiskHead } from '../disk-sources.ts';
 import { bodySize, totalOf } from './download-size.ts';
 import { msg, MsgError } from '../msg.ts';
 import type { Machine } from './machine.ts';
@@ -31,13 +32,20 @@ function missing(url: string, machine: Machine, status: number) {
   );
 }
 
-/** Checks the disks at `urls` are there (they're read by ranges as the guest needs them, not downloaded). */
-export const checkDisks = (urls: string[], machine: Machine) =>
-  Promise.all(
-    urls.map((url) =>
-      fetch(url, { method: 'HEAD' }).then((r) => {
-        if (!r.ok) throw missing(url, machine, r.status);
-      }),
+/**
+ * Checks the disks at `urls` are there (they're read by ranges as the guest needs them, not downloaded): what each
+ * server said of each (`DiskHead`), which the device worker's disk takes instead of a HEAD of its own (one round trip
+ * less a start: PERF loop 85). A chunked image's manifest (a GET there, which the browser's cache answers) has none.
+ */
+export const checkDisks = async (urls: string[], machine: Machine): Promise<Map<string, DiskHead>> =>
+  new Map(
+    await Promise.all(
+      urls.map((url) =>
+        fetch(url, { method: 'HEAD' }).then((r): [string, DiskHead] => {
+          if (!r.ok) throw missing(url, machine, r.status);
+          return [url, headOf((n) => r.headers.get(n))];
+        }),
+      ),
     ),
   );
 

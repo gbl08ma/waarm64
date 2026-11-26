@@ -1,0 +1,6 @@
+stored machine 78ac2ddece9c file /home/gabriel.guest/Development/waarm64/target/snapz/desktop-956ac0ce5360.waarm64snap
+round 0 load {"wallMs":1158,"phases":{"check":321,"checkRead":241,"checkCrc":381,"state":76,"ram":404,"disk":72,"pool":6,"read":244,"crc":415,"unpack":726,"apply":338,"prepare":23,"start":74,"total":971}}
+round 0 kept {"wallMs":1198,"kind":"kept","bytes":678692020,"pausedMs":874,"stateMs":104,"blobBytes":114309668,"hintMs":18,"hinted":914358272,"id":"c98afb6c0fe5","phases":{"state":104,"blobs":46,"ram":629,"disk":91,"pool":6,"scan":231,"compress":2938,"crc":280,"sink":285,"poolWait":12,"poolReady":47,"pause":1,"copy":0,"close":229},"memory":{"before":{"rssMiB":3228,"pssMiB":2612},"peak":{"rssMiB":3356,"pssMiB":2734}}}
+wrote /home/gabriel.guest/Development/waarm64/bench/boot/results/perf85/rounds/desktop-new-3.json
+[page error] SecurityError: Failed to read the 'localStorage' property from 'Window': Access is denied for this document.
+[page error] SecurityError: Failed to read the 'localStorage' property from 'Window': Access is denied for this document.

@@ -1,0 +1,49 @@
+1:36:24 PM [vite] (client) [console.error] [d85] page.start 1795700184074.3
+1:36:24 PM [vite] (client) [console.error] [d85] page.begin 1795700184077.8
+1:36:24 PM [vite] (client) [console.error] [d85] page.startReturned 1795700184078.1
+[page console] [d85] page.start 1795700184074.3
+[page console] [d85] page.begin 1795700184077.8
+[page console] [d85] page.startReturned 1795700184078.1
+1:36:24 PM [vite] (client) [console.error] [d85] page.nextTask 1795700184084.1
+1:36:24 PM [vite] (client) [console.error] [d85] page.owned 1795700184085.9
+[page console] [d85] page.nextTask 1795700184084.1
+[page console] [d85] page.owned 1795700184085.9
+1:36:24 PM [vite] (client) [console.error] [d85] page.opened 1795700184091.2
+1:36:24 PM [vite] (client) [console.error] [d85] page.postStart 1795700184091.9
+[page console] [d85] page.opened 1795700184091.2
+[page console] [d85] page.postStart 1795700184091.9
+[page console] [d85] gpu.init 1795700184175.3
+[page console] [d85] mw.start 1795700184186.1
+1:36:24 PM [vite] (client) [console.error] [d85] page.gpuReady 1795700184190.7
+[page console] [d85] gpu.ready 1795700184190.3
+[page console] [d85] mw.caps 1795700184190.9
+[page console] [d85] page.gpuReady 1795700184190.7
+[page console] [d85] mw.capsWait 1795700184239.1
+[page console] [d85] mw.capsHave 1795700184239.2
+stored machine 78ac2ddece9c file /home/gabriel.guest/Development/waarm64/target/snapz/desktop-956ac0ce5360.waarm64snap
+1:36:24 PM [vite] (client) [console.error] [d85] page.start 1795700184760.7
+[page console] [d85] page.start 1795700184760.7
+1:36:24 PM [vite] (client) [console.error] [d85] page.begin 1795700184762.2
+1:36:24 PM [vite] (client) [console.error] [d85] page.startReturned 1795700184762.3
+[page console] [d85] page.begin 1795700184762.2
+[page console] [d85] page.startReturned 1795700184762.3
+1:36:24 PM [vite] (client) [console.error] [d85] page.owned 1795700184764.0
+[page console] [d85] page.owned 1795700184764.0
+1:36:24 PM [vite] (client) [console.error] [d85] page.nextTask 1795700184765.8
+[page console] [d85] page.nextTask 1795700184765.8
+[page console] [d85] page.opened 1795700184770.1
+[page console] [d85] page.postStart 1795700184770.4
+1:36:24 PM [vite] (client) [console.error] [d85] page.opened 1795700184770.1
+1:36:24 PM [vite] (client) [console.error] [d85] page.postStart 1795700184770.4
+[page console] [d85] gpu.init 1795700184812.8
+[page console] [d85] mw.start 1795700184828.5
+[page console] [d85] gpu.ready 1795700184832.6
+1:36:24 PM [vite] (client) [console.error] [d85] page.gpuReady 1795700184833.1
+[page console] [d85] page.gpuReady 1795700184833.1
+[page console] [d85] mw.caps 1795700184833.3
+[page console] [d85] mw.capsWait 1795700185254.3
+[page console] [d85] mw.capsHave 1795700185254.4
+round 0 load {"wallMs":1154,"phases":{"check":312,"checkRead":226,"checkCrc":387,"state":66,"ram":409,"disk":65,"pool":6,"read":264,"crc":429,"unpack":729,"apply":343,"prepare":24,"start":74,"total":949}}
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/perf85/diag-new.json
+[page error] SecurityError: Failed to read the 'localStorage' property from 'Window': Access is denied for this document.
+[page error] SecurityError: Failed to read the 'localStorage' property from 'Window': Access is denied for this document.

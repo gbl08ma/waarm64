@@ -200,7 +200,8 @@ export class Runner {
     this.d.messages.setState('loading');
   }
 
-  /** 3D: the GPU worker gets the canvas and says what it backs; the machine starts with those caps. */
+  /** 3D: the GPU worker gets the canvas and says what it backs; the machine starts meanwhile, its caps in the start
+   * message if they're there by then, else after it (`caps`: the worker waits for them before it touches anything). */
   #gpu(r: Run, ch: Channels, offscreen: OffscreenCanvas, args: StartArgs, size: StartWith['size']) {
     const gpu = new Worker(new URL('../../gpu-worker.ts', import.meta.url), { type: 'module' });
     r.gpu = gpu;
@@ -209,21 +210,26 @@ export class Runner {
       offscreen,
       channel.port1,
     ]);
+    const three: NonNullable<StartWith['three']> = { renderer: channel.port2 };
+    const begun = this.#begin(r, ch, { ...args, size, three });
     const ready = (caps: Uint8Array) =>
-      void this.#begin(r, ch, { ...args, size, three: { renderer: channel.port2, caps } });
+      three.owed ? r.worker.postMessage({ type: 'caps', caps } satisfies ToWorker) : (three.caps = caps);
     const failed = (reason: string) => {
       // The canvas is the GPU worker's now: a fresh start, without 3D.
       this.d.machine.no3d = reason;
       console.warn(`waarm64: no 3D: ${reason}`);
       gpu.terminate();
-      r.worker.terminate();
+      r.worker.terminate(); // it waited for the caps: nothing of the machine's was touched
       r.input.detach();
-      this.d.machine.run = undefined;
-      // A template's snapshot needs the 3D it was taken with (its shape): the machine's first start boots instead.
-      if (args.first && args.snapshot) return void this.firstFailed(false);
-      const again = this.again; // the same start, without 3D: a restore's Retry is still the restore
-      this.start(args.snapshot, args.resume, args.plan);
-      this.again = again;
+      this.d.machine.run = undefined; // the start under way stops at its next step
+      void begun.then((posted) => {
+        if (posted) this.d.folders.end(); // its folders, begun for it (the next start's begin them again)
+        // A template's snapshot needs the 3D it was taken with (its shape): the machine's first start boots instead.
+        if (args.first && args.snapshot) return void this.firstFailed(false);
+        const again = this.again; // the same start, without 3D: a restore's Retry is still the restore
+        this.start(args.snapshot, args.resume, args.plan);
+        this.again = again;
+      });
     };
     const fromGpu = gpuHandlers(this, r, ready, failed);
     gpu.onmessage = r.guard((e: MessageEvent<FromGpuWorker>) => dispatch(fromGpu, e.data));
@@ -234,16 +240,15 @@ export class Runner {
 
   /**
    * Once the lock is held and the disks are open: the start message, unless the run was stopped meanwhile (each await
-   * is a moment a stop can come in: a start posted after its `stop` would boot a machine nothing stops).
+   * is a moment a stop can come in: a start posted after its `stop` would boot a machine nothing stops); whether it went.
    */
   async #begin(r: Run, ch: Channels, w: StartArgs & Pick<StartWith, 'screen' | 'size' | 'three'>) {
     const { machine: m, folders } = this.d;
-    if (!r.live()) return;
-    if (!(await this.own(() => r.live()))) return;
+    if (!r.live() || !(await this.own(() => r.live()))) return false;
     const opened = await this.#openDisks(r, w.config, !!w.plan);
-    if (!opened) return;
+    if (!opened) return false;
     const ready = await this.#prepare(r, ch);
-    if (!ready) return;
+    if (!ready) return false;
     if (folders.views().some((v) => v.problem)) shares.openMenu(); // Allow access…, Use it here
     if (m.hasGpu) current.graphics = w.three ? '3d' : '2d'; // `data-graphics`, for tests
     keys.layout = ready.layout?.id;
@@ -251,6 +256,8 @@ export class Runner {
     r.worker.postMessage(
       ...startMessage(m, w.config, ch, { ...w, ...opened, screen, layout: ready.layout, folders: ready.folders }),
     );
+    if (w.three && !w.three.caps) w.three.owed = true;
+    return true;
   }
 
   /** The start's folders and keyboard layout; none if the run stopped meanwhile or one failed (said, with Retry). */

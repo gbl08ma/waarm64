@@ -1,0 +1,24 @@
+
+added 56 packages in 2s
+mac_chrome: Chrome for Testing 158.0.8127.88
+round 0 {"renderer":"ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)","ms":[130.23999977111816,124.97499990463257,128.98499989509583,124.42499995231628,127.83500003814697],"bytes":102641868,"same":true,"glError":0}
+wrote /Users/gabriel/waarm64-snapz-bench/bench/results/local/rb-base-0.json
+round 0 {"renderer":"ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)","ms":[40.140000104904175,40.86500000953674,38.94000005722046,39.15499997138977,38.75999999046326],"bytes":102641868,"same":true,"glError":0}
+wrote /Users/gabriel/waarm64-snapz-bench/bench/results/local/rb-new-0.json
+round 0 {"renderer":"ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)","ms":[130.4800000190735,124.73499989509583,127.77999997138977,126.73000001907349,127.16499996185303],"bytes":102641868,"same":true,"glError":0}
+wrote /Users/gabriel/waarm64-snapz-bench/bench/results/local/rb-base-1.json
+round 0 {"renderer":"ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)","ms":[39.43499994277954,40.97000002861023,38.72000002861023,39.19000005722046,39.1800000667572],"bytes":102641868,"same":true,"glError":0}
+wrote /Users/gabriel/waarm64-snapz-bench/bench/results/local/rb-new-1.json
+round 0 {"renderer":"ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)","ms":[132.58500003814697,126.94000005722046,131.95499992370605,127.99499988555908,131.9099998474121],"bytes":102641868,"same":true,"glError":0}
+wrote /Users/gabriel/waarm64-snapz-bench/bench/results/local/rb-base-2.json
+round 0 {"renderer":"ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)","ms":[40.11500000953674,41.22500014305115,38.55999994277954,38.93999981880188,38.6800000667572],"bytes":102641868,"same":true,"glError":0}
+wrote /Users/gabriel/waarm64-snapz-bench/bench/results/local/rb-new-2.json
+round 0 {"renderer":"ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)","ms":[132.9100000858307,130.8899998664856,130.55999994277954,129.74000000953674,130.2300000190735],"bytes":102641868,"same":true,"glError":0}
+wrote /Users/gabriel/waarm64-snapz-bench/bench/results/local/rb-base-3.json
+round 0 {"renderer":"ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)","ms":[40.16499996185303,41.46500015258789,39.984999895095825,40.08500003814697,39.59999990463257],"bytes":102641868,"same":true,"glError":0}
+wrote /Users/gabriel/waarm64-snapz-bench/bench/results/local/rb-new-3.json
+round 0 {"renderer":"ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)","ms":[134.6600000858307,127.97000002861023,130.86500000953674,127.6800000667572,131.68499994277954],"bytes":102641868,"same":true,"glError":0}
+wrote /Users/gabriel/waarm64-snapz-bench/bench/results/local/rb-base-4.json
+round 0 {"renderer":"ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)","ms":[40.234999895095825,42.75999999046326,39.9449999332428,40.24000000953674,39.799999952316284],"bytes":102641868,"same":true,"glError":0}
+wrote /Users/gabriel/waarm64-snapz-bench/bench/results/local/rb-new-4.json
+EXIT 0

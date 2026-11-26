@@ -1,0 +1,153 @@
+{
+ "note": "PERF loop 85 (bench/boot/REPORT.md): base = bc6852bf, new = this loop. probe: the desktop warm snapshot (dev VM, Chromium 155, OPS=load,kept, a browser a round, alternated); macProbe: OPS=load on the Mac (Chrome for Testing 158; 3D off there, the snapshot's caps being SwiftShader's; base round 0, the profile's first, included); readback: bench/snapz/readback.ts, the median of each round's 5 saves, ms",
+ "probe": {
+  "base": {
+   "rounds": 4,
+   "loadWall": {
+    "median": 1166,
+    "range": [
+     1155,
+     1259
+    ]
+   },
+   "loadTotal": {
+    "median": 963,
+    "range": [
+     951,
+     1107
+    ]
+   },
+   "keptPaused": {
+    "median": 993,
+    "range": [
+     982,
+     1026
+    ]
+   },
+   "keptState": {
+    "median": 222,
+    "range": [
+     215,
+     227
+    ]
+   },
+   "keptMemAddedMiB": {
+    "median": 151,
+    "range": [
+     141,
+     184
+    ]
+   }
+  },
+  "new": {
+   "rounds": 4,
+   "loadWall": {
+    "median": 1159,
+    "range": [
+     1155,
+     1162
+    ]
+   },
+   "loadTotal": {
+    "median": 970,
+    "range": [
+     951,
+     971
+    ]
+   },
+   "keptPaused": {
+    "median": 874,
+    "range": [
+     862,
+     887
+    ]
+   },
+   "keptState": {
+    "median": 107,
+    "range": [
+     104,
+     109
+    ]
+   },
+   "keptMemAddedMiB": {
+    "median": 128,
+    "range": [
+     123,
+     128
+    ]
+   }
+  }
+ },
+ "macProbe": {
+  "base": {
+   "rounds": 3,
+   "loadWall": {
+    "median": 801,
+    "range": [
+     798,
+     1082
+    ]
+   },
+   "loadTotal": {
+    "median": 625,
+    "range": [
+     605,
+     900
+    ]
+   }
+  },
+  "new": {
+   "rounds": 3,
+   "loadWall": {
+    "median": 791,
+    "range": [
+     756,
+     793
+    ]
+   },
+   "loadTotal": {
+    "median": 594,
+    "range": [
+     593,
+     646
+    ]
+   }
+  }
+ },
+ "readbackVm": {
+  "base": {
+   "rounds": 5,
+   "median": 143,
+   "range": [
+    141.2,
+    155.7
+   ]
+  },
+  "new": {
+   "rounds": 5,
+   "median": 44.1,
+   "range": [
+    42.3,
+    46.4
+   ]
+  }
+ },
+ "readbackMac": {
+  "base": {
+   "rounds": 5,
+   "median": 130.6,
+   "range": [
+    127.2,
+    131.9
+   ]
+  },
+  "new": {
+   "rounds": 5,
+   "median": 39.2,
+   "range": [
+    38.9,
+    40.2
+   ]
+  }
+ }
+}

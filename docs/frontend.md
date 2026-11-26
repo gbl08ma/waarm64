@@ -1180,7 +1180,8 @@ Page → worker:
   the tablet's go to the device worker, web/input.ts's `attachInput` sending Linux input events to the other ends and
   LED changes coming back on the keyboard's; `serial` is `BootOptions.serialIn`, strings or bytes for the PL011,
   handled on the machine worker's thread while `runAsync` awaits; `display`, `sound`, `nets`, `usb`, `mouse`, `touch`,
-  `folders`, `agent`, and a 3D machine's `renderer`, the GPU worker's port, with the `caps` it backs). `screen` is the
+  `folders`, `agent`, and a 3D machine's `renderer`, the GPU worker's port, with the `caps` it backs, or a `caps`
+  message after it when the GPU worker is still starting). `screen` is the
   page's canvas (`transferControlToOffscreen`, sized as the machine's framebuffer) on a machine without 3D: the
   machine worker draws the framebuffer on it (web/display.ts) on its own animation frames. `disks`: the machine's
   disks in slot order (web/app/protocol.ts `StartDisk`: each one's source, a URL, a file, a blank or a ramdisk, and its
@@ -1691,8 +1692,10 @@ has them and in software elsewhere (`?gpu=swvideo` decodes in software even wher
 The page starts a **GPU worker** (`web/gpu-worker.ts`, top-level, so it has animation frames) and hands it the
 canvas instead of the machine worker. The GPU worker makes a WebGL2 context on it, builds the caps the guest will
 see from that context (`web/virgl-caps.ts`: limits, extensions, renderable formats; never more than it backs) and
-says `ready`. The machine then starts with those caps and a port to the GPU worker (the gpu spec's `renderer`,
-`web/devices.ts`). The device worker keeps the virtqueues and forwards its 3D work (`web/virgl-host.ts`: contexts,
+says `ready`. The machine starts meanwhile, with a port to the GPU worker (the gpu spec's `renderer`, `web/devices.ts`)
+and the caps once they're there: in the start message if the GPU worker was ready first, else in a `caps` message
+after it, which the machine worker waits for before it makes the devices; a GPU worker that fails ends that machine
+worker (it touched nothing yet) and the machine starts again as 2D (graphics.md "How it fits together"). The device worker keeps the virtqueues and forwards its 3D work (`web/virgl-host.ts`: contexts,
 resources, backings, transfers, submits; the guest's RAM is shared) and every scanout to the GPU worker. That
 includes 2D ones (the firmware, the console), whose pixels are in shared memory and whose damaged rectangles go up
 to a texture, a frame's as one rectangle holding them all, at its draw. The GPU worker runs the renderer (`web/virgl-renderer.ts`) and draws the screen

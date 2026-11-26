@@ -72,8 +72,10 @@ gfxstream driver is Vulkan only.
   draws every present on the CPU). `?gpu=gl2d`, `?gpu=canvas2d` choose.
 - **A 3D machine** (the default wherever the browser has WebGL2): the page starts a top-level **GPU worker**
   (`web/gpu-worker.ts`, so it has animation frames) and hands it the canvas. It makes the WebGL2 context, probes the
-  browser's video decoders, builds the caps from that context (below) and says `ready`; the machine then starts with
-  those caps and a port to it. The device worker keeps the virtqueues and forwards its 3D work (contexts, resources,
+  browser's video decoders, builds the caps from that context (below) and says `ready`. The machine's start doesn't
+  wait for it: the start message goes with a port to it and the caps if they're there by then, else they follow in a
+  `caps` message, which the machine worker waits for before it makes the devices (after its fetch and a snapshot's
+  check pass, before anything is touched; web/app/run/runner.ts `#gpu`, web/app/worker-devices.ts `startCaps`). The device worker keeps the virtqueues and forwards its 3D work (contexts, resources,
   backings, attachments, transfers, submits) and **every scanout, 2D ones too** (the firmware, the console) as ordered
   calls (`web/virgl-host.ts`). The GPU worker runs them through the renderer (`web/virgl-renderer.ts`, its state model
   `web/virgl-objects.ts` and pixel paths `web/virgl-pixels.ts`, with the translator `web/virgl-tgsi.ts` and the format
@@ -934,7 +936,14 @@ Firefox makes 10–25 resources a second, where the state is bounded by what the
   counted before the snapshot is lost).
 - **Contents**, a level at a time, every layer: a buffer's CPU copy; a color texture through the read-back path (the
   formats the guest isn't offered read-back of through `snapshotReader`: A4B4G4R4 as RGBA8, R11G11B10_FLOAT as
-  floats, the 16-bit normalized ones as shorts); a format WebGL can't render to, its kept texels; a compressed one, its kept blocks; a multisampled color
+  floats, the 16-bit normalized ones as shorts). **A level the GL reads as it's stored goes straight into the saved
+  bytes** (`readsAsStored`, as a guest's packed read-back does): the format's reader reads its own upload format and
+  type at its own size (RGBA8 and the BGR formats on it, RGB10_A2, the 32-bit RGBA ones), or the GL's own read pair
+  for the level (`IMPLEMENTATION_COLOR_READ_FORMAT`/`_TYPE`, asked once per internal format) is that format and type:
+  R8 and RG8 as RED and RG bytes, RGB565 and RGBA4 as shorts, on ANGLE's Metal, Vulkan and SwiftShader alike. The
+  others are read as RGBA (or RGBA_INTEGER) into a scratch buffer and packed row by row, as before: R8 that way read
+  four times its bytes and packed them in JS at ~4 ns a byte (the desktop's three 2048² glyph atlases: 85 ms of its
+  read-back); a format WebGL can't render to, its kept texels; a compressed one, its kept blocks; a multisampled color
   renderbuffer, resolved (a load draws it into every sample; a 32-bit float's denormals may come back 0: D3D11 flushes
   them in the draw and the resolve, as GLES allows, and keeps 16-bit ones). Depth and stencil can't be read with `readPixels`: each
   layer is blitted to a 2D texture of its format (resolving samples), its depths drawn as float bits into R32UI, its
@@ -951,8 +960,11 @@ Firefox makes 10–25 resources a second, where the state is bounded by what the
 - **What it costs** (the desktop guest with sway, Firefox on 400 WebGL 2 cubes and gtk4-demo's gears, 4 vCPUs,
   2.5 GiB; `bench/gpu/snapshot-3d.ts`, `bench/gpu/results/2026-10-19-snapshot-3d*.json`): 96 resources, 8 contexts,
   119 MB of 3D state stored as 6 MB (glyph and texture atlases, mostly empty, compress ~20 to 1), read back in 0.23 s
-  on SwiftShader and 0.2 s on the Mac's GPU (the copies and the transfer to the device worker, not the drawing), in a
-  pause of 8.2 s and 5.2 s: the rest is guest RAM. The load brings the session back (the clients draw on, new GL
+  on SwiftShader and 0.2 s on the Mac's GPU (2026-10-19), in a pause of 8.2 s and 5.2 s: the rest is guest RAM. Since
+  the straight reads (bench/boot/REPORT.md "PERF loop 85"): the warm desktop's read-back (`bench/snapz/readback.ts`:
+  its 40 levels, 103 MB) 143 → 44 ms on SwiftShader and 131 → 39 ms on the Mac's GPU, and its kept snapshot's
+  `state` 222 → 107 ms and pause 993 → 874 ms (`bench/snapz/probe.ts`, the dev VM). What is left of `state` past
+  the read-back: the buffers' copies, the contexts' objects, the transfer to the device worker. The load brings the session back (the clients draw on, new GL
   clients start, no resource lost). No page test: the desktop guest's session takes ~10 minutes to set up and an
   800 MB file; the renderer's save and load are tested on traces, a snapshot's restore on Debian in
   `scripts/ci-debian.sh` (3D by default).

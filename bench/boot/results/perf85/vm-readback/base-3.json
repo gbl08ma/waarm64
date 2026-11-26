@@ -1,0 +1,24 @@
+{
+ "meta": {
+  "web": "perf85-base/web",
+  "rounds": 1,
+  "saves": 5,
+  "chromium": "Chromium 155.0.8059.84 stable",
+  "date": "2026-11-26T13:45:19.698Z"
+ },
+ "rounds": [
+  {
+   "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+   "ms": [
+    141.92999982833862,
+    141.19000005722046,
+    139.83500003814697,
+    140.75999999046326,
+    145.12999987602234
+   ],
+   "bytes": 102641868,
+   "same": true,
+   "glError": 0
+  }
+ ]
+}

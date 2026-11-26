@@ -1,0 +1,6 @@
+stored machine 6a2c64d8a785 file /Users/gabriel/waarm64-snapz-bench/target/snapz/desktop-c77ce8ec3acc.waarm64snap
+round 0 load {"wallMs":801,"phases":{"check":166,"checkRead":131,"checkCrc":428,"state":44,"ram":269,"disk":57,"pool":6,"read":45,"crc":437,"unpack":627,"apply":203,"prepare":15,"start":53,"total":605}}
+fatal: not a git repository (or any of the parent directories): .git
+wrote /Users/gabriel/waarm64-snapz-bench/bench/results/local/probe-base-2.json
+[page error] SecurityError: Failed to read the 'localStorage' property from 'Window': Access is denied for this document.
+[page error] SecurityError: Failed to read the 'localStorage' property from 'Window': Access is denied for this document.

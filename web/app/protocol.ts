@@ -144,7 +144,10 @@ export type ToWorker =
       ports: MachinePorts;
       /** The screen's canvas (`transferControlToOffscreen`, sized as the machine's framebuffer): the worker draws it (web/display.ts). Not on a 3D machine: the GPU worker has it. */
       screen?: OffscreenCanvas;
-      /** The caps a 3D machine gives the guest (web/virgl-caps.ts), with `ports.renderer`. */
+      /**
+       * The caps a 3D machine gives the guest (web/virgl-caps.ts), with `ports.renderer`; without them, a `caps` message
+       * brings them later (the GPU worker's start runs beside the machine's fetch and the snapshot's check pass).
+       */
       caps?: Uint8Array;
       /** The display's size at the start (the page's screen box, `wantedSize` in web/app/areas/screen-view.ts): the console and the firmware get it with no event. Default: the machine's. */
       size?: { width: number; height: number };
@@ -220,6 +223,8 @@ export type ToWorker =
    * `id`, `{ kind: 'none' }` without a machine or for a kind nothing answers.
    */
   | { type: 'inspect'; id: number; query: InspectQuery }
+  /** A 3D machine's caps after a start that came without them (`start`'s `caps`): the GPU worker has started. */
+  | { type: 'caps'; caps: Uint8Array }
   /** Wake the guest if it is in PSCI SYSTEM_SUSPEND (`Status.asleep`): a key or a click reached it. */
   | { type: 'wake' }
   /**

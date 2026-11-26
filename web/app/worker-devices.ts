@@ -1,6 +1,7 @@
 // The machine worker's devices (web/app/worker.ts): a start message's transports in slot order and the device spec
 // (web/devices.ts) each one is made from.
 import { SEVERAL_ADAPTERS, type DeviceSpec } from '../devices.ts';
+import type { DiskHead } from '../disk-sources.ts';
 import { SHARES_TAG } from './shares-mount.ts';
 import type { Machine } from './machine.ts';
 import type { StartDisk, ToWorker } from './protocol.ts';
@@ -142,3 +143,29 @@ const MAKERS: Record<DeviceKind, Maker> = {
 /** The device in `slot` for this start. */
 export const device = (slot: Slot, m: StartMessage, machine: Machine): DeviceSpec =>
   MAKERS[slot.kind](slot, m, machine);
+
+/**
+ * The devices as `bootVm` takes them, with what the start learnt after they were made: a 3D machine's caps (the GPU
+ * worker's, which may come after the start message: `ToWorker` `caps`) and each URL disk's HEAD (`checkDisks`'s).
+ */
+export const finishSpecs = (specs: DeviceSpec[], o: { caps?: Uint8Array; heads?: Map<string, DiskHead> }) =>
+  specs.map((d): DeviceSpec => {
+    if (d.type === 'gpu' && d.renderer && o.caps) return { ...d, caps: o.caps };
+    const head = d.type === 'blk' && d.url ? o.heads?.get(d.url) : undefined;
+    return d.type === 'blk' && head ? { ...d, head } : d;
+  });
+
+/** The caps a `caps` message brings after a 3D start that came without them (`later`, once `got`); one machine a worker. */
+export const lateCaps = (() => {
+  let got: (caps: Uint8Array) => void = () => undefined;
+  const later = new Promise<Uint8Array>((resolve) => (got = resolve));
+  return { later, got: (caps: Uint8Array) => got(caps) };
+})();
+
+/**
+ * A start's caps for its GPU device: the start message's, or, for a 3D start that came without them (the GPU worker
+ * still starting), the `caps` message's after it (`later`), which the machine waits for before it makes the devices:
+ * after its fetch and a snapshot's check pass, nothing touched yet.
+ */
+export const startCaps = (m: Pick<StartMessage, 'caps' | 'ports'>, later: Promise<Uint8Array>) =>
+  m.ports.renderer && !m.caps ? later : m.caps;

@@ -82,8 +82,9 @@ mkdirSync(process.env.WAARM64_DOWNLOADS, { recursive: true });
 
 // ---- the browser's memory ----
 
-/** The browser's processes: the one with this profile and its descendants. */
+/** The browser's processes: the one with this profile and its descendants (none without /proc: macOS, no memory). */
 function browserPids(): number[] {
+  if (!existsSync('/proc')) return [];
   const all = readdirSync('/proc').filter((d) => /^\d+$/.test(d)).map(Number);
   const parent = new Map<number, number>();
   let root: number | undefined;
@@ -133,7 +134,13 @@ const page = ctx.pages()[0] ?? (await ctx.newPage());
 // The user agent says 155.0.0.0 (reduced): the binary says its version.
 const chromiumVersion = execFileSync(process.env.CHROMIUM ?? '/usr/bin/chromium', ['--version'], { encoding: 'utf8' }).trim();
 await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; });
-await page.addInitScript(() => localStorage.setItem('waarm64.settings', JSON.stringify({ screen: '1376x762' })));
+// A run killed before its end leaves a running machine's mark (web/app/memory.ts): dropped, as the end's navigation
+// would have. Not on the end's about:blank, which has no storage.
+await page.addInitScript(() => {
+  if (location.protocol === 'about:') return;
+  localStorage.setItem('waarm64.settings', JSON.stringify({ screen: '1376x762' }));
+  for (const k of Object.keys(localStorage)) if (k.startsWith('waarm64.alive.')) localStorage.removeItem(k);
+});
 // Every question answered OK but a restore's offer to keep the disk's state in a fork: the overlay is replaced (no forks pile up).
 const keepAsk = words('snapshots:snapshot-restore.restore.keep', { count: 1 }, { start: true });
 await answerAsks(page, (q) => !keepAsk.test(q.text));
@@ -384,6 +391,9 @@ if (MODE === 'transient') {
 const meta = { guest, mode: MODE, profile: offRecord ? 'off the record' : 'persistent', ops: [...OPS], file: warm, bytes: (await openAsBlob(warm)).size, rounds: ROUNDS, settleS: SETTLE_S, commit: commit(), core: sha(CORE_PATH), chromium: chromiumVersion, host: `${cpus().length} CPUs ${cpus()[0]?.model ?? ''}`.trim(), date: new Date().toISOString(), wallS: Math.round((performance.now() - t0) / 1000) };
 writeFileSync(out, JSON.stringify({ meta, rounds: results }, null, 1) + '\n');
 console.log('wrote', out);
+// Left through a navigation (`pagehide` clears the page's mark of a running machine: web/app/memory.ts), so the next
+// run's autostart isn't held by the note for a tab that closed while it ran.
+await page.goto('about:blank');
 await ctx.close();
 if (offRecord) await ctx.browser()?.close();
 server.close();

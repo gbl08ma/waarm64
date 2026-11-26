@@ -1,0 +1,24 @@
+{
+ "meta": {
+  "web": "arms/base",
+  "rounds": 1,
+  "saves": 5,
+  "chromium": "Google Chrome for Testing 158.0.8127.88",
+  "date": "2026-11-26T13:44:21.422Z"
+ },
+ "rounds": [
+  {
+   "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+   "ms": [
+    130.23999977111816,
+    124.97499990463257,
+    128.98499989509583,
+    124.42499995231628,
+    127.83500003814697
+   ],
+   "bytes": 102641868,
+   "same": true,
+   "glError": 0
+  }
+ ]
+}

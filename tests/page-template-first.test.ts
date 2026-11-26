@@ -120,14 +120,17 @@ test("a machine from a store's demo: the definition inline, its URLs relative to
   await visitor.close();
 });
 
-test("a 3D template whose 3D can't start in this browser: its first start boots instead, said; its overlay no fork of the template; the template kept", async () => {
+// The GPU worker's start runs beside the machine's (PERF loop 85): its failure may come before the start message or
+// after it, when the machine worker waits for the caps it never gets, and is ended before it touched anything.
+for (const when of ['fails', 'failsAfter'] as const)
+test(`a 3D template whose 3D can't start in this browser (${when === 'fails' ? 'before' : 'after'} the start went): its first start boots instead, said; its overlay no fork of the template; the template kept`, async () => {
   const made = await make(browser, base, '3d');
   const visitor = await browser.newContext();
   const page = await visitor.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('dialog', (d) => { errors.push(`asked: ${d.message()}`); void d.dismiss(); });
-  await standIn(page, false, true);
+  await standIn(page, false, when);
   const PIECE = createHash('sha256').update(new Uint8Array(made.snapshot)).digest('hex');
   await page.route('**/site/**', (r) => {
     const path = new URL(r.request().url()).pathname;
@@ -140,9 +143,16 @@ test("a 3D template whose 3D can't start in this browser: its first start boots 
   await page.goto(`${base}/web/app/?autostart=1&hooks`);
   await page.waitForFunction(() => document.body.dataset.state === 'idle', null, { timeout: 30_000, polling: 50 });
   const id = await page.evaluate(() => window.__waarm64FromTemplate!('/site/alpine/definition.json', 'snapshot.json'));
-  await page.waitForFunction(() => (window as unknown as { __starts: unknown[] }).__starts.length >= 1, null, { timeout: 30_000, polling: 50 });
+  const n = when === 'fails' ? 1 : 2;
+  await page.waitForFunction((n) => (window as unknown as { __starts: unknown[] }).__starts.length >= n, n, { timeout: 30_000, polling: 50 });
   const starts = await page.evaluate(() => (window as unknown as { __starts: Start[] }).__starts);
-  assert.deepEqual(starts.map((s) => s.snapshot), [false], 'one start, a boot: the 3D snapshot never reaches a 2D machine');
+  if (when === 'fails') assert.deepEqual(starts.map((s) => s.snapshot), [false], 'one start, a boot: the 3D snapshot never reaches a 2D machine');
+  else
+    assert.deepEqual(
+      starts.map((s) => [s.snapshot, s.three, s.caps || s.capsAfter, s.ended]),
+      [[true, true, false, true], [false, false, false, false]],
+      'the 3D restore went without its caps and was ended without them; then a boot without 3D',
+    );
   const after = await page.evaluate(async (id) => {
     const { Store } = await import('/web/app/store.ts' as string);
     const store = await Store.open();
@@ -155,6 +165,34 @@ test("a 3D template whose 3D can't start in this browser: its first start boots 
   const said = t('snapshots:snapshot-restore.firstBooted', { machine: after.m.name }).replace(/<\/?name>/g, '');
   await page.waitForFunction((said) => document.querySelector('#message')?.textContent?.includes(said), said, { timeout: 10_000, polling: 50 });
   assert.equal(await page.evaluate(() => document.body.dataset.graphics), '2d', 'the boot without 3D');
+  assert.deepEqual(errors, []);
+  await visitor.close();
+});
+
+test("a 3D template's first start goes before the GPU worker has started: its caps follow the start message, and it restores with 3D", async () => {
+  const made = await make(browser, base, '3d');
+  const visitor = await browser.newContext();
+  const page = await visitor.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  page.on('dialog', (d) => { errors.push(`asked: ${d.message()}`); void d.dismiss(); });
+  await standIn(page, true, 'readyAfter');
+  const PIECE = createHash('sha256').update(new Uint8Array(made.snapshot)).digest('hex');
+  await page.route('**/site/**', (r) => {
+    const path = new URL(r.request().url()).pathname;
+    if (path.endsWith('/definition.json')) return r.fulfill({ json: { ...made.def, disks: made.def.disks.map((x: object) => ({ ...x, url: 'manifest.json' })) } });
+    const piece = new Uint8Array(made.snapshot);
+    if (path.endsWith('/snapshot.json'))
+      return r.fulfill({ json: { format: 'waarm64-chunked-1', size: piece.length, piece: 2 << 20, pieces: '../pieces/{hash}.bin', hashes: [PIECE], id: createHash('sha256').update(PIECE).digest('hex') } });
+    return r.fulfill({ body: Buffer.from(piece) });
+  });
+  await page.goto(`${base}/web/app/?autostart=1&hooks`);
+  await page.waitForFunction(() => document.body.dataset.state === 'idle', null, { timeout: 30_000, polling: 50 });
+  await page.evaluate(() => window.__waarm64FromTemplate!('/site/alpine/definition.json', 'snapshot.json'));
+  await page.waitForFunction(() => (window as unknown as { __starts: Start[] }).__starts[0]?.capsAfter, null, { timeout: 30_000, polling: 50 });
+  const starts = await page.evaluate(() => (window as unknown as { __starts: Start[] }).__starts);
+  assert.deepEqual(starts.map((s) => [s.snapshot, s.three, s.caps, s.capsAfter, s.ended]), [[true, true, false, true, false]], 'one start, the restore: its caps after it');
+  assert.equal(await page.evaluate(() => document.body.dataset.graphics), '3d');
   assert.deepEqual(errors, []);
   await visitor.close();
 });

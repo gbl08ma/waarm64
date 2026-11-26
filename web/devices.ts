@@ -50,7 +50,7 @@ import { net } from './net-device.ts';
 import { input } from './input-device.ts';
 import { blk, BLK_MAX_UNMAP_SECTORS } from './blk-device.ts';
 import { inflatePool } from './inflate-pool.ts';
-import { blobSource, fileSource, remoteSource, zeroSource, type Source } from './disk-sources.ts';
+import { blobSource, fileSource, remoteSource, zeroSource, type DiskHead, type Source } from './disk-sources.ts';
 
 /**
  * Host-side device configuration, one per virtio-mmio slot (in order). `blk`
@@ -92,6 +92,8 @@ export type BlkSpec = {
   type: 'blk';
   url?: string;
   chunked?: string;
+  /** A file's HEAD at `url` the machine worker made (web/app/worker-fetch.ts `checkDisks`): the device worker makes none. */
+  head?: DiskHead;
   keep?: boolean;
   source?: 'zero' | 'ram';
   stored?: string;
@@ -852,7 +854,7 @@ export class Devices {
         if (d.file) return blobSource(d.file);
         if (!d.url) throw new Error('a disk with no image (url, file or source)');
         if (d.url.startsWith('file:')) return fileSource(d.url);
-        return remoteSource(d.url, d.keep ?? true, !init.deterministic, d.chunked);
+        return remoteSource(d.url, d.keep ?? true, !init.deterministic, d.chunked, d.head);
       }),
       closeSource,
     ).catch((e: unknown) => {

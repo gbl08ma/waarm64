@@ -963,7 +963,13 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
 - **Over HTTP** in the browser: one **synchronous XHR range request** per request (needs a worker:
   no binary sync XHR on a page's main thread, no XHR in Node, where `file:` URLs read with
   `node:fs`). The dev server answers `Range: bytes=` requests on `target/` (206/416, `Accept-Ranges`,
-  HEAD from the file's `stat`: sirv, `vite.config.ts`). The device worker reads it through a **block cache** (`web/blockcache.ts`): the file in aligned 1 MiB blocks,
+  HEAD from the file's `stat`: sirv, `vite.config.ts`). **One HEAD a start:** the machine worker's check that the
+  disk is there (web/app/worker-fetch.ts `checkDisks`, beside the core's fetch) keeps the answer, its size and validator
+  (`DiskHead`), and the device worker's source takes it from the disk's spec (`BlkSpec.head`) instead of a synchronous
+  HEAD of its own, which was a server's round trip on the start's path (36-70 ms to disks.waarm64.com from the dev VM:
+  a HEAD is never answered from the browser's cache). A chunked image's manifest makes none: the page's check (a demo's
+  machine, web/app/demo-open.ts) GETs it, and the browser's cache answers the device worker's GET (~1-2 ms: the
+  manifest's `max-age`). The import, export and disk-job workers make their own. The device worker reads it through a **block cache** (`web/blockcache.ts`): the file in aligned 1 MiB blocks,
   the 256 MiB most recently used kept in memory, a read's missing blocks fetched in one request per run of adjacent
   ones; a read larger than the cache goes past it. A remote desktop boot's 2160 reads became 422 requests, and its
   time to Firefox 181 → 82 s at 47 ms a request (bench/remote-disk/REPORT.md "R1"). The import, export and disk-job

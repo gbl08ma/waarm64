@@ -230,7 +230,17 @@ and a Suspend, then the page opened
 - **The disks are URLs on the dev server**, unlike a user's (stored disks, or a remote server): until SNAPZ loop 7 its
   HEADs read the whole image (sirv's), ~1.9 s twice in every desktop load (`prepare` and `start`, 4.3 s of 5.5); loads
   measured before then carry it. Finer than the phases: `bench/boot/results/snapz-7/marks.py` puts timestamps in the
-  page and its workers (`UNDO=1` takes them out), into `data-load`'s `marks` and the console.
+  page and its workers (`UNDO=1` takes them out), into `data-load`'s `marks` and the console (on today's tree:
+  `bench/boot/results/perf85/diag-new.py`, the page's start, the GPU worker's and the machine worker's).
+- **A run leaves the page by a navigation** (`about:blank`): its `pagehide` clears the mark of a running machine
+  (frontend.md "Errors": a tab that went away with its machine running), which a closed browser leaves and which holds the next run's autostart on "the tab closed while
+  it was running"; a run killed before its end leaves it, and the next one drops it first.
+- **On the Mac's GPU:** `bench/snapz/probe-mac.sh <outdir> <name>=<web dir>...` (arms by their web/ trees, alternated
+  by rounds; the disks and warm snapshot `bench/gpu/sway-mac.sh` left there, hard-linked; no memory: no /proc). The
+  warm snapshot's caps are SwiftShader's, so it loads with 3D off there: a load's start is measured, not the 3D state.
+- **The 3D read-back alone:** `bench/snapz/readback.ts` (`WEB=<dir>` an arm's web/, `ROUNDS`, `SAVES`) loads the warm
+  desktop's 40 levels into a VirglRenderer on a WebGL2 canvas and times `save()`; `bench/snapz/readback-mac.sh
+  <outdir> <name>=<web dir>...` on the Mac's GPU (bench/boot/REPORT.md "PERF loop 85").
 
 ## The paired A/B
 

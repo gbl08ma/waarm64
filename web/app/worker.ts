@@ -22,7 +22,7 @@ import { firmwareFiles } from './firmware-files.ts';
 import { MACHINES, readiness, type Machine } from './machine.ts';
 import { Signal } from './memory.ts';
 import type { ToWorker } from './protocol.ts';
-import type { StartMessage } from './worker-devices.ts';
+import { finishSpecs, lateCaps, startCaps, type StartMessage } from './worker-devices.ts';
 import { explain } from './worker-errors.ts';
 import { sessionOf, type Session } from './worker-header.ts';
 import { asked } from './worker-profile.ts';
@@ -85,6 +85,8 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
     case 'snapshot-check':
       void checkSnapshot(running(), m.id, m.what);
       break;
+    case 'caps':
+      return lateCaps.got(m.caps);
     case 'wake':
       return vm?.wake();
     case 'up':
@@ -204,7 +206,7 @@ async function prepare(m: StartMessage, machine: Machine, snapshot: boolean) {
   savedFlash = await parts.flash;
   const files = firmwareFiles(m, await parts.agent);
   const firmware = files ? { flash: savedFlash, fwCfg: files } : undefined;
-  return { core: wasm, kernel: parts.kernel, initrd: parts.initrd, firmware };
+  return { core: wasm, kernel: parts.kernel, initrd: parts.initrd, firmware, heads: parts.heads };
 }
 
 async function start(m: StartMessage, note?: unknown): Promise<void> {
@@ -249,9 +251,10 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
     restoring = !resume;
   }
   const made = await releasing(release, async () => {
+    const caps = await startCaps(m, lateCaps.later); // a 3D start's that came after it: nothing touched yet
     if (stopped()) return undefined;
     checkSplit(plan, m, machine, !!snapshot);
-    const devices = (liveSpecs = devicesOf(plan, m, machine, specs));
+    const devices = (liveSpecs = finishSpecs(devicesOf(plan, m, machine, specs), { caps, heads: parts.heads }));
     session = sessionOf(m, plan);
     booting = bootVm(parts.core, bootOptions(m, machine, plan, parts, devices, restore, warming.take()));
     try {

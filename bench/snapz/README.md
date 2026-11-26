@@ -22,5 +22,8 @@ Dev-only tools behind `bench/boot/REPORT.md` "SNAPZ: compression across the emul
   (docs/benchmarking.md "The snapshot probe"); `WAARM64_PROFILE=off` off the record, `OPS` a round's operations
   (SNAPZ loop 5). It replaced the measuring session's `phases.patch` (the timing points,
   now the page's own) and `probe-save.ts` (git history has both).
+- `readback.ts [out.json]` (PERF loop 85): the warm desktop's 3D read-back alone (its resources loaded into a
+  VirglRenderer on a WebGL2 canvas in the page, `save()` timed); `readback-mac.sh` runs arms of it on the Mac's GPU,
+  `probe-mac.sh` arms of `probe.ts` (docs/benchmarking.md "The snapshot probe").
 - The corpus: `bash bench/gpu/warm-snapshots.sh firefox`, then `corpus.ts target/snapbench/pages.waarm64snap
   target/snapbench/corpus-pages.bin` (1.68 GB).

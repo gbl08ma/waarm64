@@ -288,6 +288,8 @@ export class VirglRenderer {
   private externalWaits = new Set<number>();
   private fbo: WebGLFramebuffer;
   private readFbo: WebGLFramebuffer;
+  /** Whether the GL's own read pair for an internal format is its upload's (`readsAsStored`). */
+  private readonly ownReadPair = new Map<number, boolean>();
   /** The framebuffers the renderer last bound for drawing and reading (`bindFb`). */
   private boundFb = { draw: null as WebGLFramebuffer | null, read: null as WebGLFramebuffer | null };
   /**
@@ -1011,9 +1013,19 @@ export class VirglRenderer {
     const out = new Uint8Array(boxBytes(f, box.w, box.h, box.d, stride, layerStride));
     this.stats.readbackBytes += rowBytes * box.h * box.d;
     if (!reader) return null;
-    const tmp = new Uint8Array(box.w * box.h * reader.bytes);
+    const packed = stride === rowBytes && layerStride === rowBytes * box.h;
+    let straight: boolean | undefined;
+    let tmp: Uint8Array | undefined;
     for (let z = 0; z < box.d; z++) {
       if (!this.bindForRead(r, level, box.z + z)) return null;
+      // A packed box whose texels the GL reads as they're stored goes straight into `out`, unpacked by nothing.
+      straight ??= packed && this.readsAsStored(f, reader);
+      if (straight) {
+        const layer = viewFor(f.type, out.subarray(z * layerStride, (z + 1) * layerStride))!;
+        gl.readPixels(box.x, box.y, box.w, box.h, f.format, f.type, layer);
+        continue;
+      }
+      tmp ??= new Uint8Array(box.w * box.h * reader.bytes);
       const view =
         reader.type === E.FLOAT
           ? new Float32Array(tmp.buffer)
@@ -1036,6 +1048,26 @@ export class VirglRenderer {
     }
     this.bindFb(E.READ_FRAMEBUFFER, null);
     return out;
+  }
+
+  /**
+   * Whether readPixels gives `f`'s texels as they're stored (the bytes an upload of `f.format` and `f.type` takes, `f.bpp`
+   * a texel), with its level bound for reading: `reader` reads them so (RGBA8, RGB10_A2, the 32-bit RGBA formats), or
+   * the GL's own read format and type for it are those (WebGL2 reads a color buffer as RGBA, RGBA_INTEGER or that one
+   * pair: R8 and RG8 as RED and RG bytes, RGB565 as shorts, on ANGLE's Metal, Vulkan and SwiftShader), asked once per
+   * internal format (a round trip to the GPU process). Then the read needs no copy and no repacking (PERF loop 85).
+   */
+  private readsAsStored(f: Format, reader: NonNullable<ReturnType<typeof readbackOf>>) {
+    if (reader.format === f.format && reader.type === f.type && reader.bytes === f.bpp) return true;
+    let own = this.ownReadPair.get(f.internal);
+    if (own === undefined) {
+      const gl = this.gl;
+      own =
+        gl.getParameter(E.IMPLEMENTATION_COLOR_READ_FORMAT) === f.format &&
+        gl.getParameter(E.IMPLEMENTATION_COLOR_READ_TYPE) === f.type;
+      this.ownReadPair.set(f.internal, own);
+    }
+    return own;
   }
 
   /**

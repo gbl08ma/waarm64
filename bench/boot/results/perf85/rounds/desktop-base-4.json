@@ -1,0 +1,82 @@
+{
+ "meta": {
+  "guest": "desktop",
+  "mode": "stored",
+  "profile": "persistent",
+  "ops": [
+   "load",
+   "kept"
+  ],
+  "file": "/home/gabriel.guest/Development/waarm64/target/snapbench/pages.waarm64snap",
+  "bytes": 664542411,
+  "rounds": 1,
+  "settleS": 20,
+  "commit": "bc6852bf",
+  "core": "76e1bead88f3c3d0",
+  "chromium": "Chromium 155.0.8059.84 stable",
+  "host": "8 CPUs unknown",
+  "date": "2026-11-26T13:33:44.939Z",
+  "wallS": 25
+ },
+ "rounds": [
+  {
+   "round": 0,
+   "load": {
+    "wallMs": 1164,
+    "phases": {
+     "check": 326,
+     "checkRead": 242,
+     "checkCrc": 380,
+     "state": 70,
+     "ram": 388,
+     "disk": 66,
+     "pool": 6,
+     "read": 256,
+     "crc": 439,
+     "unpack": 724,
+     "apply": 324,
+     "prepare": 22,
+     "start": 79,
+     "total": 951
+    }
+   },
+   "kept": {
+    "wallMs": 1247,
+    "kind": "kept",
+    "bytes": 678685180,
+    "pausedMs": 993,
+    "stateMs": 222,
+    "blobBytes": 114309668,
+    "hintMs": 19,
+    "hinted": 914358272,
+    "id": "7657ceac8f5c",
+    "phases": {
+     "state": 222,
+     "blobs": 44,
+     "ram": 619,
+     "disk": 104,
+     "pool": 6,
+     "scan": 233,
+     "compress": 2936,
+     "crc": 275,
+     "sink": 252,
+     "poolWait": 0,
+     "poolReady": 34,
+     "pause": 1,
+     "copy": 0,
+     "close": 131
+    },
+    "memory": {
+     "before": {
+      "rssMiB": 3221,
+      "pssMiB": 2604
+     },
+     "peak": {
+      "rssMiB": 3370,
+      "pssMiB": 2746
+     }
+    }
+   }
+  }
+ ]
+}

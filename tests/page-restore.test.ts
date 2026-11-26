@@ -353,22 +353,18 @@ test("a start opens its machine's record as it is once it holds the machine's lo
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await standIn(page);
-  // The GPU worker as a stand-in that says it's ready only when the test says so: the start waits for it, after the
-  // page read the record and before it takes the machine's lock.
+  // The start's take of the machine's lock (web/app/run/machine-lock.ts) only when the test says so, after the page
+  // read the record: whatever comes before it (the GPU worker's start did, until PERF loop 85). Other takes of the lock
+  // (the other tab's delete below holds the machine off) as they are.
   await page.addInitScript(() => {
-    const Real = window.Worker;
-    window.Worker = class extends Real {
-      constructor(url: string | URL, options?: WorkerOptions) {
-        super(url, options);
-        if (!/\/gpu-worker\.ts/.test(String(url))) return;
-        (window as unknown as { __gpuGo: () => void }).__gpuGo = () =>
-          this.onmessage?.(new MessageEvent('message', { data: { type: 'ready', caps: new Uint8Array(0), renderer: 'stand-in' } }));
-      }
-      postMessage(m: unknown, t?: unknown) {
-        if ((m as { type?: string }).type === 'init') return; // the stand-in's: nothing reaches a real one
-        super.postMessage(m as never, t as never);
-      }
-    };
+    const w = window as unknown as { __lockAsked?: boolean; __lockGo: () => void };
+    const go = new Promise<void>((resolve) => (w.__lockGo = resolve));
+    const request = LockManager.prototype.request as (...a: unknown[]) => Promise<unknown>;
+    LockManager.prototype.request = function (this: LockManager, ...a: unknown[]) {
+      if (!location.search.includes('&m=') || !new Error().stack?.includes('machine-lock')) return request.apply(this, a);
+      w.__lockAsked = true;
+      return go.then(() => request.apply(this, a));
+    } as typeof LockManager.prototype.request;
   });
   await page.goto(`${base}/web/app/?autostart=1`);
   const ids = await page.evaluate(async () => {
@@ -385,7 +381,7 @@ test("a start opens its machine's record as it is once it holds the machine's lo
     return { m: m.id as string, o: o.id as string };
   });
   await page.goto(`${base}/web/app/?autostart=1&m=${ids.m}`);
-  await page.waitForFunction(() => typeof (window as unknown as { __gpuGo?: unknown }).__gpuGo === 'function', null, { timeout: 30_000, polling: 50 });
+  await page.waitForFunction(() => (window as unknown as { __lockAsked?: boolean }).__lockAsked, null, { timeout: 30_000, polling: 50 });
   // Meanwhile another tab merges the overlay into the blank disk (what its records then say): the disk a stored disk
   // of its blocks, the overlay gone, the machine left without one.
   await page.evaluate(async (o) => {
@@ -397,7 +393,7 @@ test("a start opens its machine's record as it is once it holds the machine's lo
     await store.put('disks', { ...d, kind: 'stored', identity: { kind: 'stored', id: d.id, bytes: 0 }, generation: 1, bytes: 0 });
     store.close();
   }, ids.o);
-  await page.evaluate(() => (window as unknown as { __gpuGo: () => void }).__gpuGo());
+  await page.evaluate(() => (window as unknown as { __lockGo: () => void }).__lockGo());
   await page.waitForFunction(() => (window as unknown as { __starts: unknown[] }).__starts.length === 1, null, { timeout: 30_000, polling: 50 });
   const [start] = await starts(page);
   const rec = await page.evaluate(async (m) => {
