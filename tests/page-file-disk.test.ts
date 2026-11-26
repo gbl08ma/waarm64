@@ -6,7 +6,7 @@
 // disk keeps its id, machines and overlays with the new handle. An overlay's export, its file gone, says so with Choose
 // again, as the Home page's Disks pane does. `WAARM64_SHOTS=<dir>`: screenshots of those states there.
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
@@ -16,6 +16,10 @@ import { t } from '../web/i18n.ts';
 import { answerAsks, type Question } from './page-ask.ts';
 import { openHome } from './page-home.ts';
 import { words } from './words.ts';
+
+/** A start boots the machine's UEFI firmware: unbuilt where images aren't (GitHub's runner). */
+const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
+const skip = !existsSync(FIRMWARE) ? 'SKIPPED: run images/build.sh edk2' : undefined;
 
 let base: string;
 let close: () => void;
@@ -114,7 +118,7 @@ const record = (page: Page, ids: { disk: string; machine: string }, path: string
     [ids, path] as [{ disk: string; machine: string }, string],
   );
 
-test("a file disk's file out of reach: the start says why and offers Choose again, which keeps the disk; so do an export and the Disks pane", { timeout: 240_000 }, async () => {
+test("a file disk's file out of reach: the start says why and offers Choose again, which keeps the disk; so do an export and the Disks pane", { skip, timeout: 240_000 }, async () => {
   const context = await chromium.launchPersistentContext(mkdtempSync(join(dir, 'profile-')), { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium', viewport: { width: 1280, height: 800 } });
   const errors: string[] = [];
   const questions: Question[] = [];
