@@ -8,6 +8,7 @@ import { MsgError } from '../msg.ts';
 import { t } from '../i18n.ts';
 import { folderDir, type Store } from './store.ts';
 import { newId, uniqueName, type FolderAttachment, type MachineRecord } from './shape.ts';
+import { GRANT_WAIT_MS, within } from './grants.ts';
 
 /** The most folders a machine has attached: the root is a listing, so this bounds the page's list, not a slot. */
 export const MAX_FOLDERS = 16;
@@ -57,7 +58,9 @@ export function preselect(all: Folder[], attached: FolderAttachment[]): string |
  */
 export async function createFolder(store: Store, n: NewFolder): Promise<Folder> {
   const all = await store.all('folders');
-  for (const f of all) if (f.handle && n.handle && (await f.handle.isSameEntry(n.handle))) return f;
+  // Bounded (web/app/grants.ts): a stored handle Chromium no longer answers for is taken as another directory.
+  for (const f of all)
+    if (f.handle && n.handle && (await within(f.handle.isSameEntry(n.handle), GRANT_WAIT_MS))) return f;
   const taken = all.map((f) => f.name);
   const f: Folder = {
     id: newId(),
@@ -70,6 +73,18 @@ export async function createFolder(store: Store, n: NewFolder): Promise<Folder> 
   };
   await store.put('folders', f);
   return f;
+}
+
+/**
+ * Host folder `id`'s directory picked again (Choose again…): its record keeps its id, name and attachments and takes
+ * `handle`, whose grant came with the pick (one the browser stopped answering for is dropped: web/app/grants.ts).
+ * False if the folder is gone (another tab deleted it).
+ */
+export async function replaceHandle(store: Store, id: string, handle: FileSystemDirectoryHandle) {
+  const f = await store.get('folders', id);
+  if (f?.kind !== 'host') return false;
+  await store.put('folders', { ...f, handle });
+  return true;
 }
 
 /** Changes a folder's name or Read-only (an attached machine takes them at its next start). */

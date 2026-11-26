@@ -10,6 +10,7 @@ import { sizeSeen } from '../disk-size.ts';
 import { newId, serialOf, type DiskRecord } from '../shape.ts';
 import { diskDir, machineDir, overlayDir } from '../store.ts';
 import { diskSource, identityOf, refreshOverlay, refreshStored } from '../disks.ts';
+import { granted } from '../grants.ts';
 
 /** A stored machine's boot disk has no overlay before its first start (the start makes one): nothing written yet. */
 export const NO_OVERLAY_YET = 'overlays/none';
@@ -173,14 +174,17 @@ export async function refreshRecords(m: PageMachine) {
   }
 }
 
-/** The stored machine's file disks that need the user before it can start (machines.md §3.2). */
+/**
+ * The stored machine's file disks that need the user before it can start (machines.md §3.2): no handle, or one the
+ * browser doesn't say is granted (within `GRANT_WAIT_MS`: it can leave the question unanswered, web/app/grants.ts).
+ */
 export async function filesNeedingUser(m: PageMachine, s: Stored) {
   const out: DiskRecord[] = [];
   for (const a of s.record.attachments) {
     const d = diskOf(s, a.disk);
     if (d.kind !== 'file' || m.pickedFiles.has(d.id)) continue;
     const h = d.handle;
-    if (!h || (h.queryPermission && (await h.queryPermission({ mode: 'read' })) !== 'granted')) out.push(d);
+    if (!h || !(await granted(h, 'read'))) out.push(d);
   }
   return out;
 }

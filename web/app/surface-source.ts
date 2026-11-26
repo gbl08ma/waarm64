@@ -7,6 +7,7 @@ import { msg, type Msg } from '../msg.ts';
 import { isManifestUrl } from '../chunked.ts';
 import { cacheIdentity } from '../diskcache.ts';
 import { mergeLock } from '../overlay.ts';
+import { granted } from './grants.ts';
 import type { InspectAnswer, InspectQuery, RangeDetail, Surface } from '../surface.ts';
 import type { PageState } from './areas/power.svelte.ts';
 import type { FromWorker, ToWorker } from './protocol.ts';
@@ -206,8 +207,7 @@ export async function jobOf(job: OfflineJob): Promise<Omit<SurfaceJob, 'query'>>
   if (rest.baseKind !== 'image') return rest;
   const denied = { ...rest, baseKind: 'opaque' as const, why: 'permission' as const };
   try {
-    if (!handle || (handle.queryPermission && (await handle.queryPermission({ mode: 'read' })) !== 'granted'))
-      return denied;
+    if (!handle || !(await granted(handle, 'read'))) return denied; // unanswered too (web/app/grants.ts)
     return { ...rest, file: await handle.getFile() };
   } catch {
     return denied; // the file went away, or can't be read now

@@ -59,6 +59,9 @@
               {#if v?.problem === 'permission'}<Note inline tone="warn" class="meta"
                   >{t('folders:Folders.noPermission')}</Note
                 >{/if}
+              {#if v?.problem === 'unanswered'}<Note inline tone="warn" class="meta"
+                  >{t('folders:Folders.unanswered')}</Note
+                >{/if}
               {#if v?.problem === 'held'}<Note inline tone="warn" class="meta"
                   >{#if v.holder}<T k="folders:Folders.inUseBy" params={{ holder: v.holder }} />{:else}{t(
                       'folders:Folders.inUse',
@@ -83,6 +86,10 @@
                 act(t('folders:Folders.busy.moving'), () => page.folderMove(machine.id, a.id, by))}
               action="folder"
             />
+            {#if v?.problem === 'unanswered'}<Button
+                onclick={() => act(t('folders:Folders.busy.choosing'), () => page.folderRepick(a.id))}
+                data-action="repick-folder">{t('folders:Folders.repick')}</Button
+              >{/if}
             {#if v?.problem === 'permission'}<Button
                 onclick={() => act(t('folders:Folders.busy.asking'), () => page.folderAllow(a.id))}
                 data-action="allow-folder">{t('folders:Folders.allow')}</Button

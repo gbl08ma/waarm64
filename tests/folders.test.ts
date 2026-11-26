@@ -118,10 +118,67 @@ function devicePort() {
   return { port: port as unknown as MessagePort, told, say: (m: unknown) => (port.onmessage as (e: { data: unknown }) => void)({ data: m }) };
 }
 
+test("the live side: a grant the browser doesn't answer leaves its folder out, and the start goes on", async () => {
+  // Chromium can leave a stored handle's queryPermission unanswered (a host folder, after the computer restarted): a
+  // start that waited for it never ended, on its boot card with no error.
+  const store = newStore();
+  let answer: (granted: boolean) => void = () => {};
+  let asked = 0;
+  const access: FolderAccess = {
+    directory: async (f) => fakeDir(f.id),
+    query: () => {
+      asked++;
+      return new Promise<boolean>((resolve) => { answer = resolve; });
+    },
+    request: async () => true,
+    pick: async () => fakeDir('picked again'),
+  };
+  const live = new PageFolders({ store, me: () => 'This one', onChange() {}, access, grantWaitMs: 20 });
+  const [opfs, host] = [await createFolder(store, { kind: 'opfs', name: 'In the browser' }), await createFolder(store, { kind: 'host', name: 'On disk', handle: fakeDir('d') })];
+  const m = await createMachine(store, { name: 'M' });
+  await attachFolder(store, m.id, host.id, false);
+  await attachFolder(store, m.id, opfs.id, false);
+  const device = devicePort();
+  try {
+    const began = live.begin((await store.get('machines', m.id))!, device.port);
+    const specs = await Promise.race([began, new Promise<'hung'>((r) => setTimeout(() => r('hung'), 2000))]);
+    assert.notEqual(specs, 'hung', 'the start waited for the grant');
+    assert.deepEqual((specs as { name: string }[]).map((s) => s.name), ['In the browser'], 'the folder without an answer is left out');
+    assert.deepEqual(live.views().map((v) => v.problem), ['unanswered', undefined]);
+    // The answer, late: granted, the folder comes in while the machine runs.
+    answer(true);
+    await new Promise((r) => setTimeout(r, 5));
+    assert.equal(live.views()[0].problem, undefined);
+    assert.deepEqual(device.told.map((t) => [(t as { type: string }).type, (t as { folder: { name: string } }).folder.name]), [['attach', 'On disk']]);
+    live.end();
+    // Unanswered again at the next start; Choose again… (the user's click) picks the directory anew: the record keeps
+    // its id and name with the new handle, and the machine gets it.
+    const second = devicePort();
+    await live.begin((await store.get('machines', m.id))!, second.port);
+    assert.equal(asked, 2);
+    assert.equal(live.views()[0].problem, 'unanswered');
+    await live.repick(host.id);
+    assert.equal(live.views()[0].problem, undefined);
+    assert.equal(asked, 2, 'a picked directory is not asked about again');
+    const picked = await store.get('folders', host.id);
+    assert.deepEqual([picked?.name, picked?.handle?.name], ['On disk', 'picked again']);
+    assert.deepEqual(second.told.map((t) => [(t as { type: string }).type, (t as { folder: { handle: { name: string } } }).folder.handle.name]), [['attach', 'picked again']]);
+    // A late answer once the machine stopped brings nothing in.
+    live.end();
+    answer(true);
+    await new Promise((r) => setTimeout(r, 5));
+    assert.equal(second.told.length, 1);
+    assert.equal(live.views().length, 0);
+  } finally {
+    live.close(); // a failure leaves nothing that keeps the file running
+    store.close();
+  }
+});
+
 test('the live side: what a start serves, what waits, and what brings it in', async () => {
   const store = newStore();
   let allowed = false;
-  const access: FolderAccess = { directory: async (f) => fakeDir(f.id), query: async () => allowed, request: async () => { allowed = true; return true; } };
+  const access: FolderAccess = { directory: async (f) => fakeDir(f.id), query: async () => allowed, request: async () => { allowed = true; return true; }, pick: async () => undefined };
   const live = new PageFolders({ store, me: () => 'This one', onChange() {}, access });
   const [opfs, host] = [await createFolder(store, { kind: 'opfs', name: 'In the browser' }), await createFolder(store, { kind: 'host', name: 'On disk', handle: fakeDir('d') })];
   const m = await createMachine(store, { name: 'M' });

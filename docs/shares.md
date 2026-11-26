@@ -35,7 +35,16 @@ the guest ([frontend.md](frontend.md) "What the page sets in the guest").
    checks each attached folder's permission (`queryPermission`); where it isn't granted the folder is left out of the
    root and the page shows **Allow access to *name*** (`requestPermission` needs a click), which adds it while the
    machine runs. Chromium's "allow on every visit" makes this rare. A grant lost while running (the user revoked it)
-   turns the folder's requests into `EACCES` and brings the same button back.
+   turns the folder's requests into `EACCES` and brings the same button back. The question is bounded
+   (`GRANT_WAIT_MS`, 3 s, web/app/grants.ts): Chromium can leave `queryPermission` on a stored directory handle
+   unanswered (seen on Linux after the computer restarted, with the browser's site settings still listing the folder),
+   and a start that waited for it stayed on its boot card. Unanswered, the folder is left out as one without a grant
+   is ([the browser didn't confirm access to it](ui:folders:FoldersMenu.state.unanswered)), and the browser's late
+   answer, while the machine still runs here, brings it in. Its way on is [Choose *name* again…](ui:folders:FoldersMenu.repick)
+   rather than Allow access (`requestPermission` on that handle did nothing visible there): the browser's directory
+   picker, whose handle (granted by the pick) replaces the record's (`replaceHandle`: its id, name and attachments
+   kept), and the machine running here gets it. `createFolder`'s `isSameEntry` over the stored handles is bounded the
+   same way.
 6. **The guest's side is set by the page:** with **[Mount shared folders in the guest](ui:machines:FoldersTab.sharesMount)** on (`MachineRecord.sharesMount`,
    default on), a systemd automount at the machine's **mount point** (`MachineRecord.sharesPath`, default
    `/mnt/shared`, left out of the record while it is the default), set per machine because distributions differ on

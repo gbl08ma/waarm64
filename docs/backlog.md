@@ -1229,6 +1229,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## The page (M8 phase A; [frontend.md](frontend.md))
 
+- **A host folder whose grant Chromium doesn't answer** ([shares.md](shares.md) §1, 2026-11-26): a start no longer
+  waits for it (web/app/grants.ts) and Choose again… picks its directory anew. Not reproduced headless (seen on the
+  user's Linux Chromium after a restart, where Allow access, `requestPermission` on the handle, did nothing visible), so no page test
+  drives the browser into that state; tests/folders.test.ts fakes it. What isn't bounded: `requestPermission` (Allow
+  access, Allow and start: a prompt may rightly stay open) and the 9p server's reads through a served handle.
 - **The introduction's deep dives for graphics** (INTRO, 2026-11-20; frontend.md "The introduction"): the processor
   and memory have one each; Vulkan (a draw call followed through Venus's rings, vkr, our driver, the NIR → WGSL
   compiler and WebGPU, from a captured frame), and OpenGL and video (virgl's stream onto WebGL2, a VA-API picture
@@ -2157,6 +2162,12 @@ What the HOST track's reviews found and left (the reports: the branch `review/ho
 Bugs found in other projects, kept here until the user's round-up of upstream reports; each with what's needed to
 report it. Nothing has been filed. (Vulkan's are [C]: they wait for the user.)
 
+- **Chromium, `queryPermission` on a stored directory handle never settles** ([shares.md](shares.md) §1): a
+  `FileSystemDirectoryHandle` read back from IndexedDB, `queryPermission({mode: 'readwrite'})`, pending for over 75 s,
+  while the site's settings still listed the folder as shared; on Linux (an NVIDIA desktop), after the computer
+  restarted. A file handle's `read` query on the same page answered; `requestPermission` from a click on the directory
+  handle did nothing visible (no prompt, no grant). Needed for a report: the Chromium version, and
+  whether it repeats after a fresh grant and a restart.
 - **Mesa, virgl's VA-API driver offers I420 and YV12 decode surfaces** ([graphics.md](graphics.md) "Video's design"):
   `virgl_is_video_format_supported` is `vl_video_buffer_is_format_supported`, which only checks that the planes'
   formats sample and render, so `vaQuerySurfaceAttributes` lists NV12, YV12 and I420; FFmpeg's

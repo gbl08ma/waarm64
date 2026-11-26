@@ -173,7 +173,7 @@ export const AREAS: Record<string, Area> = {
   },
   folders: {
     // Shared folders (9p over virtio): docs/shares.md.
-    src: ['web/9p*.ts', 'web/app/folder*.ts', 'web/app/Folder*.svelte', 'web/app/shares-mount.ts', 'web/app/areas/folder-actions.ts', 'web/app/areas/shares.svelte.ts'],
+    src: ['web/9p*.ts', 'web/app/folder*.ts', 'web/app/Folder*.svelte', 'web/app/grants.ts', 'web/app/shares-mount.ts', 'web/app/areas/folder-actions.ts', 'web/app/areas/shares.svelte.ts'],
     push: ['ci-machines.sh'],
   },
   // ---- the page

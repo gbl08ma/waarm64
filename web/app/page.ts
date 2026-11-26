@@ -157,6 +157,8 @@ export type Page = {
   folderReadOnly(machine: string, id: string, readOnly: boolean): Promise<void>;
   /** Asks for a folder's grant (from a click). */
   folderAllow(id: string): Promise<void>;
+  /** Picks a host folder's directory again and serves it (from a click: its grant wasn't answered). */
+  folderRepick(id: string): Promise<void>;
   /** Asks the user, then takes a folder another machine has. */
   folderUseHere(id: string): Promise<void>;
   /**

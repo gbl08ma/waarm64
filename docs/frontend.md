@@ -776,8 +776,8 @@ was (on the screen).
   half merged. An overlay's view of a stored disk the machine here writes in place is said so too
   ([The machine running in this tab writes this disk in place, so its overlays can't be read while it runs. The disk alone is shown live.](ui:disks:surface-source.inPlaceHere)): its store is the
   machine's. A
-  file disk's image is examined where its kept handle's read permission is already granted (`queryPermission`, never
-  `requestPermission`: `surface-source.ts` `jobOf` hands the job the file): a qcow2's tables read whole
+  file disk's image is examined where its kept handle's read permission is already granted (`queryPermission`, bounded
+  by web/app/grants.ts, never `requestPermission`: `surface-source.ts` `jobOf` hands the job the file): a qcow2's tables read whole
   (web/qcow2.ts `readAllocation`, at most 32 MiB of them) for its clusters. A URL's image is read only from the blocks
   this browser keeps of it (nothing is fetched): the page names them from the disk's record (`keptIdentity`: the
   identity web/disk-sources.ts `remoteSource` keeps them under, web/diskcache.ts `cacheIdentity`; the server isn't

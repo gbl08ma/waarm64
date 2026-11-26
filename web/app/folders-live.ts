@@ -14,6 +14,7 @@ import {
   folderSpecs,
   moveFolder,
   readsOnly,
+  replaceHandle,
   setAttachmentReadOnly,
   type Folder,
 } from './folders.ts';
@@ -21,12 +22,17 @@ import { Locks } from './locks.ts';
 import type { FolderAttachment, MachineRecord } from './shape.ts';
 import type { Store } from './store.ts';
 import { errorText } from '../i18n.ts';
+import { GRANT_WAIT_MS, within } from './grants.ts';
+import { browserAccess, type FolderAccess } from './folder-access.ts';
+
+export { browserAccess, type FolderAccess };
 
 /**
- * Why an attached folder isn't served. `permission`: the browser needs a click; `held`: another machine has it;
- * `missing`: the record is gone (another tab deleted it); `failed`: it can't be opened (`holder` says why).
+ * Why an attached folder isn't served. `permission`: the browser needs a click; `unanswered`: the browser didn't say
+ * whether it's granted (web/app/grants.ts: Choose again… picks its directory anew, and a late grant brings it in); `held`: another machine has
+ * it; `missing`: the record is gone (another tab deleted it); `failed`: it can't be opened (`holder` says why).
  */
-export type FolderProblem = 'permission' | 'held' | 'missing' | 'failed';
+export type FolderProblem = 'permission' | 'unanswered' | 'held' | 'missing' | 'failed';
 export type FolderView = {
   id: string;
   /** Its name at the device's root. */
@@ -36,34 +42,6 @@ export type FolderView = {
   problem?: FolderProblem;
   /** The machine that has it (`held`), when its tab answered; why it can't be opened (`failed`). */
   holder?: string;
-};
-
-/** What the browser's API is asked; a test's fake in Node. */
-export type FolderAccess = {
-  /** The directory of a folder in the browser. */
-  directory(f: Folder): Promise<FileSystemDirectoryHandle>;
-  /** Whether the browser grants a host folder now. */
-  query(f: Folder, write: boolean): Promise<boolean>;
-  /** Asks the user (from a click). */
-  request(f: Folder, write: boolean): Promise<boolean>;
-};
-
-type Writable = FileSystemDirectoryHandle & {
-  queryPermission(o: object): Promise<string>;
-  requestPermission(o: object): Promise<string>;
-};
-/** The page's: OPFS's `folders/<id>/`, and File System Access's permissions. */
-export const browserAccess: FolderAccess = {
-  async directory(f) {
-    const top = await (await navigator.storage.getDirectory()).getDirectoryHandle('folders', { create: true });
-    return top.getDirectoryHandle(f.id, { create: true });
-  },
-  async query(f, write) {
-    return (await (f.handle as Writable).queryPermission({ mode: write ? 'readwrite' : 'read' })) === 'granted';
-  },
-  async request(f, write) {
-    return (await (f.handle as Writable).requestPermission({ mode: write ? 'readwrite' : 'read' })) === 'granted';
-  },
 };
 
 /** How long a device gets to say it let go of a folder (a dead one never will), ms. */
@@ -91,6 +69,8 @@ export class PageFolders {
   private letting = new Map<string, () => void>();
   /** The last refresh: they run one at a time. */
   private refreshing: Promise<void> = Promise.resolve();
+  /** How long a host folder's grant is waited for (`GRANT_WAIT_MS`; a test's shorter). */
+  private grantWaitMs: number;
 
   /** All of the browser's folders, as last read. */
   get folders(): Folder[] {
@@ -103,8 +83,15 @@ export class PageFolders {
     return this.#held;
   }
 
-  constructor(o: { store: Store; me: () => string; onChange?: () => void; access?: FolderAccess }) {
+  constructor(o: {
+    store: Store;
+    me: () => string;
+    onChange?: () => void;
+    access?: FolderAccess;
+    grantWaitMs?: number;
+  }) {
     [this.store, this.onChange, this.access] = [o.store, o.onChange, o.access ?? browserAccess];
+    this.grantWaitMs = o.grantWaitMs ?? GRANT_WAIT_MS;
     this.locks = new Locks(o.store, 'folder', o.me, (lock) => void this.release(lock));
   }
 
@@ -189,13 +176,25 @@ export class PageFolders {
     this.changed();
   }
 
-  /** Gets folder `a` ready to serve, or says why not: its grant, then its lock. */
-  private async take(a: FolderAttachment) {
+  /**
+   * Gets folder `a` ready to serve, or says why not: its grant (`granted`: given by the user's click already), then its
+   * lock. A grant the browser doesn't answer within `grantWaitMs` leaves the folder out (`unanswered`), and its answer,
+   * if it comes while the machine still runs here, brings it in.
+   */
+  private async take(a: FolderAttachment, granted = false) {
     const f = this.folders.find((x) => x.id === a.id);
     if (!f) return void this.problems.set(a.id, { problem: 'missing' });
     const write = !readsOnly(a, f);
-    if (f.kind === 'host' && !(await this.access.query(f, write)))
-      return void this.problems.set(a.id, { problem: 'permission' });
+    if (f.kind === 'host' && !granted) {
+      const asked = this.access.query(f, write);
+      const now = await within(asked, this.grantWaitMs);
+      if (now === undefined) {
+        this.problems.set(a.id, { problem: 'unanswered' });
+        void asked.then((yes) => this.lateGrant(a.id, yes)).catch(() => undefined);
+        return;
+      }
+      if (!now) return void this.problems.set(a.id, { problem: 'permission' });
+    }
     const lock = folderLock(a.id);
     if (!(await this.locks.take(lock, { shared: !write })))
       return void this.problems.set(a.id, { problem: 'held', holder: await this.locks.holder(lock) });
@@ -208,6 +207,18 @@ export class PageFolders {
       this.locks.drop(lock);
       this.problems.set(a.id, { problem: 'failed', holder: errorText(e) });
     }
+  }
+
+  /** The browser's late answer on folder `id`'s grant: while it still waits for it here, it comes in (or needs a click). */
+  private async lateGrant(id: string, yes: boolean) {
+    const a = this.attached.find((x) => x.id === id);
+    if (!a || !this.port || this.problems.get(id)?.problem !== 'unanswered') return;
+    if (!yes) {
+      this.problems.set(id, { problem: 'permission' });
+      return this.changed();
+    }
+    await this.take(a, true);
+    this.serve(id);
   }
 
   private tell(m: FoldersToDevice) {
@@ -275,7 +286,23 @@ export class PageFolders {
       this.tell({ type: 'granted', id });
       return this.changed();
     }
-    await this.take(a);
+    await this.take(a, true);
+    this.serve(id);
+  }
+
+  /**
+   * The user's click on Choose again… (a folder whose grant the browser didn't answer for, where Allow access may not be
+   * answered either): its directory picked again, the record given the new handle, and the folder served.
+   */
+  async repick(id: string) {
+    const a = this.attached.find((x) => x.id === id);
+    const f = this.folders.find((x) => x.id === id);
+    if (!a || f?.kind !== 'host') return;
+    const handle = await this.access.pick(!readsOnly(a, f));
+    if (!handle || !(await replaceHandle(this.store, id, handle))) return;
+    await this.refresh();
+    if (this.served.has(id) || !this.port) return;
+    await this.take(a, true);
     this.serve(id);
   }
 

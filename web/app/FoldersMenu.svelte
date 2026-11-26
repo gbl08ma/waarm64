@@ -35,6 +35,8 @@
     switch (v.problem) {
       case 'permission':
         return msg('folders:FoldersMenu.state.permission');
+      case 'unanswered':
+        return msg('folders:FoldersMenu.state.unanswered');
       case 'held':
         return v.holder
           ? msg('folders:FoldersMenu.state.heldBy', { holder: v.holder })
@@ -67,6 +69,11 @@
       <li data-folder={v.id} data-problem={v.problem}>
         <span><b>{v.name}</b> <small class="folder-state"><T m={stateText(v)} /></small></span>
         <span class="buttons">
+          {#if v.problem === 'unanswered'}<Button
+              data-action="repick-folder"
+              onclick={() => act(() => page.folderRepick(v.id))}
+              ><T k="folders:FoldersMenu.repick" params={{ name: v.name }} /></Button
+            >{/if}
           {#if v.problem === 'permission'}<Button
               data-action="allow-folder"
               onclick={() => act(() => page.folderAllow(v.id))}

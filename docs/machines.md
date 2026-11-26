@@ -182,7 +182,8 @@ date are the same disk to the page.
 ### 3.2 Re-granting a file
 
 A `FileSystemFileHandle` kept in IndexedDB needs `requestPermission({mode: 'read'})` from a click in each session:
-a start that finds a file disk without permission stops at "[Allow and start](ui:disks:problems.allowAndStart)" (one prompt per handle), or at
+a start that finds a file disk without permission (or whose `queryPermission` doesn't answer within `GRANT_WAIT_MS`:
+web/app/grants.ts, docs/shares.md §1) stops at "[Allow and start](ui:disks:problems.allowAndStart)" (one prompt per handle), or at
 "[Select and start](ui:disks:problems.pickAndStart)" for a disk with no handle (a definition's, or one opened through a plain file input where the browser has
 no `showOpenFilePicker`). Drops give handles too (`DataTransferItem.getAsFileSystemHandle`), as the picker does: the
 Add a disk wizard's, Open disk…'s and From a disk image…'s (web/app/areas/disk-actions.ts `open`). A picked file is checked as in §6.

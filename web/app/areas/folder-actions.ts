@@ -20,6 +20,7 @@ type FolderPage = Pick<
   | 'folderMove'
   | 'folderReadOnly'
   | 'folderAllow'
+  | 'folderRepick'
   | 'folderUseHere'
 >;
 
@@ -100,6 +101,7 @@ export class FolderActions {
       folderMove: (machine, id, by) => this.#changed(machine, folders.move(machine, id, by)),
       folderReadOnly: (machine, id, readOnly) => this.#changed(machine, folders.setReadOnly(machine, id, readOnly)),
       folderAllow: (id) => folders.allow(id),
+      folderRepick: (id) => folders.repick(id),
       folderUseHere: (id) => this.#useHere(id),
     };
   }
