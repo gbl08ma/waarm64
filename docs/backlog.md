@@ -1240,8 +1240,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **A host folder whose grant Chromium doesn't answer** ([shares.md](shares.md) §1, 2026-11-26): a start no longer
   waits for it (web/app/grants.ts) and Choose again… picks its directory anew. Not reproduced headless (seen on the
   user's Linux Chromium after a restart, where Allow access, `requestPermission` on the handle, did nothing visible), so no page test
-  drives the browser into that state; tests/folders.test.ts fakes it. What isn't bounded: `requestPermission` (Allow
-  access, Allow and start: a prompt may rightly stay open) and the 9p server's reads through a served handle.
+  drives the browser into that state; tests/folders.test.ts fakes it. A file disk's file has the same way on
+  (machines.md §3.2: Choose *name* again and start, and Allow and start bounded: after `GRANT_WAIT_MS` it's said as
+  unanswered, a late grant still starts). What isn't bounded: a host folder's Allow access (`requestPermission`: a
+  prompt may rightly stay open) and the 9p server's reads through a served handle.
 - **The introduction's deep dives for graphics** (INTRO, 2026-11-20; frontend.md "The introduction"): the processor
   and memory have one each; Vulkan (a draw call followed through Venus's rings, vkr, our driver, the NIR → WGSL
   compiler and WebGPU, from a captured frame), and OpenGL and video (virgl's stream onto WebGL2, a VA-API picture
@@ -2173,8 +2175,12 @@ report it. Nothing has been filed. (Vulkan's are [C]: they wait for the user.)
   `FileSystemDirectoryHandle` read back from IndexedDB, `queryPermission({mode: 'readwrite'})`, pending for over 75 s,
   while the site's settings still listed the folder as shared; on Linux (an NVIDIA desktop), after the computer
   restarted. A file handle's `read` query on the same page answered; `requestPermission` from a click on the directory
-  handle did nothing visible (no prompt, no grant). Needed for a report: the Chromium version, and
-  whether it repeats after a fresh grant and a restart.
+  handle did nothing visible (no prompt, no grant). Later the same day a file disk's handle (an image on an external
+  drive) did the same: the site's settings listed the file, Allow and start (`requestPermission({mode: 'read'})`) did
+  nothing, and its overlays couldn't be exported; the user suspects the browser no longer took the file for the one
+  granted. Needed for a report: the Chromium version, whether the drive's mount point changed, and whether it repeats
+  after a fresh grant and a restart. (Headless Chromium leaves `requestPermission` pending too, having no prompt to
+  show: not a reproduction.)
 - **Mesa, virgl's VA-API driver offers I420 and YV12 decode surfaces** ([graphics.md](graphics.md) "Video's design"):
   `virgl_is_video_format_supported` is `vl_video_buffer_is_format_supported`, which only checks that the planes'
   formats sample and render, so `vaQuerySurfaceAttributes` lists NV12, YV12 and I420; FFmpeg's

@@ -16,6 +16,7 @@ import type { DiskRecord, MachineRecord } from '../shape.ts';
 import type { Core } from '../run/core.ts';
 import { inUse, progressText } from '../run/messages.ts';
 import { baseName, bootAttachment, diskName, overlayName, pageDisk, sourceOf } from '../run/page-disks.ts';
+import type { FileActions } from './file-actions.ts';
 import { isLive, power } from './power.svelte.ts';
 
 export const changesHeader = async (file: File) =>
@@ -28,8 +29,11 @@ type Into =
 
 export class DiskChanges {
   readonly #c: Core;
-  constructor(c: Core) {
+  /** A file disk's file checked before it's read (said, with Allow and Choose again, when it can't be). */
+  readonly #files: Pick<FileActions, 'ready'>;
+  constructor(c: Core, files: Pick<FileActions, 'ready'>) {
     this.#c = c;
+    this.#files = files;
   }
 
   /** The stored machine's attachment it goes into (the one named, or the page's boot disk), or the page's own disk. */
@@ -94,12 +98,25 @@ export class DiskChanges {
     return !!info?.hash;
   }
 
+  /**
+   * `into` with its disk's record as the store has it now, once its file can be read: a file disk's may not be (said,
+   * with Allow and Choose again: docs/machines.md §3.2), and the base is read to check the changes file's hash.
+   */
+  async #ready(into: Into): Promise<Into | undefined> {
+    if (!into.m) return into;
+    const failed = (cause: MsgError) => new MsgError('disks:disk-changes.changes.failed', undefined, { cause });
+    const disk = await this.#files.ready(into.disk, failed);
+    return disk && { ...into, disk };
+  }
+
   /** Loads a changes file: onto the page's disk, or into a new overlay of a stored machine's attachment. */
   async load(file: File, target?: { machine: MachineRecord; attachment: string }) {
     const { power: pw, messages } = this.#c;
     if (pw.busy()) return;
-    const into = await this.#into(target);
-    if (!into || !(await this.#checked(file, into))) return;
+    const found = await this.#into(target);
+    if (!found || !(await this.#checked(file, found))) return;
+    const into = await this.#ready(found);
+    if (!into) return;
     const running = into.here && isLive(power.state);
     if (!(await this.#question(file, into, running))) return;
     if (into.m && !into.here) {

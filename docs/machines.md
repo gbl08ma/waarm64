@@ -183,12 +183,49 @@ date are the same disk to the page.
 
 ### 3.2 Re-granting a file
 
-A `FileSystemFileHandle` kept in IndexedDB needs `requestPermission({mode: 'read'})` from a click in each session:
-a start that finds a file disk without permission (or whose `queryPermission` doesn't answer within `GRANT_WAIT_MS`:
-web/app/grants.ts, docs/shares.md §1) stops at "[Allow and start](ui:disks:problems.allowAndStart)" (one prompt per handle), or at
-"[Select and start](ui:disks:problems.pickAndStart)" for a disk with no handle (a definition's, or one opened through a plain file input where the browser has
-no `showOpenFilePicker`). Drops give handles too (`DataTransferItem.getAsFileSystemHandle`), as the picker does: the
-Add a disk wizard's, Open disk…'s and From a disk image…'s (web/app/areas/disk-actions.ts `open`). A picked file is checked as in §6.
+A `FileSystemFileHandle` kept in IndexedDB needs `requestPermission({mode: 'read'})` from a click in each session, and
+it is a path, not the file: Chromium keeps a moved file's grant (`queryPermission` says `granted`) and `getFile()` throws
+NotFoundError, and another file put at its place reads as that one. So a file disk's file is checked before anything
+reads it (web/app/file-access.ts `reach`): its grant, asked with a bound (`GRANT_WAIT_MS`: web/app/grants.ts, docs/shares.md
+§1; a grant a click gave in this session isn't asked again, `PageMachine.allowedFiles`, since Chromium may grant and then
+leave the question unanswered), then the file read (a byte) and its size against the identity's. Each way it can fail
+has its words under "[This web app can't read *name*](ui:disks:file-access.cantRead)" (`disks:file-access.*`): no handle
+(`nohandle`), no grant yet in this session (`prompt`), no answer (`unanswered`), refused (`refused`), not where it was
+(`missing`: moved, renamed, deleted, its drive not connected), unreadable (`unreadable`), and another size at its place
+(`changed`: replaced, and the overlays would read as garbage over it).
+
+**At a start** (`filesNeedingUser`, web/app/run/problems.ts `needsUser`) the machine waits in the message bar, which says
+why and offers, one disk a click (a prompt or a picker takes the click's activation):
+- "[Allow and start](ui:disks:problems.allowAndStart)" where the browser's grant may help (no grant, no answer,
+  refused): `requestPermission`, called before any await. A refusal, an error and an answer that doesn't come within
+  `GRANT_WAIT_MS` are said (`file-access.unansweredAllow`: seen on a user's Linux
+  Chromium, where Allow and start did nothing, as for a host folder); a late grant starts the machine if the bar still
+  offers it. Granted, the file is read before the start goes on.
+- "[Choose *name* again and start](ui:disks:problems.repickAndStart)", always: the browser's file picker
+  (`showOpenFilePicker`, a handle granted by the pick). The file is checked to be the disk's (below); the record keeps
+  its id, name, identity, overlays and attachments and takes the new handle (web/app/disks.ts `replaceFileHandle`).
+- "[Select and start](ui:disks:problems.pickAndStart)" for a disk with no handle (a definition's, or one opened through a
+  plain file input where the browser has no `showOpenFilePicker`): the same, through the picker where there is one (the
+  disk then keeps a handle), else the plain input (for this session only).
+
+**A job that reads the base** checks it first (web/app/areas/file-actions.ts `ready`): an export of an overlay or of the
+page's disk (before the save picker, whose file would be emptied for nothing), and Import changes into an overlay (its
+hash is checked against the base). One that can't read it says so as its failure, with
+[Allow access](ui:disks:file-actions.allow) where it may help and [Choose *name* again…](ui:disks:file-actions.repick);
+after either, the user runs the job again. A merge reads no file base (stored and blank disks only), and the disk
+surface's job only reads a file it may read without asking (frontend.md). **The Disks pane** (Home) shows a file disk
+whose file can't be read for a reason past a grant not given yet, with
+[Choose the file again…](ui:disks:DisksPane.repickFile) and, where it may help, [Allow…](ui:disks:DisksPane.allowFile).
+
+**A file chosen again** (web/app/file-access.ts `samePick`) is refused, with words, when its size isn't the identity's
+(`other.size`), when the disk keeps a hash (a definition's) and its hash differs
+(`other.hash`), or when its image's disk size (a qcow2's header, else the file's
+size) isn't the disk's (`other.image`). The same name and date with the size is
+the disk's file, as `knownDisk` takes it. A file of the right size and image with another name or date can't be told
+from the disk's own by what the record keeps (its cheap identity, §3.1: no hash of a sampled region): the user is asked
+([Another name or date](ui:disks:file-actions.otherFile.title)), and taken, it stands for the disk's file under the
+disk's identity (its overlays apply over it). Drops give handles too (`DataTransferItem.getAsFileSystemHandle`), as
+the picker does: the Add a disk wizard's, Open disk…'s and From a disk image…'s (web/app/areas/disk-actions.ts `open`).
 
 ### 3.3 The overlay's generation
 
@@ -717,9 +754,9 @@ copy stale.
   grown stored disk the browser doesn't have comes back as its image at the size it was made with, under such an
   overlay); file disks, and stored disks the browser
   doesn't have, are picked at the machine's first start (the same flow as a handle without permission, §3.2): a
-  picked file with the same name, size and date is taken; one that differs is hashed against the definition's hash
-  when it has one; otherwise the user is asked, and taking it anyway makes it another disk's identity (its overlays
-  won't apply).
+  picked file of another size is refused; one with the same name, size and date is taken; one that differs is hashed
+  against the definition's hash when it has one (refused if it isn't); otherwise the user is asked, and taking it
+  makes it the disk's file under the disk's identity.
 
 ### 6.1 A machine from a template
 
@@ -826,7 +863,7 @@ budget, the status bar. A disk's map (its "visualize" link in the Disks pane and
 ## 8. Where the code is
 
 - `web/app/store.ts` (records, the sweep, the `BroadcastChannel`), `web/app/shape.ts` (the slots, the shape and its
-  hash; `shape-diff.ts`: what differs, in words), `web/app/machines.ts` (`machine-attachments.ts`: a machine's disks attached and edited), `web/app/disks.ts`, `web/app/merge.ts` (Merge into the disk), `web/app/snapshots.ts`
+  hash; `shape-diff.ts`: what differs, in words), `web/app/machines.ts` (`machine-attachments.ts`: a machine's disks attached and edited), `web/app/disks.ts`, `web/app/file-access.ts` and `areas/file-actions.ts` (a file disk's file reached, allowed, chosen again: §3.2), `web/app/merge.ts` (Merge into the disk), `web/app/snapshots.ts`
   (the shape now, the restore's plan and its commit, `unrestorable`; `snapshot-import.ts`: a file imported), `web/app/snapshot-undo.ts` and `restore-step.ts` (a
   restore's records, its undo and `loaded`: §5.2 "A restore's records"), `web/app/snapshot-lost.ts` (which snapshots can never be restored: `lost`, the disks' generations, `basesOf`), `web/app/machine-like.ts` (a machine like a snapshot), `web/app/switch-asked.ts`
   (a switch to an overlay of another size asked), `web/app/definitions.ts` (`definition-check.ts`: its checks), `web/app/template.ts` (a machine from a template, §6.1; from a store's template, §6.3), `web/app/demo-store.ts` (stores, §6.2), `web/app/NewMachine.svelte` (New machine's dialog, §6.3), `web/app/urlcheck.ts`, `web/app/disk-worker.ts` (a stored
@@ -849,7 +886,7 @@ budget, the status bar. A disk's map (its "visualize" link in the Disks pane and
 
 docs/testing.md's "Machines as the unit" row: the store's ordering and sweep, the shape's hash, the ramdisk, stored
 disks (import, export under `qemu-img compare`, merge and its resume), a blank disk's overlay merged (tests/merge.test.ts, the dialog tests/page-unrestorable.test.ts), snapshots that can never be restored (tests/unrestorable.test.ts, the Snapshots tab tests/page-unrestorable.test.ts), growing a disk (tests/resize.test.ts; the page's Resize dialog from each place, tests/page-resize.test.ts), the generation and its epoch, the restore's
-plan, a restore's records case by case (tests/restore-records.test.ts; the page's side in tests/page-restore.test.ts and tests/page-template-first.test.ts), the Home page and the URL check, definitions across fresh profiles; on Debian (`scripts/ci-machines.sh`)
+plan, a restore's records case by case (tests/restore-records.test.ts; the page's side in tests/page-restore.test.ts and tests/page-template-first.test.ts), the Home page and the URL check, definitions across fresh profiles, a file disk's file out of reach (tests/file-access.test.ts: a stand-in handle per answer the browser gives or doesn't; tests/page-file-disk.test.ts: the start's bar, Choose again, an export, the Disks pane); on Debian (`scripts/ci-machines.sh`)
 several disks, a stored Debian, kept snapshots, forks, Suspend on pins, orphaning.
 
 **Profiles:** an off-the-record Playwright context keeps OPFS in memory, where sync handles' writes are refused at

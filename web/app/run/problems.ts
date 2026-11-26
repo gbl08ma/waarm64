@@ -4,10 +4,13 @@
 import { msg, t } from '../../i18n.ts';
 import { ask } from '../ask.svelte.ts';
 import { openPicker } from '../file-pickers.ts';
-import type { Action } from '../areas/message-bar.svelte.ts';
+import { messageBar, type Action } from '../areas/message-bar.svelte.ts';
+import type { FileActions } from '../areas/file-actions.ts';
+import { allowHelps } from '../file-access.ts';
+import type { MsgError } from '../../msg.ts';
 import type { Problem } from '../protocol.ts';
-import type { DiskRecord } from '../shape.ts';
 import type { Messages } from './messages.ts';
+import type { Need } from './page-disks.ts';
 
 export type ProblemDeps = {
   messages: Messages;
@@ -22,8 +25,8 @@ export type ProblemDeps = {
   log: Record<'show' | 'copy' | 'save', Action>;
   /** A disk that isn't the one its changes were made over. */
   resetDisk: Action;
-  /** Asks for the file disks' permission or picks them again (false: not all). */
-  grantFiles(disks: DiskRecord[]): Promise<boolean>;
+  /** A file disk's file allowed again or chosen again, from a click (web/app/areas/file-actions.ts). */
+  files: Pick<FileActions, 'allow' | 'repick'>;
 };
 
 export class Problems {
@@ -65,22 +68,62 @@ export class Problems {
     this.suspended = [{ label: t('machine:problems.resume'), run: restart }, bootInstead];
   }
 
-  /** File disks the page can't read without the user: the machine waits for the click that allows or picks them. */
-  needsUser(needs: DiskRecord[]) {
+  /**
+   * File disks the page can't read without the user: the machine waits for the click that allows or chooses them
+   * (docs/machines.md §3.2). The bar says why (`said`: what the last click came to, else the first reason past a grant
+   * not given yet) and offers Allow and start where the browser's grant may help, and Choose <disk> again and start (Select
+   * and start for a disk without a handle), one disk a click: each opens a prompt or a picker, which takes the click's
+   * activation. Returns the bar's actions.
+   */
+  needsUser(needs: Need[], said?: MsgError) {
     const d = this.#d;
-    d.messages.setState(
-      'idle',
-      msg('disks:problems.needsUser', { count: needs.length, names: needs.map((x) => x.name) }),
-      [
-        {
-          label: needs.some((x) => x.handle) ? t('disks:problems.allowAndStart') : t('disks:problems.pickAndStart'),
-          run: () =>
-            void d.grantFiles(needs).then((ok) => {
-              if (ok) void d.again();
-            }),
-        },
-      ],
-      'warn',
-    );
+    const routine = (n: Need) => n.reach.why === 'prompt' || n.reach.why === 'nohandle';
+    const words =
+      said ??
+      needs.find((n) => !routine(n))?.reach.error ??
+      msg('disks:problems.needsUser', { count: needs.length, names: needs.map((x) => x.disk.name) });
+    const actions: Action[] = [];
+    if (needs.some((n) => n.disk.handle && allowHelps(n.reach.why)))
+      actions.push({ label: t('disks:problems.allowAndStart'), run: () => void this.#allow(needs) });
+    const first = needs[0];
+    actions.push({
+      label: first.disk.handle
+        ? t('disks:problems.repickAndStart', { name: first.disk.name })
+        : t('disks:problems.pickAndStart'),
+      run: () => void this.#repick(needs, first),
+    });
+    d.messages.setState('idle', words, actions, 'warn');
+    return actions;
+  }
+
+  /**
+   * Allow and start: the browser asked for each disk's grant in turn, and the start goes on once all are given. A
+   * refusal, an error and no answer are said, with the buttons again; an answer that comes late starts the machine if
+   * the bar still offers this (the user did nothing else meanwhile).
+   */
+  async #allow(needs: Need[]) {
+    for (const n of needs) {
+      if (!n.disk.handle || !allowHelps(n.reach.why)) continue;
+      let shown: Action[] | undefined;
+      const r = await this.#d.files.allow(n.disk, (late) => {
+        // The bar's actions are its own proxies of these: an action is told by its function.
+        if (!shown || !messageBar.actions.some((a) => a.run === shown?.[0].run)) return;
+        if (late.ok) void this.#d.again();
+        else this.needsUser(needs, late.error);
+      });
+      if (!r.ok) {
+        shown = this.needsUser(needs, r.error);
+        return;
+      }
+    }
+    void this.#d.again();
+  }
+
+  /** Choose again and start: disk `n`'s file chosen again; the start goes on (the rest, if any, are asked for by it). */
+  async #repick(needs: Need[], n: Need) {
+    const r = await this.#d.files.repick(n.disk);
+    if (!r) return; // cancelled, or not taken: the bar stays as it is
+    if (!r.ok) this.needsUser(needs, r.error);
+    else void this.#d.again();
   }
 }

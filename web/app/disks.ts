@@ -42,6 +42,14 @@ export async function diskSource(d: DiskRecord): Promise<DiskRef['source']> {
   }
 }
 
+/**
+ * File disk `id`'s file chosen again (docs/machines.md §3.2): its record keeps its id, name, identity, overlays and
+ * attachments, and takes `handle`. The record as written, or undefined if the disk is gone (deleted in another tab).
+ */
+export function replaceFileHandle(store: Store, id: string, handle: FileSystemFileHandle) {
+  return store.update('disks', id, (d) => (d?.kind === 'file' ? { ...d, handle } : undefined));
+}
+
 /** Disk `d` with overlay `overlay`'s changes (none: the disk as it is). */
 export async function diskRef(d: DiskRecord, overlay?: string): Promise<DiskRef> {
   return { source: await diskSource(d), overlay: overlay ? overlayDir(overlay) : undefined, identity: identityOf(d) };

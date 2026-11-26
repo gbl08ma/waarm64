@@ -117,6 +117,12 @@ export class PageMachine {
   /** Files picked in this session for file disks without a usable handle, by disk id. */
   // eslint-disable-next-line svelte/prefer-svelte-reactivity -- nothing shows them
   readonly pickedFiles = new Map<string, File>();
+  /**
+   * File disks whose handles a click allowed or chose in this session, by disk id: not asked about again (Chromium may
+   * grant at the click and then leave its `queryPermission` unanswered: web/app/file-access.ts).
+   */
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity -- nothing shows them
+  readonly allowedFiles = new Set<string>();
 
   constructor(store: Store, stored: Stored | undefined, storedError: unknown) {
     this.store = store;

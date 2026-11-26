@@ -1572,7 +1572,8 @@ are Start and Boot instead). A failure before that leaves the machine running.
   refuses it without `resume`, and Save snapshot is what leaves the browser.
 - A disk of one's own (Open disk…, a drop) is a stored machine's, so its suspended copy is the machine's and the page
   reopens it after a reload (the last machine): a file disk needs the user's click first ("[Allow and start](ui:disks:problems.allowAndStart)", or
-  "[Select and start](ui:disks:problems.pickAndStart)" without a handle), then it resumes.
+  "[Choose *name* again and start](ui:disks:problems.repickAndStart)" where the browser doesn't answer or the file moved, or
+  "[Select and start](ui:disks:problems.pickAndStart)" without a handle: machines.md §3.2), then it resumes.
 
 ### The guest's clock
 
@@ -2279,8 +2280,9 @@ booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file
   backing file, or [Whole disk](ui:disks:ExportSteps.whole); then the format,
   [Compressed qcow2](ui:disks:ExportSteps.compressed), [Uncompressed qcow2](ui:disks:ExportSteps.qcow2) (the whole
   disk's with zero clusters left out) or, the whole disk only, [Raw image](ui:disks:ExportSteps.raw). Nothing is
-  remembered: each export chooses. The file goes where the user picks
-  (`showSaveFilePicker`, called first: it needs the click's activation; a worker streams into the
+  remembered: each export chooses. A file disk's file is checked first (machines.md §3.2: not reachable, the export
+  says why with Choose *name* again…, and nothing else happens). The file goes where the user picks
+  (`showSaveFilePicker`, called first after that check: it needs the click's activation; a worker streams into the
   handle's writable) or, without a picker, is downloaded (the worker posts 1 MiB chunks, the page
   collects a Blob). **Never over the running disk:** a save dialog empties the file it hands over
   (Chromium creates or truncates it when the user confirms, before the page writes anything), so

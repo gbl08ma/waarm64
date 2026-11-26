@@ -25,6 +25,7 @@ import { ClipboardActions } from './areas/clipboard-actions.ts';
 import { DiskActions } from './areas/disk-actions.ts';
 import { changesHeader, DiskChanges } from './areas/disk-changes.ts';
 import { DiskExport } from './areas/disk-export.ts';
+import { FileActions } from './areas/file-actions.ts';
 import { FolderActions } from './areas/folder-actions.ts';
 import { KeysActions } from './areas/keys-actions.ts';
 import { NetworkActions } from './areas/network-actions.ts';
@@ -187,10 +188,7 @@ const runner = new Runner({
     },
   },
   alive: { mark: (st) => signal.mark(st), clear: () => signal.clear() },
-  later: {
-    problems: () => problems,
-    rebooted: (live) => powerActions.rebooted(live),
-  },
+  later: { problems: () => problems, rebooted: (live) => powerActions.rebooted(live) },
 });
 const pageWindow: PageWindow = new PageWindow({
   machine,
@@ -221,7 +219,8 @@ const powerActions: PowerActions = new PowerActions({
 });
 const core = { machine, runner, power: powerActions, messages, terminal };
 const restore = new SnapshotRestore(core);
-const changes = new DiskChanges(core);
+const files = new FileActions(machine, messages);
+const changes = new DiskChanges(core, files);
 const disks: DiskActions = new DiskActions({
   ...core,
   isSnapshot,
@@ -237,9 +236,9 @@ const problems = new Problems({
   again: (): Promise<void> => (runner.again ?? (() => powerActions.restart()))(),
   log: terminal.actions(() => pageWindow.showLog(), machine.name),
   resetDisk: disks.resetAction,
-  grantFiles: (d) => disks.grantFiles(d),
+  files,
 });
-const diskExport = new DiskExport(core, () => trimActions.beforeExport());
+const diskExport = new DiskExport(core, () => trimActions.beforeExport(), files);
 const snapshots = new SnapshotActions({
   ...core,
   emptyPorts: (r, what) => usbRun.emptyPorts(r, what),
@@ -291,6 +290,7 @@ const page: Page = {
   },
   fullscreen: () => pageWindow.fullscreen(),
   ...keysActions.page(),
+  ...files.page(),
   screenSize: () => {
     screen.fit();
     screen.scheduleSize();

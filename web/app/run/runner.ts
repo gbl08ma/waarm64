@@ -324,7 +324,7 @@ export class Runner {
     } catch (e) {
       if (!r.live()) return undefined;
       this.lock.drop();
-      if (e instanceof NeedsUser) this.d.later.problems().needsUser(e.disks);
+      if (e instanceof NeedsUser) this.d.later.problems().needsUser(e.needs);
       else if (isGone(e)) this.d.messages.setState('failed', e as Error, [this.d.later.problems().retry]);
       else
         this.d.messages.setState('failed', new MsgError('disks:runner.notOpened', {}, { cause: e }), [

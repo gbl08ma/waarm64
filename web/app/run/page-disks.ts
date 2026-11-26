@@ -10,7 +10,7 @@ import { sizeSeen } from '../disk-size.ts';
 import { newId, serialOf, type DiskRecord } from '../shape.ts';
 import { diskDir, machineDir, overlayDir } from '../store.ts';
 import { diskSource, identityOf, refreshOverlay, refreshStored } from '../disks.ts';
-import { granted } from '../grants.ts';
+import { reach, type Reach } from '../file-access.ts';
 
 /** A stored machine's boot disk has no overlay before its first start (the start makes one): nothing written yet. */
 export const NO_OVERLAY_YET = 'overlays/none';
@@ -186,26 +186,30 @@ export async function refreshRecords(m: PageMachine) {
   }
 }
 
+/** A file disk whose file can't be read without the user, and why (web/app/file-access.ts). */
+export type Need = { disk: DiskRecord; reach: Reach & { ok: false } };
+
 /**
- * The stored machine's file disks that need the user before it can start (machines.md §3.2): no handle, or one the
- * browser doesn't say is granted (within `GRANT_WAIT_MS`: it can leave the question unanswered, web/app/grants.ts).
+ * The stored machine's file disks that need the user before it can start (machines.md §3.2): no handle, one the browser
+ * doesn't say is granted (within `GRANT_WAIT_MS`: it can leave the question unanswered, web/app/grants.ts), or whose
+ * file isn't at its place, can't be read, or isn't the disk's any more (another size: a handle is a path).
  */
 export async function filesNeedingUser(m: PageMachine, s: Stored) {
-  const out: DiskRecord[] = [];
+  const out: Need[] = [];
   for (const a of s.record.attachments) {
     const d = diskOf(s, a.disk);
-    if (d.kind !== 'file' || m.pickedFiles.has(d.id)) continue;
-    const h = d.handle;
-    if (!h || !(await granted(h, 'read'))) out.push(d);
+    if (d.kind !== 'file' || m.pickedFiles.has(d.id) || out.some((n) => n.disk.id === d.id)) continue;
+    const r = await reach(d, { granted: m.allowedFiles.has(d.id) });
+    if (!r.ok) out.push({ disk: d, reach: r });
   }
   return out;
 }
 
-/** A file disk whose file the page can't read without the user: no handle (picked again), or a handle without permission (granted again by a click). */
+/** File disks whose files the page can't read without the user: allowed again or chosen again by a click. */
 export class NeedsUser extends Error {
-  readonly disks: DiskRecord[];
-  constructor(disks: DiskRecord[]) {
-    super(`${disks.map((d) => d.name).join(', ')}: no permission in this session`);
-    this.disks = disks;
+  readonly needs: Need[];
+  constructor(needs: Need[]) {
+    super(needs.map((n) => `${n.disk.name}: ${n.reach.why}`).join(', '));
+    this.needs = needs;
   }
 }

@@ -4,6 +4,8 @@
 import type { Connection, NewConnection } from './connections.ts';
 import type { ExportMode } from './export.ts';
 import type { Folder, NewFolder } from './folders.ts';
+import type { Unreachable } from './file-access.ts';
+import type { Msg } from '../msg.ts';
 import type { DiskRecord, MachineRecord, Shape, UsbEntry } from './shape.ts';
 import type { OverlayRecord } from './store.ts';
 import type { EntryView } from './usb-live.ts';
@@ -37,6 +39,14 @@ export type Page = {
   powerOff(): Promise<boolean>;
   /** The toolbar's Power off: asks, then stops the machine like pulling the plug. */
   powerOffAsked(): Promise<void>;
+  /**
+   * A file disk's file (docs/machines.md §3.2; web/app/FileAccess.svelte): why it can't be read now (none: it can, or
+   * only a grant in this session is missing, which a start or a job asks for), and its Allow and Choose again from a
+   * click (they throw what the browser's answer or the file chosen came to).
+   */
+  diskFile(id: string): Promise<{ why: Unreachable; reason: Msg } | undefined>;
+  diskAllow(d: DiskRecord): Promise<void>;
+  diskRepick(d: DiskRecord): Promise<void>;
   /** Saves a disk to a file: the page's own (transient machine), or a stored disk with one of its overlays. */
   saveDisk(mode: ExportMode, compress: boolean, target?: { disk: DiskRecord; overlay?: string }): Promise<void>;
   /** The storage bar's Free unused disk space: the running guest trims its filesystems (web/app/areas/trim-actions.ts). */

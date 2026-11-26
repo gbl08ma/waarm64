@@ -1,19 +1,18 @@
 // The page's disk (docs/frontend.md "Your own disk", docs/machines.md §2): a disk file opened or dropped (a machine of
-// its own, kept in this browser), a stored machine opened on the page, a transient machine's disk chosen or reset,
-// and file disks picked again or allowed. Changes in and the disk out are web/app/areas/disk-changes.ts and
-// disk-export.ts.
+// its own, kept in this browser), a stored machine opened on the page, a transient machine's disk chosen or reset.
+// File disks allowed or chosen again are web/app/areas/file-actions.ts; changes in and the disk out are
+// web/app/areas/disk-changes.ts and disk-export.ts.
 import { msg, MsgError, t } from '../../i18n.ts';
 import { removeOverlay, overlayBytes } from '../../overlay.ts';
 import { ask } from '../ask.svelte.ts';
 import { current } from './current.svelte.ts';
 import { records } from './records.svelte.ts';
-import { hashFile } from '../definitions.ts';
 import { deleteOverlay } from '../disks.ts';
 import { fetchManifest, isManifestUrl } from '../../chunked.ts';
+import { qcow2Size } from '../file-access.ts';
 import { openPicker } from '../file-pickers.ts';
 import { diskOverlay, type DiskChoice } from '../machine.ts';
 import { attach, createDisk, createMachine, knownDisk } from '../machines.ts';
-import type { DiskRecord } from '../shape.ts';
 import type { Core } from '../run/core.ts';
 import { params } from '../run/knobs.ts';
 import { MACHINE_PARAMS } from '../run/config.ts';
@@ -21,23 +20,6 @@ import { bootAttachment, diskName, overlayName } from '../run/page-disks.ts';
 import { loadStored, rememberMachine } from '../run/page-machine.svelte.ts';
 import type { Action } from './message-bar.svelte.ts';
 import { isLive, power } from './power.svelte.ts';
-
-/** One file from the user (the hidden input), or undefined if they cancel. */
-function pickFile(title: string) {
-  return new Promise<File | undefined>((resolve) => {
-    const input = Object.assign(document.createElement('input'), { type: 'file', title });
-    input.onchange = () => resolve(input.files?.[0]);
-    input.oncancel = () => resolve(undefined);
-    input.click();
-  });
-}
-
-/** Whether a disk file's head says qcow2, and its virtual size then. */
-async function qcow2Size(file: File) {
-  const head = new Uint8Array(await file.slice(0, 32).arrayBuffer());
-  const view = new DataView(head.buffer);
-  return head.length >= 32 && view.getUint32(0) === 0x514649fb ? Number(view.getBigUint64(24)) : undefined;
-}
 
 export type DiskDeps = Core & {
   /** A snapshot or a changes file chosen as a disk goes there instead. */
@@ -67,35 +49,6 @@ export class DiskActions {
         else void this.reset();
       },
     };
-  }
-
-  /** Asks for read permission on every file disk that needs it, from a click; files without a handle are picked again (by identity: name, size, date). */
-  async grantFiles(disks: DiskRecord[]) {
-    for (const d of disks) {
-      const h = d.handle;
-      if (h?.requestPermission && (await h.requestPermission({ mode: 'read' })) === 'granted') continue;
-      const file = await pickFile(t('disks:disk-actions.pickAgain', { name: d.name }));
-      if (!file || !(await this.#sameFile(d, file))) return false;
-      this.#d.machine.pickedFiles.set(d.id, file);
-    }
-    return true;
-  }
-  /** Whether `file` is disk `d`'s: the same name, size and date, the same bytes by the hash, or the user says so. */
-  async #sameFile(d: DiskRecord, file: File) {
-    const want = d.identity as { name?: string; bytes?: number; modified?: number };
-    const differs = file.name !== want.name || file.size !== want.bytes || file.lastModified !== want.modified;
-    if (!differs) return true;
-    // Another name, size or date: the same bytes by the hash, where the disk has one (a definition's: machines.md §6).
-    if (d.sha256 && file.size === want.bytes && (await hashFile(file)) === d.sha256) return true;
-    return ask.confirm(
-      msg('disks:disk-actions.otherFile', {
-        file: file.name,
-        name: want.name,
-        bytes: want.bytes,
-        when: new Date(want.modified ?? 0),
-      }),
-      { title: t('disks:disk-actions.otherFile.title'), ok: t('disks:disk-actions.otherFile.ok'), danger: true },
-    );
   }
 
   /**

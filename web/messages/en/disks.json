@@ -644,28 +644,12 @@
     "note": "Error details: a write into the browser's storage (a kept snapshot, a suspended machine, a snapshot's disk changes restored, a disk or snapshot file imported, Import changes…) was refused. The cause under the error's headline (Couldn't save the snapshot, Couldn't suspend the machine, Couldn't import …, The disk can't be written to this browser's storage.). {{used}} is what this web app's storage holds, {{quota}} what the browser says it gives it (in a private window the browser refuses writes well before it). The <ui-home> marker shows the Home button's icon before its words."
   },
   "problems.needsUser_one": {
-    "message": "Allow access to <name>{{names}}</name>, or select the file again, to start the machine. This browser lets a web app read a file on your computer only once you allow it in the current session.",
-    "note": "What the message bar (under the toolbar) says before a start when a disk of the machine is a file this browser lets this web app read only after a click (Allow and start, or Select and start, follows); {{names}} is the disk's name."
+    "message": "Allow access to <name>{{names}}</name>, or choose the file again, to start the machine. This browser lets a web app read a file on your computer only once you allow it in the current session.",
+    "note": "What the message bar (under the toolbar) says before a start when a disk of the machine is a file this browser lets this web app read only after a click (Allow and start, Choose … again and start, or Select and start, follow); {{names}} is the disk's name."
   },
   "problems.needsUser_other": {
-    "message": "Allow access to <name>{{names}}</name>, or select the files again, to start the machine. This browser lets a web app read a file on your computer only once you allow it in the current session.",
+    "message": "Allow access to <name>{{names}}</name>, or choose the files again, to start the machine. This browser lets a web app read a file on your computer only once you allow it in the current session.",
     "note": "What the message bar (under the toolbar) says before a start when several disks of the machine are files this browser lets this web app read only after a click; {{names}} is their names, {{count}} how many."
-  },
-  "disk-actions.pickAgain": {
-    "message": "Select <name>{{name}}</name> again",
-    "note": "Title of the browser's file picker opened by Select and start, for a disk whose file must be given again; {{name}} is the disk's name. Drawn as text (the file picker's title): the <name> marker isn't drawn there."
-  },
-  "disk-actions.otherFile": {
-    "message": "Use <name>{{file}}</name> anyway? It isn't the file this disk was made from (<name>{{name}}</name>, {{bytes}} bytes, modified {{when}}). The disk's overlays hold changes made on top of that file, which may not make sense on top of this one.",
-    "note": "Text of the question asked when the file selected again for a disk isn't the one it was made from: {{file}} is the file selected, {{name}}, {{bytes}} and {{when}} the disk's file's name, size and date."
-  },
-  "disk-actions.otherFile.title": {
-    "message": "A different file",
-    "note": "Title of the question asked when the file picked again for a disk isn't the one it was made from."
-  },
-  "disk-actions.otherFile.ok": {
-    "message": "Use it anyway",
-    "note": "The confirm button (drawn as a warning) of the question asked when the file picked again for a disk isn't the one it was made from."
   },
   "page-disks.overlayName": {
     "message": "Changes",
@@ -677,7 +661,123 @@
   },
   "problems.pickAndStart": {
     "message": "Select and start",
-    "note": "Button in the message bar (under the toolbar) when a disk's file must be selected again: it opens the browser's file picker, then starts."
+    "note": "Button in the message bar (under the toolbar) when a disk kept without a link to its file (from a machine definition) must have its file selected again: it opens the browser's file picker, then starts."
+  },
+  "file-access.cantRead": {
+    "message": "This web app can't read <name>{{name}}</name>",
+    "note": "Headline (or, under a job's failure such as an export's, its first detail) when the file of a disk that is a file on the user's computer can't be read now: in the message bar before a start (Allow and start or Choose … again and start follow), or when an export or an import of changes needs it. The reason (a disks:file-access.* sentence) is the detail under it. {{name}} is the disk's name."
+  },
+  "file-access.nohandle": {
+    "message": "This web app keeps no link to the file in this browser, so you need to choose it again.",
+    "note": "Why the file of a disk that is a file on the user's computer can't be read (under disks:file-access.cantRead): the disk was made without a handle to the file (from a machine definition, or in a browser without the file picker that keeps one), so the file must be chosen again with the browser's file picker."
+  },
+  "file-access.prompt": {
+    "message": "This browser lets this web app read a file on your computer only once you allow it in the current session.",
+    "note": "Why the file of a disk that is a file on the user's computer can't be read (under disks:file-access.cantRead): the browser's read permission for it hasn't been given yet in this session (Allow asks for it)."
+  },
+  "file-access.unanswered": {
+    "message": "This browser didn't say whether this web app may read the file. If allowing access does nothing, choose the file again.",
+    "note": "Why the file of a disk that is a file on the user's computer can't be read (under disks:file-access.cantRead): the browser didn't answer the question whether the page may read it within a few seconds (Chromium can leave it unanswered, for instance after the computer restarted, even when its site settings list the file as allowed). Choosing the file again with the file picker works around it."
+  },
+  "file-access.unansweredAllow": {
+    "message": "This browser hasn't answered the request to read the file. If it shows you no question about it, choose the file again.",
+    "note": "Why the file of a disk that is a file on the user's computer can't be read (under disks:file-access.cantRead), after Allow (and start): the browser didn't answer the request for its read permission within a few seconds, and may never answer (seen on Chromium for Linux, which showed no prompt). Choosing the file again with the file picker works around it; if a prompt is open and the user allows it later, the start goes on."
+  },
+  "file-access.refused": {
+    "message": "This browser didn't allow this web app to read the file.",
+    "note": "Why the file of a disk that is a file on the user's computer can't be read (under disks:file-access.cantRead): the browser refused the read permission (the user said no to its prompt, or it refused by itself; its own error, if any, is the line under this one)."
+  },
+  "file-access.missing": {
+    "message": "This browser can't find the file where it was. It may have been moved, renamed or deleted, or the drive it is on may not be connected.",
+    "note": "Why the file of a disk that is a file on the user's computer can't be read (under disks:file-access.cantRead): the browser keeps the file's place (its path), and nothing is there now. Choosing the file again at its new place fixes it."
+  },
+  "file-access.unreadable": {
+    "message": "This browser can't read the file now. Another program may be using it, or it may have changed while this web app was reading it.",
+    "note": "Why the file of a disk that is a file on the user's computer can't be read (under disks:file-access.cantRead): it is there, but reading it failed (the browser's error is the line under this one)."
+  },
+  "file-access.changed": {
+    "message": "The file at its place is {{size}} bytes, and the file this disk was made from is {{bytes}} bytes, so it is another file. The disk's overlays hold changes made on top of the disk's own file. Choose that file again.",
+    "note": "Why the file of a disk that is a file on the user's computer can't be used (under disks:file-access.cantRead): the browser keeps the file's place (its path), and the file there now has another size than the one the disk was made from, so it was replaced. {{size}} is the size of the file there now, {{bytes}} the disk's file's, in bytes."
+  },
+  "file-access.other": {
+    "message": "<name>{{file}}</name> isn't the file of <name>{{name}}</name>",
+    "note": "Headline in the message bar, or on the Home page, when the file chosen again for a disk that is a file on the user's computer (Choose … again) is surely another file: it isn't taken, and the disk keeps its own. Why is the detail under it (disks:file-access.other.*). {{file}} is the chosen file's name, {{name}} the disk's."
+  },
+  "file-access.other.size": {
+    "message": "It is {{size}} bytes, and the file this disk was made from is {{bytes}} bytes. The disk's overlays hold changes made on top of that file, so they can't be used with another one.",
+    "note": "Why the file chosen again for a disk isn't taken (under disks:file-access.other): its size differs from the size of the file the disk was made from. {{size}} is the chosen file's size, {{bytes}} the disk's file's, in bytes."
+  },
+  "file-access.other.hash": {
+    "message": "Its contents aren't those of the file this disk was made from. The disk's overlays hold changes made on top of that file, so they can't be used with another one.",
+    "note": "Why the file chosen again for a disk isn't taken (under disks:file-access.other): it has the disk's file's size but other contents (the disk keeps its file's hash, from a machine definition, and the chosen file's differs)."
+  },
+  "file-access.other.image": {
+    "message": "It holds a disk of {{size, bytes}}, and this disk is {{want, bytes}}. The disk's overlays hold changes made on top of the disk's own file, so they can't be used with another one.",
+    "note": "Why the file chosen again for a disk isn't taken (under disks:file-access.other): it has the disk's file's size, but the disk image in it (a qcow2 image's header) is of another size than the disk. {{size}} and {{want}} are the two disk sizes."
+  },
+  "file-actions.pickAgain": {
+    "message": "Select <name>{{name}}</name> again",
+    "note": "Title of the browser's plain file picker opened by Select and start (or Choose … again where the browser has no file picker that keeps a link to the file), for a disk whose file must be given again; {{name}} is the disk's name. Drawn as text (the file picker's title): the <name> marker isn't drawn there."
+  },
+  "file-actions.pickFailed": {
+    "message": "Couldn't open the file",
+    "note": "Error headline when the file chosen again for a disk (Choose … again) couldn't be opened; why is the detail under it."
+  },
+  "file-actions.otherFile": {
+    "message": "Use <name>{{file}}</name>? Its name or date isn't that of the file this disk was made from (<name>{{name}}</name>, modified {{when}}), so this web app can't tell whether it's the same file. The disk's overlays hold changes made on top of that file, which don't make sense on top of another one.",
+    "note": "Text of the question asked when the file chosen again for a disk has the size of the file it was made from but another name or modification date, and nothing else tells whether it's the same file: {{file}} is the file chosen, {{name}} and {{when}} the disk's file's name and date."
+  },
+  "file-actions.otherFile.title": {
+    "message": "Another name or date",
+    "note": "Title of the question asked when the file chosen again for a disk has the right size but another name or date than the file the disk was made from."
+  },
+  "file-actions.otherFile.ok": {
+    "message": "Use it",
+    "note": "The confirm button (drawn as a warning) of the question asked when the file chosen again for a disk has another name or date than the file the disk was made from."
+  },
+  "file-actions.gone": {
+    "message": "<name>{{name}}</name> is no longer in this browser",
+    "note": "Error when the file chosen again for a disk can't be kept because the disk itself was deleted meanwhile (in another tab). {{name}} is the disk's name."
+  },
+  "file-actions.readable": {
+    "message": "This web app can read <name>{{name}}</name> again. Do what you were doing again to continue.",
+    "note": "Notice in the message bar after Allow access or Choose … again, offered when an export or an import of changes couldn't read a disk's file, worked: the user runs the export or the import again. {{name}} is the disk's name."
+  },
+  "file-actions.allow": {
+    "message": "Allow access",
+    "note": "Button in the message bar when an export or an import of changes couldn't read a disk's file because the browser's permission is missing or wasn't confirmed: asks the browser for it."
+  },
+  "file-actions.repick": {
+    "message": "Choose <name>{{name}}</name> again…",
+    "note": "Button in the message bar when an export or an import of changes couldn't read a disk's file: opens the browser's file picker to choose the file again (it must be the disk's: its size is checked), whose link the disk then keeps. {{name}} is the disk's name; drawn as text (the <name> marker isn't drawn on a button)."
+  },
+  "problems.repickAndStart": {
+    "message": "Choose <name>{{name}}</name> again and start",
+    "note": "Button in the message bar (under the toolbar) when a disk's file can't be read before a start (no permission, the browser didn't answer, the file moved or was replaced): opens the browser's file picker to choose the file again (it must be the disk's: its size is checked), whose link the disk then keeps, then starts. {{name}} is the disk's name; drawn as text (the <name> marker isn't drawn on a button)."
+  },
+  "DisksPane.allowFile": {
+    "message": "Allow…",
+    "note": "Button on a file disk in the Home page's Disks pane when the browser didn't confirm or refused this web app's access to its file: asks the browser for it."
+  },
+  "DisksPane.allowFile.title": {
+    "message": "Ask this browser for permission to read the disk's file.",
+    "note": "Tooltip of Allow… on a file disk in the Home page's Disks pane."
+  },
+  "DisksPane.repickFile": {
+    "message": "Choose the file again…",
+    "note": "Button on a file disk in the Home page's Disks pane when its file can't be read now (moved, replaced, or the browser doesn't confirm access; Allow… beside where the browser's permission may help): opens the browser's file picker to choose the disk's file again; the disk keeps its overlays and machines."
+  },
+  "DisksPane.repickFile.title": {
+    "message": "Choose this disk's file again. It must be the same file: its size is checked, and the disk keeps its overlays and machines.",
+    "note": "Tooltip of Choose the file again… on a file disk in the Home page's Disks pane."
+  },
+  "DisksPane.busy.allowing": {
+    "message": "Asking for access",
+    "note": "What the Home page is doing (shown with … at its top) while the browser asks for a file disk's read permission (Allow…)."
+  },
+  "DisksPane.busy.choosing": {
+    "message": "Choosing the file",
+    "note": "What the Home page is doing (shown with … at its top) while the browser's file picker is open for a file disk's Choose the file again…."
   },
   "runner.notOpened": {
     "message": "Couldn't open the machine's disks",

@@ -10,7 +10,8 @@ import type { DiskRecord } from '../shape.ts';
 import { overlayDir } from '../store.ts';
 import type { Core } from '../run/core.ts';
 import { inUse, progressText } from '../run/messages.ts';
-import { baseName, NO_OVERLAY_YET, overlayName, pageDisk, sourceOf } from '../run/page-disks.ts';
+import { baseName, bootDisk, NO_OVERLAY_YET, overlayName, pageDisk, sourceOf } from '../run/page-disks.ts';
+import type { FileActions } from './file-actions.ts';
 import { isLive, power } from './power.svelte.ts';
 
 const SAVES: Record<ExportMode, { suffix: string; description: string; type: string }> = {
@@ -72,9 +73,12 @@ export class DiskExport {
   readonly #c: Core;
   /** The running guest's trim, before the machine stops. */
   readonly #trim: () => Promise<void>;
-  constructor(c: Core, trim: () => Promise<void>) {
+  /** A file disk's file checked before it's read (said, with Allow and Choose again, when it can't be). */
+  readonly #files: Pick<FileActions, 'ready'>;
+  constructor(c: Core, trim: () => Promise<void>, files: Pick<FileActions, 'ready'>) {
     this.#c = c;
     this.#trim = trim;
+    this.#files = files;
   }
 
   /** Whether the page's machine uses it (then it stops): its boot disk's overlay, or any attachment of the stored machine. */
@@ -113,17 +117,33 @@ export class DiskExport {
   }
 
   /**
-   * Saves a disk to a file: the page's disk (a transient machine's, or a stored machine's boot disk), or `target`, a
+   * `chosen` once no machine in another tab uses it (`uses`: the page's machine does) and its disk's file can be read,
+   * before the save picker (whose file would be written for nothing): a file disk's may not be (said, with what to do
+   * about it: docs/machines.md §3.2, and the user exports again). Its disk's record as the store has it now.
+   */
+  async #ready(chosen: Target | undefined, uses: boolean): Promise<{ target?: Target } | undefined> {
+    if (chosen && !uses && (await this.#runsElsewhere(chosen))) return undefined;
+    const base = chosen?.disk ?? bootDisk(this.#c.machine);
+    if (!base) return { target: chosen };
+    const failed = (cause: MsgError) => new MsgError('disks:disk-export.save.failed', {}, { cause });
+    const disk = await this.#files.ready(base, failed);
+    return disk && { target: chosen && { ...chosen, disk } };
+  }
+
+  /**
+   * Saves a disk to a file: the page's disk (a transient machine's, or a stored machine's boot disk), or `chosen`, a
    * stored disk with one of its overlays (or none: the stored disk itself). A machine on this page that runs from it
    * stops while it's written and starts again after; one running in another tab is said to be.
    */
-  async save(mode: ExportMode, compress: boolean, target?: Target) {
+  async save(mode: ExportMode, compress: boolean, chosen?: Target) {
     const { power: pw, messages } = this.#c;
     if (pw.busy()) return;
-    const uses = this.#uses(target);
-    const overlay = !target ? overlayName(this.#c.machine) : target.overlay ? overlayDir(target.overlay) : undefined;
-    if (!target && !overlay) return;
-    if (target && !uses && (await this.#runsElsewhere(target))) return;
+    const uses = this.#uses(chosen);
+    const overlay = !chosen ? overlayName(this.#c.machine) : chosen.overlay ? overlayDir(chosen.overlay) : undefined;
+    if (!chosen && !overlay) return;
+    const ready = await this.#ready(chosen, uses);
+    if (!ready) return;
+    const { target } = ready;
     const how = SAVES[mode];
     const fileName = target ? target.disk.name : baseName(this.#c.machine);
     const suggestedName = suggested(fileName, how.suffix);

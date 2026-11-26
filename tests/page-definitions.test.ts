@@ -1,7 +1,8 @@
 // Machine definitions in and out (docs/machines.md §6; web/app/definitions.ts), in Chromium, without a guest: a
 // machine with a URL disk, a file disk, a blank disk and a ramdisk exported from one fresh profile and imported through
-// the modal into another comes back with the same shape; its file disk is picked again at its first start, taken
-// without a question when its hash is the definition's though its date differs, and asked about when it isn't.
+// the modal into another comes back with the same shape; its file disk is picked again at its first start (the plain
+// file input: the browser's picker stubbed out), taken without a question when its hash is the definition's though its
+// date differs, and refused when its size or its hash isn't the disk's.
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -79,6 +80,9 @@ test('a definition exported from one profile and imported into another: the same
   const errors: string[] = [];
   await answerAsks(pb, (q) => { dialogs.push(q.text); });
   pb.on('pageerror', (e) => errors.push(String(e)));
+  // The plain file input (headless Chromium's file picker would cancel by itself; the one that keeps a handle is
+  // tests/page-file-disk.test.ts's).
+  await pb.addInitScript(() => { (window as unknown as { showOpenFilePicker: unknown }).showOpenFilePicker = undefined; });
   await pb.goto(`${base}/web/app/?autostart=1`);
   await openHome(pb);
   await pb.setInputFiles('.machines [data-field=import-definition]', defFile);
@@ -104,17 +108,21 @@ test('a definition exported from one profile and imported into another: the same
   const [chooser] = await Promise.all([pb.waitForEvent('filechooser'), pb.locator('#message-actions button', { hasText: t('disks:problems.pickAndStart') }).click()]);
   await chooser.setFiles(FIXTURE);
   await pb.waitForFunction(() => ['loading', 'booting', 'running'].includes(document.body.dataset.state!), null, { timeout: 30_000 });
-  assert.equal(dialogs.filter((d) => words('disks:disk-actions.otherFile').test(d)).length, 0, 'taken by its hash, without asking');
+  assert.equal(dialogs.filter((d) => words('disks:file-actions.otherFile').test(d)).length, 0, 'taken by its hash, without asking');
 
-  // A file with other bytes: asked about (and taken, the dialog accepted).
+  // A file of another size, then one of its size with other bytes (its hash isn't the definition's): refused, said.
   const other = join(dir, 'data.raw');
-  writeFileSync(other, Buffer.alloc(4096, 1));
+  const size = readFileSync(FIXTURE).length;
   await pb.reload();
-  await pb.waitForFunction(() => document.body.dataset.state === 'idle', null, { timeout: 30_000 });
-  const [chooser2] = await Promise.all([pb.waitForEvent('filechooser'), pb.locator('#message-actions button', { hasText: t('disks:problems.pickAndStart') }).click()]);
-  await chooser2.setFiles(other);
-  await pb.waitForFunction(() => ['loading', 'booting', 'running', 'failed'].includes(document.body.dataset.state!), null, { timeout: 30_000 });
-  assert.equal(dialogs.filter((d) => words('disks:disk-actions.otherFile').test(d)).length, 1);
+  for (const [bytes, key] of [[4096, 'disks:file-access.other.size'], [size, 'disks:file-access.other.hash']] as const) {
+    writeFileSync(other, Buffer.alloc(bytes, 1));
+    await pb.waitForFunction(() => document.body.dataset.state === 'idle', null, { timeout: 30_000 });
+    const [chooser2] = await Promise.all([pb.waitForEvent('filechooser'), pb.locator('#message-actions button', { hasText: t('disks:problems.pickAndStart') }).click()]);
+    await chooser2.setFiles(other);
+    await pb.waitForFunction((src) => new RegExp(src).test(document.getElementById('message-details')?.textContent ?? ''), words(key, { size: bytes, bytes: size }).source, { timeout: 30_000 });
+    assert.equal(await pb.evaluate(() => document.body.dataset.state), 'idle', 'not started');
+  }
+  assert.equal(dialogs.filter((d) => words('disks:file-actions.otherFile').test(d)).length, 0, 'never asked');
   assert.deepEqual(errors, []);
   await b.close();
 });

@@ -2,6 +2,8 @@
   The body of Disks on the Home page (docs/machines.md §4): every disk this browser keeps, attached or not, ramdisks
   included. Each with what it is, its overlays and the machines that have it; Overlays… (the disk's overlays, Overlays.svelte, when it has some),
   a "visualize" link on its line (its surface window, SurfaceWindow.svelte), Attach to a machine… (AttachDisk.svelte), Resize… on a stored disk or a ramdisk (ResizeDisk.svelte) and, when no machine has it, Delete with its overlays (`Store.deleteDisk`).
+  A file disk whose file can't be read now, past a grant not given yet in this session (docs/machines.md §3.2), says why
+  under its line, with Choose the file again… and, where the browser's grant may help, Allow….
 -->
 <script lang="ts">
   import type { Act } from './actions.svelte.ts';
@@ -13,7 +15,11 @@
   import Overlays from './Overlays.svelte';
   import ResizeDisk from './ResizeDisk.svelte';
   import { ask } from './ask.svelte.ts';
-  import { msg, t } from '../i18n.ts';
+  import Note from './ui/Note.svelte';
+  import T from './T.svelte';
+  import { msg, t, type Msg } from '../i18n.ts';
+  import { allowHelps, type Unreachable } from './file-access.ts';
+  import { page } from './page.ts';
   import type { OverlayRecord, Store } from './store.ts';
   import type { DiskRecord, MachineRecord } from './shape.ts';
   import { bytesText } from './bytes.ts';
@@ -39,6 +45,24 @@
   /** Disks that grow themselves (a URL's, a file's or a blank disk grows through its overlays). */
   const resizable = (d: DiskRecord) => d.kind === 'stored' || d.kind === 'ramdisk';
   const shown = $derived(showing ? disks.get(showing.disk) : undefined);
+
+  /** The file disks whose files can't be read now, and why (read again as the records change, and after a click). */
+  let unreachable = $state.raw<Map<string, { why: Unreachable; reason: Msg }>>(new Map());
+  let checks = 0;
+  async function check(list: DiskRecord[]) {
+    const mine = ++checks;
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- filled here, then held raw
+    const next = new Map<string, { why: Unreachable; reason: Msg }>();
+    for (const d of list) {
+      const r = await page.diskFile(d.id);
+      if (r) next.set(d.id, r);
+    }
+    if (mine === checks) unreachable = next; // a later check's answer wins
+  }
+  const files = $derived(all.filter((d) => d.kind === 'file'));
+  $effect(() => void check(files));
+  /** Allow… or Choose the file again…, then the files checked again. */
+  const fileAct = (what: string, f: () => Promise<void>) => act(what, f).then(() => check(files));
 
   /** Deletes a disk no machine has, with its overlays, after asking. */
   async function remove(d: DiskRecord) {
@@ -83,11 +107,23 @@
   {#each all as d (d.id)}
     {@const mine = overlaysOf(d.id)}
     {@const users = usersOf(d.id)}
+    {@const file = unreachable.get(d.id)}
     <Card data-disk={d.id} data-kind={d.kind}>
       <div class="info">
         <DiskInfo disk={d} overlays={mine} {users} onvisualize={() => surfaceWindow.show(d.id, undefined, 'disks')} />
       </div>
+      {#if file}<Note inline tone="warn" data-field="disk-file-problem"><T m={file.reason} /></Note>{/if}
       {#snippet actions()}
+        {#if file && d.handle && allowHelps(file.why)}<Button
+            onclick={() => fileAct(t('disks:DisksPane.busy.allowing'), () => page.diskAllow(d))}
+            data-action="allow-disk-file"
+            title={t('disks:DisksPane.allowFile.title')}>{t('disks:DisksPane.allowFile')}</Button
+          >{/if}
+        {#if file}<Button
+            onclick={() => fileAct(t('disks:DisksPane.busy.choosing'), () => page.diskRepick(d))}
+            data-action="repick-disk-file"
+            title={t('disks:DisksPane.repickFile.title')}>{t('disks:DisksPane.repickFile')}</Button
+          >{/if}
         {#if mine.length}<Button
             onclick={() => (showing = { disk: d.id, what: 'overlays' })}
             data-action="disk-overlays"
