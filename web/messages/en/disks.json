@@ -464,8 +464,12 @@
     "note": "Detail of an error on the Home page (Disks), under Disks.failed.merge, when a merge is refused: a machine has the overlay, or another overlay of the disk the merge deletes, open. {{name}} is that overlay's name."
   },
   "merge.otherMerging": {
-    "message": "A merge of the overlay <name>{{name}}</name> into this disk didn't finish, and part of it is in the disk already. Merge <name>{{name}}</name> into the disk again to finish it, or start a machine on the disk. Nothing was deleted.",
-    "note": "Detail of an error on the Home page (Disks), under Overlays.failed.merge, when Merge into the disk of an overlay is refused because an earlier merge of another overlay of the disk (its name: {{name}}) failed partway (e.g. the storage was full): this merge would delete that overlay, which only a merge of it again (or the disk's next opening by a machine) finishes. Checked before any overlay is deleted."
+    "message": "A merge of the overlay <name>{{name}}</name> into this disk didn't finish, and part of it is in the disk already. Use <ui>Merge into the disk</ui> on <name>{{name}}</name> again to finish it, or start a machine on the disk. Nothing was deleted.",
+    "note": "Detail of an error on the Home page (Disks), under Overlays.failed.merge, when Merge into the disk of an overlay is refused because an earlier merge of another overlay of the disk (its name: {{name}}) failed partway (e.g. the storage was full): this merge would delete that overlay, which only a merge of it again (or the disk's next opening by a machine) finishes. Checked before any overlay is deleted. <ui>Merge into the disk</ui> is the Overlays dialog's button (disks:Overlays.mergeButton)."
+  },
+  "merge.cutOff": {
+    "message": "A snapshot's restore into the overlay <name>{{name}}</name> didn't finish, so it holds nothing to merge. Nothing was deleted.",
+    "note": "Detail of an error on the Home page (Disks), under Overlays.failed.merge, when Merge into the disk of an overlay is refused because a snapshot's restore into it was cut off (the tab closed, the file refused, the storage full): it reads as empty, and the merge would only delete the disk's other overlays. {{name}} is the overlay's name. A new overlay the restore made goes away, and its machine goes back on the overlay it had, when that machine is next loaded."
   },
   "merge.changed": {
     "message": "The disk's overlays changed since you were asked (in another tab, or by a machine). Look again and merge it again.",

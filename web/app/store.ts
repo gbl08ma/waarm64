@@ -313,16 +313,26 @@ export class Store {
    * Removes what an import or Import changes cut off part way left (machines.md §2): a `disks/<id>` or `overlays/<id>`
    * whose fill was cut off (still marked as filling, its lock free: web/overlay.ts `dropCutFill`) and that no record
    * names, checked under its lock (a job's record comes only after its fill's mark is cleared). Safe beside other tabs
-   * and their jobs, unlike `sweep`, which nothing calls (backlog.md "The store's sweep never runs"). The paths removed.
+   * and their jobs, unlike `sweep`, which nothing calls (backlog.md "The store's sweep never runs"). The paths removed;
+   * one it can't remove (a closing worker's handles still on it) is left for the next start, the rest removed all the
+   * same, and the first such failure thrown at the end.
    */
   async dropCutFills(): Promise<string[]> {
     const removed: string[] = [];
+    let failed: { e: unknown } | undefined;
     for (const [kind, dir] of [
       ['disks', diskDir],
       ['overlays', overlayDir],
     ] as const)
-      for (const n of await this.files.list(kind))
-        if (isId(n) && (await dropCutFill(dir(n), async () => !(await this.get(kind, n))))) removed.push(dir(n));
+      for (const n of await this.files.list(kind)) {
+        if (!isId(n)) continue;
+        try {
+          if (await dropCutFill(dir(n), async () => !(await this.get(kind, n)))) removed.push(dir(n));
+        } catch (e) {
+          failed ??= { e };
+        }
+      }
+    if (failed) throw failed.e;
     return removed;
   }
 

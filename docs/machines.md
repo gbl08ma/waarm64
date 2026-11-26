@@ -105,7 +105,9 @@ Since decided (the user, 2026-10-17):
   folders have their own locks (`waarm64-folder:<id>`: one writer, or several readers; shares.md §1). A start takes the
   machine's lock before it opens the disks, and only if it's free (`ifAvailable`): a second tab of a running machine
   (the page opens the last machine by default) says at once that it runs in another tab, with Retry, instead of
-  waiting out the overlay's lock (10 s) for `disk-in-use` (tests/page-open.test.ts).
+  waiting out the overlay's lock (10 s) for `disk-in-use` (tests/page-open.test.ts). A restore takes it earlier,
+  before its commit attaches its forks (`Runner.own`), and its start keeps it (§5.2 "A restore cut off or refused part
+  way").
 - **Storage:** the Home page's storage bar shows `navigator.storage.estimate()`, and its info icon opens
   [Storage in this browser](ui:machines:StorageDetails.title): what is used of the quota, then what each overlay,
   machine (variable store and snapshots), stored disk, the remote disks' block cache and Vulkan's shaders take (each
@@ -319,10 +321,18 @@ shape, §5.1, and carried by definitions) makes it the guest's swap with nothing
   (`resumeMerge`: writing the same blocks again is harmless) before anything reads it, or at the next Merge into the
   disk of the overlay: its record kept, the sweep keeps its files, and deleting it is refused (`disks.overlayMerging`:
   part of it is in the disk already). A machine's start finishes it before it opens any overlay (`Devices.open`): the
-  machine that has the overlay chosen would otherwise hold that overlay's lock while the merge waits for it. A merge of
+  machine that has the overlay chosen would otherwise hold that overlay's lock while the merge waits for it. A start
+  while a merge runs (in this tab or another) is refused at once ([An overlay is being merged into one of the
+  machine's disks. Wait for the merge to finish, then Retry.](ui:machine:worker-errors.diskMerging.cause)): the start
+  holds each of its stored disks' merge lock, shared and only if free, until its disks are open
+  (web/stored.ts `holdAgainstMerges`), so a merge never deletes an overlay a machine is about to open as a new one,
+  and one asked for meanwhile finds the machine's overlays in use (tests/stored.test.ts). An overlay a restore was cut
+  off in (still marked, or a new fork never filled) isn't merged ([A snapshot's restore into the overlay {{name}}
+  didn't finish, so it holds nothing to merge. Nothing was deleted.](ui:disks:merge.cutOff)): it reads as empty, and the
+  merge would only delete the disk's other overlays (tests/merge.test.ts). A merge of
   another overlay of the disk meanwhile is refused before it deletes anything ([A merge of the overlay {{name}} into
-  this disk didn't finish, and part of it is in the disk already. Merge {{name}} into the disk again to finish it, or
-  start a machine on the disk. Nothing was deleted.](ui:disks:merge.otherMerging)): it would delete the one being
+  this disk didn't finish, and part of it is in the disk already. Use Merge into the disk on {{name}} again to finish
+  it, or start a machine on the disk. Nothing was deleted.](ui:disks:merge.otherMerging)): it would delete the one being
   merged. An overlay that can't be opened any more (gone, or its deletion, a file at a time in OPFS, cut off)
   has had its blocks copied, and what is left of it is deleted.
 - **A blank disk's overlay merged** (`web/app/merge.ts`; the user's QA, 2026-11-18: an overlay a resize on a machine
@@ -540,15 +550,27 @@ The file's format, what the core saves and the page's toolbar and header fields:
   whose generation hasn't moved since (still 1), at the snapshot's size, instead (**reuse**); never one whose fill
   was cut off (below).
 - **A restore cut off or refused part way** (a closed tab, the storage full, a damaged file): the page records the
-  fork and attaches it before the worker fills it, so the fill marks its overlay (devices.md "blk", "Crash and
-  refusal") and anything that opens it before the mark is cleared takes it as empty. A new fork records what its
-  attachment had (`fork.before`): when the machine is next loaded, a fork still marked and not open anywhere is
-  undone (`undoCutRestores`: the attachment back on its earlier overlay, or in place, the fork deleted), so the machine
-  starts on its disks as they were. A replace, a template's fresh overlay and a transient machine's overlay were
-  emptied for the restore: they start from the disk's image. The worker's message says the disks hold none of the
-  snapshot ([The machine didn't start, and its disks hold none of the snapshot's changes. Start boots {{machine}}
-  normally.](ui:snapshots:worker-errors.notRestored.cause)); tests/template.test.ts,
-  tests/snapshot.test.ts.
+  fork and attaches it before the worker opens it, which it does only in the disk phase, after the check pass and the
+  RAM's; the fill marks its overlay (devices.md "blk", "Crash and refusal") and anything that opens it before the mark
+  is cleared takes it as empty. A new fork records what its attachment had (`fork.before`). When the machine is next
+  loaded, a fork that holds no fill of its own is undone (`undoCutRestores`, `cutFork`: never opened by the fill, its
+  generation 0, or still marked; not open anywhere): the attachment back on its earlier overlay, or in place, the
+  fork deleted, so the machine starts on its disks as they were. Nothing is undone while the machine's lock is held:
+  the restore takes it before its commit and its start keeps it to the run's end (`Runner.own`), so the forks of a
+  restore under way, here or in another tab, are left alone (and a page reading the records again waits for its own
+  last run's lock to go: `MachineLock.settled`). A fork's `before` holds only for its own fill: a later restore that
+  replaces its blocks drops it at its commit, so that fill cut off leaves the machine on the fork, read as empty. A
+  replace, a template's fresh overlay and a transient machine's overlay were emptied for the restore: they start from
+  the disk's image. The worker's message says which: a refusal before any disk was written ([The machine isn't
+  running, and its disks are as they were. Start boots {{machine}} normally, and Load snapshot… tries another
+  file.](ui:snapshots:worker-errors.notLoaded.cause)), one once the disks were being written that deleted none of their
+  own changes (only new forks took part of the snapshot: [The machine didn't start, and its disks hold none of the
+  snapshot's changes. Start boots {{machine}} normally.](ui:snapshots:worker-errors.notRestored.cause)), and one that
+  did ([The machine didn't start. The changes the restore was replacing were deleted, so the disks that held them start
+  from their images. Start boots {{machine}} normally.](ui:snapshots:worker-errors.notRestored.emptied); the plan's
+  `fork` marks a new fork, and the fill's refusal carries `emptied`). The disk phase takes every target overlay's
+  lock before it empties any: one open elsewhere refuses the restore with all the disks as they were.
+  tests/template.test.ts, tests/snapshot.test.ts.
 - **On the records as they are:** the page reads the machine's records again before it plans a restore of a machine
   that is off, and again once it has stopped (the Home page or another tab may have changed them while the
   questions were open: the shape is checked again then); `commit` plans on the record and disks the store has then and

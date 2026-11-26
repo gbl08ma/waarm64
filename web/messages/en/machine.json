@@ -531,6 +531,10 @@
     "message": "Another tab or window of this web app is running the machine on the same disk, and the browser lets only one of them open it at a time. Close that tab, then <ui>Retry</ui>.",
     "note": "Error details: the cause under the headline machine:worker-errors.diskInUse, on the line under it in the same place; why and what to do. <ui>Retry</ui> is the message bar's button (machine:problems.retry)."
   },
+  "worker-errors.diskMerging.cause": {
+    "message": "An overlay is being merged into one of the machine's disks. Wait for the merge to finish, then <ui>Retry</ui>.",
+    "note": "Error details: the cause under the headline machine:worker-errors.diskInUse, on the line under it in the same place, when the start found a merge (Merge into the disk, in this tab or another) under way into one of the machine's stored disks: the start is refused rather than open an overlay the merge is deleting. <ui>Retry</ui> is the message bar's button (machine:problems.retry)."
+  },
   "worker-errors.diskMismatch": {
     "message": "Couldn't start <name>{{machine}}</name>",
     "note": "Error in the message bar (under the toolbar) when the changes kept for the machine's disk were made over another image (Reset disk… or Disks… follows): the headline; why and what to do are the cause under it (machine:worker-errors.diskMismatch.cause); {{machine}} is the machine's name; the lower-level error is the detail under it."

@@ -12,6 +12,11 @@ import { blockSource, importImage, mergeOverlay, openStored, openStoredForWritin
 import { loggedFiles } from './logged-files.ts';
 import { Devices } from '../web/devices.ts';
 import type { Source } from '../web/disk-sources.ts';
+import { explain } from '../web/app/worker-errors.ts';
+import { MACHINES } from '../web/app/machine.ts';
+import { msgOf } from '../web/msg.ts';
+import { Store } from '../web/app/store.ts';
+import { memoryFiles, memoryRecords } from '../web/app/store-backends.ts';
 
 const bufferSource = (b: Uint8Array): Source => ({ size: b.length, read: (off, len) => (off >= 0 && off + len <= b.length ? b.slice(off, off + len) : undefined) });
 const same = (a: Uint8Array | undefined, b: Uint8Array) => !!a && a.length === b.length && Buffer.compare(a, b) === 0;
@@ -242,4 +247,88 @@ test('a machine whose disk is marked by a merge cut off of the overlay it has ch
   const src = await openStored(disk, size);
   assert.equal(src.read(4096, 1)![0], 0xaa, "the overlay's block is the disk's");
   src.close();
+});
+
+// Review cut-jobs 5: a start in another tab during a merge waited on the disk, then opened the overlay the merge had
+// just copied in and deleted as a new one; the merge then forgot its record, and the guest's writes went nowhere.
+test('a machine whose stored disk a merge holds (another tab) is refused at once (the page says a merge runs); one held by no merge starts', async () => {
+  const size = 32 * 4096;
+  const disk = 'disks/merge-held', ov = 'overlays/merge-held';
+  const f = await openStoredForWriting(disk, 'stored', size);
+  await importImage(bufferSource(new Uint8Array(size).fill(3)), f);
+  f.close();
+  const open = () => Devices.open({ memory: new WebAssembly.Memory({ initial: 4, maximum: 4, shared: true }), shared: [0, 1024], ram: 8192, ramSize: 0, signal: 4096, deterministic: true, specs: [{ type: 'blk', stored: disk, size, overlay: ov, identity: 'over-it' }] }, () => {});
+  let letGo!: () => void;
+  const merging = new Promise<void>((r) => { letGo = r; });
+  let taken!: () => void;
+  const got = new Promise<void>((r) => { taken = r; });
+  const merge = navigator.locks.request(`waarm64-merge:${disk}`, () => (taken(), merging)); // web/app/merge.ts holds it
+  await got;
+  const started = performance.now();
+  let refused: unknown;
+  await assert.rejects(open().catch((e: unknown) => { refused = e; throw e; }), (e: unknown) => (e as { problem?: string }).problem === 'disk-merging');
+  const [problem, error] = explain(refused, MACHINES.buildroot, { restoring: false, ramMiB: 64 });
+  assert.deepEqual([problem, msgOf((error as Error).cause)?.key], ['disk-in-use', 'machine:worker-errors.diskMerging.cause'], 'said as a merge, Retry offered');
+  assert.ok(performance.now() - started < 5000, 'without waiting on the disk');
+  letGo();
+  await merge;
+  const d = await open();
+  d.close();
+});
+
+// Review cut-jobs 9: the page's sweep of cut-off fills stopped at the first entry whose removal failed (a closing
+// worker's handles lingering), and the entries after it waited for the next page start.
+test('the sweep of cut-off fills goes on past an entry it can\'t remove, then says it failed', async () => {
+  const files = memoryFiles();
+  const store = new Store(memoryRecords(), files, { channel: false });
+  const ids = ['c0000000000a', 'c0000000000b'];
+  for (const id of ids) {
+    files.write(`overlays/${id}/meta`, 48);
+    const f = await openOverlay(`overlays/${id}`, 'x');
+    writeMeta(f.meta, { generation: 1, merging: '', size: 0, filling: true });
+    f.close();
+    await navigator.locks.request(`waarm64-overlay:overlays/${id}`, async () => {});
+  }
+  const get = store.get.bind(store);
+  store.get = ((kind: 'overlays', id: string) => (id === ids[0] ? Promise.reject(new Error('busy')) : get(kind, id))) as typeof store.get;
+  await assert.rejects(store.dropCutFills(), /busy/);
+  assert.equal((await overlayMeta(`overlays/${ids[1]}`)).filling, undefined, 'the second removed all the same');
+  assert.equal((await overlayMeta(`overlays/${ids[0]}`)).filling, true, 'the first left for the next start');
+});
+
+// Review cut-jobs 8: an overlay a fill was cut off in reads as empty, yet its record took the size of its files, so
+// the Home page and a merge's confirmation spoke of changes it doesn't hold.
+test("in Chromium (OPFS): a marked overlay's record says it holds nothing, whatever its files' size", async () => {
+  const server = await startServer();
+  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
+  try {
+    const page = await (await browser.newContext()).newPage();
+    await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}/tests/browser/core.html`);
+    const bytes = await page.evaluate(async () => {
+      const { Store } = await import('/web/app/store.ts' as string);
+      const { refreshOverlay } = await import('/web/app/disks.ts' as string);
+      const { encodeMeta } = await import('/web/overlay.ts' as string);
+      const id = 'c0000000000c';
+      const dir = await (await (await navigator.storage.getDirectory()).getDirectoryHandle('overlays', { create: true })).getDirectoryHandle(id, { create: true });
+      const put = async (name: string, b: Uint8Array<ArrayBuffer>) => {
+        const w = await (await dir.getFileHandle(name, { create: true })).createWritable();
+        await w.write(b);
+        await w.close();
+      };
+      await put('data', new Uint8Array(8192).fill(1));
+      const at = async (filling: boolean) => {
+        await put('meta', encodeMeta({ generation: 3, merging: '', size: 0, filling }));
+        return (await refreshOverlay(store, id)).bytes;
+      };
+      const store = await Store.open();
+      await store.put('overlays', { id, name: 'cut', disk: 'd0000000000c', identity: { kind: 'blank', id: 'd0000000000c', bytes: 0 }, generation: 0, bytes: 0, created: 0, modified: 0 });
+      const out = [await at(true), await at(false)];
+      store.close();
+      return out;
+    });
+    assert.deepEqual(bytes, [0, 8192], 'marked: none; its mark cleared: its files');
+  } finally {
+    await browser.close();
+    server.close();
+  }
 });

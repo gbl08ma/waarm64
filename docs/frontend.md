@@ -2322,7 +2322,9 @@ booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file
   chosen one). `loadChanges` (web/changes.ts, in `web/app/import-worker.ts`, page side
   `web/app/import.ts`; the machine stops, as for the export): `readChanges` (web/qcow2.ts) parses
   the file (clusters of 4 KiB or more, zero clusters as zeros, compressed ones inflated), every table and cluster it
-  names is checked to lie in it (`check`), its virtual size (against the base's virtual size: a qcow2 base's file may
+  names is checked to lie in it (`check`: the tables of the disk's range, each data cluster, each compressed cluster's
+  start, and a compressed cluster the file's end cuts into is unpacked, so a file cut through one is refused; an L1
+  entry past the disk's end names nothing and isn't read, by the check or the load), its virtual size (against the base's virtual size: a qcow2 base's file may
   be larger) and **hash** (the `WAM2` extension) are checked against the base's (`hashSource`, under a second
   for Debian's 400 MB), then the overlay and the variable store beside it are **deleted** (the
   changes are the whole of what the disk has written; EDK2 rebuilds its variables, Debian boots
@@ -2340,7 +2342,8 @@ booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file
   another size; another base (names the file it was made over and both
   hashes' first digits: open that disk first). The file name isn't compared (the base can be
   renamed), the bytes are. The confirm says what is replaced; afterwards the machine starts again.
-  The fresh-profile round trip works: the page's Debian plus the changes file saved from a disk
+  Every failure reaches the page, the base's opening's too (a URL disk offline, a stored disk in use or gone: the
+  worker posts it; tests/changes.test.ts). The fresh-profile round trip works: the page's Debian plus the changes file saved from a disk
   chosen under another name boots with the file written.
 - Tests: `tests/changes.test.ts` (the import in memory: the saved disk comes back, the old overlay
   is replaced; refusals leave it untouched, a file cut short among them; a load that fails part way leaves the overlay

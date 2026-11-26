@@ -1089,16 +1089,18 @@ export async function lockOverlay(
  * opener can come between), for a bulk fill. An overlay a fill was cut off in (its meta's `filling` mark, found under
  * the lock: no fill runs now) is never read as written: a writer's opening empties it in place, its generation moved
  * on (so no snapshot's pin or fork record matches it again), and a reader's sees it empty (docs/devices.md "Crash and
- * refusal"). Dedicated workers only (sync access handles).
+ * refusal"). `held`: the caller took the lock already (`lockOverlay`, the mode this opening's): its release, which the
+ * opening's close calls, as it does on a failure (a restore takes all its disks' before it empties any). Dedicated
+ * workers only (sync access handles).
  */
 // ponytail: the image is identified by path (or file name) and size, not content; add a hash if images get replaced in place.
 export async function openOverlay(
   name: string,
   want: string | undefined,
   waitMs = OVERLAY_WAIT_MS,
-  opts: { readOnly?: boolean; fresh?: boolean } = {},
+  opts: { readOnly?: boolean; fresh?: boolean; held?: () => void } = {},
 ): Promise<OverlayFiles> {
-  const release = await lockOverlay(name, waitMs, opts.readOnly ? 'shared' : 'exclusive');
+  const release = opts.held ?? (await lockOverlay(name, waitMs, opts.readOnly ? 'shared' : 'exclusive'));
   const handles: FileSystemSyncAccessHandle[] = [];
   const done = () => {
     for (const h of handles) h.close();
@@ -1209,18 +1211,24 @@ export async function removeOverlay(name: string) {
 }
 
 /**
+ * Store or overlay `name`'s meta, read under its lock taken only if free (a fill, or a machine or job that has it open,
+ * holds it). Undefined where it's held or there are no Web Locks. From a page or a worker.
+ */
+export async function metaIfFree(name: string): Promise<Meta | undefined> {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a probe: no Web Locks in some contexts
+  if (typeof navigator === 'undefined' || !navigator.locks) return undefined;
+  return navigator.locks.request(overlayLock(name), { ifAvailable: true }, async (lock) =>
+    lock ? overlayMeta(name) : undefined,
+  );
+}
+
+/**
  * Whether a fill was cut off in store or overlay `name`: its meta marked `filling`, read under its lock, taken only if
  * free (a fill holds it while it runs, and clears the mark before it lets go, so a mark found under it is one cut off).
  * False where it's held (in use) or there are no Web Locks. From a page or a worker.
  */
 export async function fillCutOff(name: string) {
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a probe: no Web Locks in some contexts
-  if (typeof navigator === 'undefined' || !navigator.locks) return false;
-  return navigator.locks.request(
-    overlayLock(name),
-    { ifAvailable: true },
-    async (lock) => !!lock && !!(await overlayMeta(name)).filling,
-  );
+  return !!(await metaIfFree(name))?.filling;
 }
 
 /**

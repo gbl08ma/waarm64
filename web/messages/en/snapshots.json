@@ -709,15 +709,19 @@
   },
   "worker-errors.notRestored.cause": {
     "message": "The machine didn't start, and its disks hold none of the snapshot's changes. <ui>Start</ui> boots <name>{{machine}}</name> normally.",
-    "note": "Error details: the cause under the headline snapshots:worker-errors.notRestored, on the line under it in the same place; what happened: a disk the restore forked is back on the overlay it had (the new one deleted), and one whose overlay the restore replaced (or a page's own disk a loaded snapshot replaced) starts from its image, since its changes were deleted for the restore. {{machine}}: as that entry's note says. <ui>Start</ui> is the message bar's button (snapshots:problems.startNormally)."
+    "note": "Error details: the cause under the headline snapshots:worker-errors.notRestored, on the line under it in the same place, when the restore deleted none of the disks' own changes (it was refused in the memory's part, or only new overlays it made took part of the snapshot); what happened: a disk the restore forked goes back on the overlay it had (the new one deleted) when the machine is next loaded or started. {{machine}}: as that entry's note says. <ui>Start</ui> is the message bar's button (snapshots:problems.startNormally)."
+  },
+  "worker-errors.notRestored.emptied": {
+    "message": "The machine didn't start. The changes the restore was replacing were deleted, so the disks that held them start from their images. <ui>Start</ui> boots <name>{{machine}}</name> normally.",
+    "note": "Error details: the cause under the headline snapshots:worker-errors.notRestored, on the line under it in the same place, when the restore had already deleted a disk's own changes before it failed: an overlay the user chose to replace, a machine's fresh overlay, or a page's own disk a loaded snapshot replaces (the confirmation said they would be deleted). Those disks hold nothing of the snapshot and start from their base images; a disk the restore forked goes back on the overlay it had. {{machine}}: as that entry's note says. <ui>Start</ui> is the message bar's button (snapshots:problems.startNormally)."
   },
   "worker-errors.notLoaded": {
     "message": "Couldn't load the snapshot",
     "note": "Error headline in the message bar (under the toolbar) when a snapshot file was refused before anything was touched (Start and Load snapshot… follow); {{machine}} is the machine's name; why is the detail under it, after its cause (snapshots:worker-errors.notLoaded.cause) on the line under the headline."
   },
   "worker-errors.notLoaded.cause": {
-    "message": "Nothing was changed. The machine isn't running, and its disk is as it was. <ui>Start</ui> boots <name>{{machine}}</name> normally, and <ui>Load snapshot…</ui> tries another file.",
-    "note": "Error details: the cause under the headline snapshots:worker-errors.notLoaded, on the line under it in the same place; what happened. {{machine}}: as that entry's note says. <ui>Start</ui> and <ui>Load snapshot…</ui> are the message bar's buttons (snapshots:problems.startNormally, snapshots:problems.loadAgain)."
+    "message": "The machine isn't running, and its disks are as they were. <ui>Start</ui> boots <name>{{machine}}</name> normally, and <ui>Load snapshot…</ui> tries another file.",
+    "note": "Error details: the cause under the headline snapshots:worker-errors.notLoaded, on the line under it in the same place; what happened: no disk was written. A stored machine's restore attached its new overlays before the file was checked; they hold nothing, and the machine goes back on the overlays it had when it is next loaded or started. {{machine}}: as that entry's note says. <ui>Start</ui> and <ui>Load snapshot…</ui> are the message bar's buttons (snapshots:problems.startNormally, snapshots:problems.loadAgain)."
   },
   "worker-start.phase.checking": {
     "message": "Checking the snapshot",

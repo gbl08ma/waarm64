@@ -13,29 +13,36 @@ import { openSource } from './sources.ts';
 
 const post = (m: ImportResult) => self.postMessage(m);
 
+// Every failure is posted, the base's opening's too (a URL disk offline, a stored disk in use or gone): the page waits
+// on a message (web/app/import.ts), and a rejection here would reach no one.
 self.onmessage = async (e: MessageEvent<ImportRequest>) => {
   const { disk: d, changes, label } = e.data;
-  const base = await openSource(d.source);
-  loadChanges({
-    changes: blobSource(changes),
-    base,
-    made: 'stored' in d.source ? d.source.made : undefined,
-    label,
-    overlay: d.overlay,
-    identity:
-      d.identity ??
-      diskIdentity(
-        { ...('url' in d.source ? { url: d.source.url } : 'file' in d.source ? { file: d.source.file } : {}) },
-        openSize(base),
-      ),
-    progress: (phase, done, total) => post({ type: 'progress', phase, done, total }),
-    makeRoom,
-  })
-    .finally(() => base.close?.())
-    .then(
-      (r) => post({ type: 'done', blocks: r.blocks }),
-      (err: unknown) => post({ type: 'error', error: toWire(err) }),
-    );
+  let base: (Source & { close?(): void }) | undefined;
+  let result: ImportResult;
+  try {
+    base = await openSource(d.source);
+    const opened = base;
+    const r = await loadChanges({
+      changes: blobSource(changes),
+      base: opened,
+      made: 'stored' in d.source ? d.source.made : undefined,
+      label,
+      overlay: d.overlay,
+      identity:
+        d.identity ??
+        diskIdentity(
+          { ...('url' in d.source ? { url: d.source.url } : 'file' in d.source ? { file: d.source.file } : {}) },
+          openSize(opened),
+        ),
+      progress: (phase, done, total) => post({ type: 'progress', phase, done, total }),
+      makeRoom,
+    });
+    result = { type: 'done', blocks: r.blocks };
+  } catch (err) {
+    result = { type: 'error', error: toWire(err) };
+  }
+  base?.close?.(); // before the page hears: it goes on with the disk once it has the answer
+  post(result);
 };
 
 /** The virtual size the overlay's identity records (a qcow2's header, else the file's size). */

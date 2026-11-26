@@ -7,6 +7,8 @@ export class MachineLock {
   #release: (() => void) | undefined;
   /** Settles once the lock this page last held is released (a restart's next take waits for it, or it'd find its own). */
   #released: Promise<unknown> = Promise.resolve();
+  /** Settles once the lock the last `drop` let go of is released (never waits on a `hold` under way). */
+  #letGo: Promise<unknown> = Promise.resolve();
 
   /** Takes machine `id`'s lock (none: a transient machine, true at once); false when another tab holds it. */
   async hold(id: string | undefined) {
@@ -28,8 +30,18 @@ export class MachineLock {
     });
   }
 
+  /**
+   * Settles once the lock this page last let go of is released (at once if none): a reading of the records that
+   * asks whether a start owns the machine (web/app/snapshot-undo.ts) doesn't find this page's own last run's.
+   */
+  settled(): Promise<unknown> {
+    return this.#letGo;
+  }
   drop() {
-    this.#release?.();
+    if (this.#release) {
+      this.#release();
+      this.#letGo = this.#released;
+    }
     this.#release = undefined;
   }
 }

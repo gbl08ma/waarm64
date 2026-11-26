@@ -534,7 +534,7 @@ export type ChangedBlock = { block: number; data: Uint8Array };
 export function readChanges(
   readAt: ReadAt,
   fileSize: number,
-): (ChangesHeader & { size: number; blocks(): AsyncGenerator<ChangedBlock>; check(): void }) | undefined {
+): (ChangesHeader & { size: number; blocks(): AsyncGenerator<ChangedBlock>; check(): Promise<void> }) | undefined {
   const head = readAt(0, Math.min(fileSize, 1 << 16)) ?? readAt(0, Math.min(fileSize, HEADER));
   const info = head && changesHeader(head);
   if (!head || !info) return undefined;
@@ -557,7 +557,8 @@ export function readChanges(
     const l1 = new DataView(l1b.buffer, l1b.byteOffset, l1b.byteLength);
     for (let i = 0; i < l1Size; i++) {
       const l2Off = Number(l1.getBigUint64(i * 8) & OFFSET_MASK);
-      if (l2Off === 0) continue;
+      // A table past the disk's end names nothing of it: not read (as `check` doesn't).
+      if (l2Off === 0 || i * l2Entries * cs >= size) continue;
       const t = readAt(l2Off, cs) ?? fail('L2 table past the end of the file');
       const l2 = new DataView(t.buffer, t.byteOffset, cs);
       for (let k = 0; k < l2Entries; k++) {
@@ -593,9 +594,11 @@ export function readChanges(
   /**
    * Throws (`disks:qcow2.changesTruncated`, the table or cluster as its cause) unless every table and cluster the file names
    * lies in it: what `blocks` would otherwise find only once part of the disk was loaded (it reads them as it goes).
-   * Reads the L1 and the L2 tables, not the clusters; a compressed cluster that doesn't unpack is still found by `blocks`.
+   * Reads the L1 and the L2 tables, not the clusters, but for a compressed cluster the file's end cuts into (its extent
+   * runs past it: in a whole file, a last cluster whose sectors end past the file's), which is unpacked: one cut through
+   * doesn't. Any other compressed cluster that doesn't unpack is still found by `blocks`.
    */
-  function check() {
+  async function check() {
     const short = (why: string) =>
       new MsgError('disks:qcow2.changesTruncated', undefined, {
         cause: new Error(`qcow2: ${why} past the end of the file`),
@@ -613,8 +616,10 @@ export function readChanges(
         const e = l2.getBigUint64(k * 8);
         if ((i * l2Entries + k) * cs >= size) break;
         if (e & COMPRESSED) {
-          if (compressedExtent(e, clusterBits, fileSize)[1] === 0)
-            throw short(`compressed cluster ${i * l2Entries + k}`);
+          const [off, len] = compressedExtent(e, clusterBits, fileSize);
+          const whole = compressedExtent(e, clusterBits, Infinity)[1];
+          if (len === 0 || (len < whole && !(await compressedCluster(readAt, fileSize, e, clusterBits))))
+            throw short(`compressed cluster ${i * l2Entries + k} at ${off}`);
           continue;
         }
         const off = Number(e & OFFSET_MASK);

@@ -78,6 +78,8 @@ export class PowerActions {
     const m = this.#d.machine;
     const s = m.stored;
     if (!s) return true;
+    // A run that just ended has let go of the machine's lock (else its cut-off restore's forks look owned: `loadStored`).
+    await this.#d.runner.lock.settled();
     try {
       m.stored = await loadStored(m.store, s.record.id);
     } catch (e) {

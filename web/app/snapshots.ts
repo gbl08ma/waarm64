@@ -215,19 +215,29 @@ async function survey(r: Restoring): Promise<{ steps: Step[]; refused?: Msg }> {
 async function commitStep(r: Restoring, s: Step, replace: boolean): Promise<DiskPlan> {
   const a = r.m.attachments.find((x) => x.id === s.attachment);
   if (!a) throw new Error(`the plan's attachment ${s.attachment} is not the machine's`); // made from m above
-  const write = (overlay: string, whole = false): DiskPlan => ({
+  const write = (overlay: string, whole = false, fork = false): DiskPlan => ({
     slot: s.slot,
     action: 'write',
     overlay: overlayDir(overlay),
     identity: identityOf(s.disk),
     size: s.size,
     whole,
+    ...(fork ? { fork } : {}),
   });
   if (s.action === 'reuse') {
     a.overlay = s.reuse;
     return { slot: s.slot, action: 'keep', generation: s.generation ?? 0 };
   }
-  if (replace && s.action === 'fork' && a.overlay) return write(a.overlay);
+  if (replace && s.action === 'fork' && a.overlay) {
+    // Its blocks replaced: an earlier fork's `before` (what the attachment had before that restore) is no longer the
+    // machine's to go back to, should this fill be cut off (`undoCutRestores`: the overlay stays, read as empty).
+    const o = await r.store.get('overlays', a.overlay);
+    if (o?.fork?.before) {
+      const { before: _, ...fork } = o.fork;
+      await r.store.put('overlays', { ...o, fork, modified: Date.now() });
+    }
+    return write(a.overlay);
+  }
   // A new overlay with the snapshot's blocks: its generation after the restore is 1 (web/snapshot.ts).
   const fork = { snapshot: r.snap.key, generation: 1 };
   const into = s.into === a.overlay && s.into ? await r.store.get('overlays', s.into) : undefined;
@@ -248,7 +258,7 @@ async function commitStep(r: Restoring, s: Step, replace: boolean): Promise<Disk
   );
   a.overlay = o.id;
   a.inPlace = undefined;
-  return write(o.id, s.action === 'fork-whole');
+  return write(o.id, s.action === 'fork-whole', true);
 }
 
 /** Machine `id` and its disks as the store has them now. */

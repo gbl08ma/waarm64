@@ -20,18 +20,32 @@ export type Reached = { restoring: boolean; ramMiB: number };
 
 /** A snapshot refused (a SnapshotError has a `problem` of its own: why the file was refused). */
 function refused(err: SnapshotError, machine: Machine, restoring: boolean): Error {
-  // From `readSnapshot` nothing was touched; once `bootVm` has the file, the disk may hold its blocks.
+  // From `readSnapshot` nothing was touched; once `bootVm` has the file, a disk may hold part of it (a new fork's,
+  // which the page puts back, or one whose own changes the fill deleted: `emptied`, web/snapshot.ts).
+  const cause = (err as { emptied?: unknown }).emptied
+    ? 'snapshots:worker-errors.notRestored.emptied'
+    : 'snapshots:worker-errors.notRestored.cause';
   return restoring
     ? new MsgError('snapshots:worker-errors.notRestored', undefined, {
-        cause: new MsgError('snapshots:worker-errors.notRestored.cause', { machine: machine.title }, { cause: err }),
+        cause: new MsgError(cause, { machine: machine.title }, { cause: err }),
       })
     : new MsgError('snapshots:worker-errors.notLoaded', undefined, {
         cause: new MsgError('snapshots:worker-errors.notLoaded.cause', { machine: machine.title }, { cause: err }),
       });
 }
 
-/** An overlay another tab holds (web/overlay.ts `problem`, or the browser's lock on its files), or one written over another image. */
+/** An overlay another tab holds (web/overlay.ts `problem`, or the browser's lock on its files), a stored disk a merge holds, or an overlay written over another image. */
 function overlayProblem(err: unknown, machine: Machine): [Problem, Error] | undefined {
+  // A merge into one of its stored disks under way (web/stored.ts `holdAgainstMerges`): Retry once it's done.
+  if (among(err, (e) => e.problem === 'disk-merging'))
+    return [
+      'disk-in-use',
+      new MsgError(
+        'machine:worker-errors.diskInUse',
+        { machine: machine.title },
+        { cause: new MsgError('machine:worker-errors.diskMerging.cause', undefined, { cause: err }) },
+      ),
+    ];
   if (among(err, (e) => e.problem === 'overlay-in-use' || e.name === 'NoModificationAllowedError'))
     return [
       'disk-in-use',

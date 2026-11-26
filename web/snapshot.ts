@@ -33,6 +33,7 @@ import { lzCodec } from './lz.ts';
 import { msg, MsgError, type Param } from './msg.ts';
 import {
   endFill,
+  lockOverlay,
   openOverlay,
   overlay,
   overlayMeta,
@@ -83,12 +84,13 @@ export type SnapshotDisk = {
  * (it is at `generation`, the one the page planned with, else the restore is refused: the file's blocks for it are
  * skipped), or `write` the file's blocks into overlay
  * `overlay` (emptied first: a fork into a new overlay, or a replace), with `whole` the disk's every block made zeros
- * first (a stored disk written in place, forked over its moved store: the file has the whole disk). A ramdisk's
- * blocks always go to its new chunks.
+ * first (a stored disk written in place, forked over its moved store: the file has the whole disk), and `fork` when
+ * the overlay is a new fork the page made (cut off, the page puts the machine back on what it had: a refusal after it
+ * deleted nothing of the disk's). A ramdisk's blocks always go to its new chunks.
  */
 export type DiskPlan =
   | { slot: number; action: 'keep'; generation: number }
-  | { slot: number; action: 'write'; overlay: string; identity: string; size: number; whole?: boolean };
+  | { slot: number; action: 'write'; overlay: string; identity: string; size: number; whole?: boolean; fork?: boolean };
 
 /**
  * Where a save's time went, ms (`writeSnapshot`; tools read it in `#message`'s `data-snapshot`, docs/frontend.md
@@ -311,7 +313,7 @@ export async function readSnapshot(
   // What each pinned disk's blocks do, by slot: an overlay written (emptied first), skipped (the overlay is kept as it
   // is), or a ramdisk's chunks (handed to its new device: `BlkSpec.ramInit`).
   type Target =
-    | { kind: 'overlay'; name: string; identity: string; size: number; whole?: boolean }
+    | { kind: 'overlay'; name: string; identity: string; size: number; whole?: boolean; fork?: boolean }
     | { kind: 'skip' }
     | { kind: 'ram'; spec: BlkSpec; size: number };
   const targets = new Map<number, Target>();
@@ -368,7 +370,14 @@ export async function readSnapshot(
         opts.resume || plan?.action === 'keep'
           ? { kind: 'skip' }
           : plan?.action === 'write'
-            ? { kind: 'overlay', name: plan.overlay, identity: plan.identity, size: plan.size, whole: plan.whole }
+            ? {
+                kind: 'overlay',
+                name: plan.overlay,
+                identity: plan.identity,
+                size: plan.size,
+                whole: plan.whole,
+                fork: plan.fork,
+              }
             : { kind: 'overlay', name: spec.overlay, identity, size: d.size },
       );
     }
@@ -515,7 +524,14 @@ export async function readSnapshot(
       const full = async () =>
         new MsgError('snapshots:snapshot.storageFull', undefined, { cause: await storageFullError() });
       const rams: { spec: BlkSpec; disk: ReturnType<typeof ramDisk> }[] = [];
+      // Every overlay's lock first, before any is emptied: one open elsewhere (another tab's job or machine) refuses the
+      // restore (`overlay-in-use`) with all the disks as they were. Each is handed to its opening below.
+      const held = new Map<number, () => void>();
+      // Whether an overlay's own changes were deleted (one written that isn't a new fork: a replace, a template's fresh
+      // overlay, the page's own disk): a refusal from here on says so (`emptied`, for the page's words).
+      let emptied = false;
       try {
+        for (const [slot, t] of targets) if (t.kind === 'overlay') held.set(slot, await lockOverlay(t.name));
         for (const [slot, t] of targets) {
           if (t.kind === 'skip') {
             open.set(slot, 'skip');
@@ -535,7 +551,10 @@ export async function readSnapshot(
           // mark is cleared at the end, after both files' flush, every opening takes it as empty (web/overlay.ts
           // `openOverlay`), so a restore cut off or refused part way is never read as a disk's.
           const was = (await overlayMeta(t.name)).generation;
-          const files = await openOverlay(t.name, t.identity, undefined, { fresh: true });
+          const lock = held.get(slot);
+          held.delete(slot); // the opening's now: its close (or failure) lets go of it
+          const files = await openOverlay(t.name, t.identity, undefined, { fresh: true, held: lock });
+          if (!t.fork) emptied = true;
           const o: { disk?: WritableDisk; meta: SyncFile; close(): void; size: number } = {
             meta: files.meta,
             close: files.close,
@@ -579,7 +598,11 @@ export async function readSnapshot(
           if (meta && !(await lands(() => endFill(meta)))) throw await full();
         }
         for (const r of rams) r.spec.ramInit = r.disk.chunkList();
+      } catch (e) {
+        if (emptied && e && typeof e === 'object') Object.assign(e, { emptied: true });
+        throw e;
       } finally {
+        for (const release of held.values()) release();
         for (const o of open.values()) if (o !== 'skip') o.close();
         phases.disk = since();
         read();

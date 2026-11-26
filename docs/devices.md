@@ -1078,20 +1078,27 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   **Bulk writes into a new store or overlay are unordered** (`overlay`'s `ordered: false`), both files flushed at
   their end: **a snapshot's restore** (a data flush per run was most of the restore's disk phase: bench/boot/REPORT.md
   "SNAPZ loop 5"), **an image's import** (web/stored.ts `importImage`) and **[Import changes](ui:disks:disk-changes.changes.title)** (web/changes.ts
-  `loadChanges`, `changesInto`). Each is a **fill**: its store or overlay is opened `fresh` (emptied under its Web Lock,
-  so no other opener comes between the deletion and the fill), marked as filling in its `meta` before the first block,
-  and the mark cleared once both files are flushed. A restore's and an Import changes' overlay may already have a
+  `loadChanges`, `changesInto`). Each is a **fill**: a restore's and an Import changes' overlay is opened `fresh`
+  (emptied under its Web Lock, so no other opener comes between the deletion and the fill), an import's new store is
+  made by its opening (`openStoredForWriting`, a new id: nothing to empty), and each is marked as filling in its `meta`
+  before the first block, the mark cleared once both files are flushed. A restore of several disks takes all their
+  locks before it empties the first, so one open elsewhere refuses it with none touched (`openOverlay`'s `held`). A restore's and an Import changes' overlay may already have a
   record (a fork the page made, a replace, the page's own disk at its fixed name), so the mark, not the record, is what
   keeps a fill cut off part way (a closed tab, the storage full, a damaged file, a crash) from being read as a disk:
   **an opening that finds the mark** (under the lock, so no fill runs) takes the overlay as empty, a writer's emptying
   it in place with its generation moved on (no fork record or snapshot pin matches it again), a reader's seeing none
   of it (`openOverlay`). A plan that keeps a marked overlay is refused (`snapshot.keptMoved`), and the page never reuses
-  a marked fork (web/app/snapshots.ts `earlierFork`) and puts a machine whose new fork was cut off back on what it had
-  (web/app/snapshot-undo.ts `undoCutRestores`, at the machine's loading). A store or overlay an import or a stored machine's Import changes cut
+  a marked fork (web/app/snapshots.ts `earlierFork`), shows a marked overlay as holding nothing (`refreshOverlay`) and
+  doesn't merge it (`disks:merge.cutOff`), and puts a machine whose new fork holds no fill of its own (never opened by
+  the fill, or marked; not while a start holds the machine) back on what it had (web/app/snapshot-undo.ts
+  `undoCutRestores`, at the machine's loading; machines.md §5.2). A store or overlay an import or a stored machine's Import changes cut
   off leaves has no record (the record comes after the job): the page's start removes those (`Store.dropCutFills`:
-  marked, the lock free, no record; tests/stored.test.ts closes a page during an import). Import changes checks every
-  table and cluster the file names is in it (`readChanges`'s `check`) before the overlay is touched; a failure after
-  (a cluster that doesn't unpack, the file unreadable, the storage full) leaves it marked, and the error says it was
+  marked, the lock free, no record; tests/stored.test.ts closes a page during an import; one it can't remove is left for
+  the next start, the rest removed all the same). A cut-off between the opening and the mark leaves an unrecorded
+  store or overlay with empty files, which nothing removes: it holds nothing (a new fork in that state is undone, as
+  never filled). Import changes checks every
+  table and cluster the file names is in it (`readChanges`'s `check`, which unpacks a compressed cluster the file's end
+  cuts into) before the overlay is touched; a failure after (another compressed cluster that doesn't unpack, the file unreadable, the storage full) leaves it marked, and the error says it was
   emptied (`cleared`). What a fill can't keep is a replaced overlay's own blocks (a replace, the page's own disk): they
   are deleted when it starts (backlog.md "A restore's replace fills in place"). A merge writes into a disk that exists:
   it stays ordered.

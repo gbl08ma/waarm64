@@ -194,14 +194,18 @@ export class SnapshotRestore {
       const now = this.#c.machine.stored;
       const other = now ? await this.#otherShape(now, header, name) : undefined;
       if (!now || other) return failed(other && new MsgError(other.key, other.params));
+      // The machine's lock from before the commit to the run's end: its forks are this start's (none is undone as cut
+      // off meanwhile, here or in another tab: web/app/snapshot-undo.ts). Held elsewhere (it runs there): said.
+      if (!(await runner.own())) return;
       let disks: DiskPlan[];
       try {
         disks = await plan.commit(replace);
       } catch (e) {
+        runner.lock.drop();
         return failed(e);
       }
       // The record the commit wrote (its forks attached) is the one the start opens.
-      if (!(await pw.reloadStored())) return;
+      if (!(await pw.reloadStored())) return runner.lock.drop();
       terminal.term.reset();
       runner.start(file, true, disks);
     });
@@ -240,6 +244,8 @@ export class SnapshotRestore {
     const file = new File([await (await opfsFile(snapshotPath(rec.machine, id))).getFile()], `${rec.name}.waarm64snap`);
     const header = await readHeader(file);
     const plan = await this.#plan(s, header, id, rec.name, true);
+    // The machine's lock from before the commit, as a user's restore takes it (`#restore`); held elsewhere: said.
+    if (plan && !(await runner.own())) return;
     let disks: DiskPlan[] | undefined;
     try {
       disks = plan && (await plan.commit(false));
@@ -249,7 +255,7 @@ export class SnapshotRestore {
         'error',
       );
     }
-    if (!(await clear())) return;
+    if (!(await clear())) return runner.lock.drop();
     terminal.term.reset();
     if (disks) runner.start(file, true, disks, true);
     else runner.start();

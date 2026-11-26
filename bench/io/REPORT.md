@@ -375,3 +375,44 @@ for the release now) and ignoring the lock; a 40-byte meta growing without a mar
 **A flake fixed on the way:** `tests/page-home-levels.test.ts` failed once in `scripts/ci.sh` with two levels in the
 column (a strict-mode locator): its wait for one level alone could pass before the move had started. It now waits
 for the level it expects to be there alone (`atLevel`).
+
+## PERF loop 78 (2026-11-26): the out-of-context review of cut-off disk jobs, fixed
+
+The review of what the page does about disk jobs cut off part way (branch `review/cut-jobs` at ad551489,
+`review/cut-jobs.md`; static, at 7d9a42e0) ranked ten findings. Each was checked against the code at 5e38a73e; each
+defect got its test at the cheapest layer, run first against that code (each failed there), then fixed. Nothing was
+measured: no change touches a path the guest's I/O takes (the restore's disk phase takes its disks' locks in a pass
+before the first `fresh` opening instead of one by one; a machine's start holds a shared Web Lock per stored disk
+while it opens its disks; the check of a changes file unpacks only a compressed cluster the file's end cuts into).
+No stored format changes; step counts don't move.
+
+| # | the review's finding | outcome | test (failing first) | fix |
+|---|---|---|---|---|
+| 1 | High: a fork the page attached but the worker never opened (cut off in the check pass, the RAM's, before the start message) is not undone; the machine boots an empty disk | **defect** (confirmed) | `tests/template.test.ts` "a fork the restore attached but no fill opened is undone…" (failed: left on the fork) | `cutFork` (web/app/snapshot-undo.ts): a fork with `before` whose files are at generation 0 (never opened by its fill) or marked, its lock free; the undo runs under the machine's Web Lock, taken only if free, and the restore takes that lock before its commit (`Runner.own`; its start keeps it to the run's end), so its own reloads and another tab's loads leave a restore under way alone; `MachineLock.settled` lets a reload wait for the page's last run's lock to go; the refusal before any disk was written no longer opens with "Nothing was changed" (`notLoaded.cause`) |
+| 2 | Medium: a replace into an earlier fork, cut off, sends the machine back to what that fork replaced (or to writing in place) and deletes the fork | **defect** (confirmed) | `tests/template.test.ts` "a replace into an earlier fork, cut off, leaves the machine on that fork…" (failed: back on the overlay from before the first restore) | `commitStep` drops the fork's `before` when a replace writes into it; `cutFork`'s doc states `before` holds only for the fork's own fill |
+| 3 | Medium: Import changes hangs when the import worker can't open the base | **defect** (by reading: `openSource` outside the chain that posts failures) | `tests/changes.test.ts` "Import changes' worker posts the failure when the disk's base can't be opened…" (the worker module under a stubbed `self`: failed, a rejection and nothing posted) | the worker's whole job in one `try`: every failure is posted, the base closed before the answer |
+| 4 | Medium-low: a restore of several disks empties the earlier ones before it has the later ones' locks | **defect** (confirmed in Node) | `tests/snapshot.test.ts` "a restore of several disks takes every disk's lock before it empties any…" (disk 1's lock held; once the restore waits on it, by `navigator.locks.query`, disk 0 was already emptied and marked) | the disk phase takes every target's lock first and hands each to its `fresh` opening (`openOverlay`'s `held`) |
+| 5 | Low-medium (suspicious): a start in another tab during a merge opens the merged overlay as a new one, which the merge then forgets | **defect** (by reading; the Node test shows the start went ahead under a held merge lock) | `tests/stored.test.ts` "a machine whose stored disk a merge holds (another tab) is refused at once…" (failed: `Devices.open` opened) | `holdAgainstMerges` (web/stored.ts): `Devices.open` holds each stored disk's `mergeLock`, shared and only if free, until its disks are open; a merge under way refuses the start (`disk-merging`, said as `machine:worker-errors.diskMerging.cause`, Retry), and a merge asked for meanwhile waits and then finds the overlays in use |
+| 6 | Low: `check` misses an L1 entry past the disk's end with its table past the file's end, and a file cut inside a compressed cluster | **two defects** (confirmed) | `tests/changes.test.ts` "a changes file whose spare L1 entries … loads" (a second L1 entry pointing past the end: failed, "L2 table past the end of the file" after the emptying) and "a changes file cut through a compressed cluster is refused by its check…" (qemu-img's compressed file cut 32 bytes into its last cluster: failed, passed `check`) | `blocks` skips L1 entries past the disk's end as `check` does; `check` (now async) unpacks a compressed cluster whose extent the file's end cuts into (in a whole file at most the last one or few) |
+| 7 | Low: `notRestored.cause` reassures alike whether a disk was put back or emptied | **defect in the words** | `tests/snapshot.test.ts` "a restore refused part way says whether it emptied a disk's own overlay…" (failed: no `emptied`) | the plan marks a new fork (`DiskPlan`'s `fork`); a fill refused after it emptied an overlay that isn't a new fork carries `emptied`, and the page says `snapshots:worker-errors.notRestored.emptied` |
+| 8 | Low: a marked overlay is shown, exported and merged as if it held its bytes | **defect** | `tests/merge.test.ts` "an overlay a restore was cut off in … isn't merged: nothing deleted" (failed: a blank disk converted, its other overlay deleted); `tests/stored.test.ts` "in Chromium (OPFS): a marked overlay's record says it holds nothing…" (Node has no OPFS sizes) | the merge refuses a marked overlay or a cut fork (`disks:merge.cutOff`) before it deletes anything; `refreshOverlay` records 0 bytes for a marked overlay. Export of one stays an empty file (it reads as empty) |
+| 9 | Low: leftovers `dropCutFills` can't see; one failed entry stops the sweep | **the sweep: defect**; the leftovers: real, **nothing to fix** | `tests/stored.test.ts` "the sweep of cut-off fills goes on past an entry it can't remove…" (failed: the second entry left) | each entry in its own `try`, the first failure thrown at the end. A cut-off between a fill's opening and its mark leaves only empty files (the opening just made them; a new fork in that state is now undone as never filled): written into devices.md, not the backlog |
+| 10 | Docs and copy | **real** | `tools/i18n-check.ts` | devices.md no longer says every fill opens `fresh` (an import's new store doesn't need to); machines.md §5.2 and devices.md "blk" say what the undo does now; `disks:merge.otherMerging` marks `<ui>Merge into the disk</ui>`; frontend.md "Loading changes" says what `check` checks |
+
+**Planted bugs, each caught by its test:** `cutFork` without its generation-0 case; the replace keeping `before`; the
+undo ignoring the machine's lock; `settled` resolving at the drop (the test now pins that it waits for the lock's
+request to end: Node's Web Locks release before a query either way); the restore's locks not taken first; `emptied`
+never set, and set for forks too; the worker's errors not choosing the `emptied` cause; the import worker opening the
+base outside its `try`; `blocks` reading spare L1 tables; `check` not unpacking a cut compressed cluster; no merge hold
+in `Devices.open`; the merge hold said as another tab's disk; the sweep stopping at a failure; the merge of a cut
+overlay let through, and of a cut fork only; a marked overlay's bytes counted.
+
+**A test that pinned the old state:** `tests/page-demos.test.ts` "started before says whether the machine has
+changes…" took the stand-in worker's start (it fills nothing) as a disk that moved on: its fork left at generation 0
+is now a restore cut off before its fill, undone at the next load. The test now leaves the fork as the worker and the
+guest would (generation 2) before it asks, once the start reached the stand-in (by then the fork is recorded: its
+first version wrote before the commit under `scripts/ci.sh`'s load and failed there once). Left in the backlog: a template's first start cut off before its fill
+boots plain next time (`restoreFirst` is cleared before the start).
+
+**CI:** `scripts/ci.sh` OK (706 s, after the demo test's two fixes above), `scripts/ci-machines.sh` OK (306 s),
+`scripts/ci-debian.sh` OK (305 s).

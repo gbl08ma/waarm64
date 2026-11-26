@@ -3,9 +3,10 @@
 // written one's blocks; and what a merge does, for its confirmation (`mergeEffect`). The copy runs in the disk worker
 // (web/app/disk-worker.ts, web/stored.ts `mergeOverlay`). Nothing here asks the user: the Overlays dialog confirms first.
 import { MsgError } from '../msg.ts';
-import { mergeLock, overlayBytes, overlayMeta, removeOverlay } from '../overlay.ts';
+import { fillCutOff, mergeLock, overlayBytes, overlayMeta, removeOverlay } from '../overlay.ts';
 import { sizeSeen } from './disk-size.ts';
 import { deleteOverlay, diskJob, identityOf, inUse, refreshStored } from './disks.ts';
+import { cutFork } from './snapshot-undo.ts';
 import { canonical, serialOf, type DiskRecord } from './shape.ts';
 import { diskDir, overlayDir, type OverlayRecord, type Store } from './store.ts';
 
@@ -44,6 +45,10 @@ export async function mergeIntoDisk(store: Store, overlay: string, confirmed: Co
     if (!o2) throw new MsgError('disks:disks.overlayGone');
     const how = d2 && (await mergeHow(d2, o2));
     if (!d2 || !how) throw new MsgError('disks:merge.onlyStored');
+    // A restore cut off in it reads as empty (marked: web/overlay.ts `openOverlay`; a new fork never filled: its machine
+    // goes back on what it had, web/app/snapshot-undo.ts): nothing of it to merge, and the merge would delete the rest.
+    if ((await fillCutOff(overlayDir(o2.id))) || (await cutFork(o2)))
+      throw new MsgError('disks:merge.cutOff', { name: o2.name });
     const others = how === 'grow' ? [] : (await store.overlaysOf(d2.id)).filter((x) => x.id !== o2.id);
     const listed = new Set(confirmed.others.map((x) => x.id));
     const size = Math.max(d2.size, o2.size ?? 0);

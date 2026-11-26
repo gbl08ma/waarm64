@@ -236,7 +236,7 @@ export class Runner {
   async #begin(r: Run, ch: Channels, w: StartArgs & Pick<StartWith, 'screen' | 'size' | 'three'>) {
     const { machine: m, folders } = this.d;
     if (!r.live()) return;
-    if (!(await this.#holdLock(r))) return;
+    if (!(await this.own(() => r.live()))) return;
     const opened = await this.#openDisks(r, w.config);
     if (!opened) return;
     const ready = await this.#prepare(r, ch);
@@ -270,15 +270,19 @@ export class Runner {
     return undefined;
   }
 
-  /** The machine's lock (a stored machine's), or the run fails: it runs in another tab. */
-  async #holdLock(r: Run) {
+  /**
+   * The stored machine's lock for the run `live` says is current, or the start fails (said): it runs in another tab. A
+   * restore takes it before its commit, so its forks are this start's (web/app/snapshot-undo.ts), and its start keeps
+   * it (`hold` again is a no-op) to the run's end; the restore drops it if it starts nothing.
+   */
+  async own(live: () => boolean = () => true) {
     const s = this.d.machine.stored;
     if (await this.lock.hold(s?.record.id)) {
-      if (r.live()) return true;
+      if (live()) return true;
       this.lock.drop();
       return false;
     }
-    if (!r.live() || !s) return false;
+    if (!live() || !s) return false;
     this.d.messages.setState(
       'failed',
       new MsgError(

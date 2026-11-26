@@ -6,9 +6,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { msgOf } from '../web/msg.ts';
-import { openOverlay, overlay, overlayMeta } from '../web/overlay.ts';
+import { openOverlay, overlay, overlayMeta, readMeta, writeMeta } from '../web/overlay.ts';
 import { openStored, openStoredForWriting, zeroDisk } from '../web/stored.ts';
-import { deleteOverlay, identityOf } from '../web/app/disks.ts';
+import { deleteOverlay, identityOf, refreshOverlay } from '../web/app/disks.ts';
 import { mergeEffect, mergeIntoDisk } from '../web/app/merge.ts';
 import { resize } from '../web/app/resize.ts';
 import { shapeOf, type DiskRecord, type MachineRecord } from '../web/app/shape.ts';
@@ -289,4 +289,28 @@ test('a merge into a disk marked by an unfinished merge of another overlay is re
   await assert.rejects(mergeIntoDisk(store, o2.id, (await mergeEffect(store, o2.id))!), (e: unknown) => msgOf(e)?.key === 'disks:merge.otherMerging' && msgOf(e)?.params?.name === 'f1');
   for (const o of [o0, o1, o2]) assert.ok(await store.get('overlays', o.id), `${o.name} is still there`);
   assert.equal((await overlayMeta(diskDir(d.id))).merging, overlayDir(o1.id));
+});
+
+// Review cut-jobs 8: an overlay a restore's fill was cut off in reads as empty, yet a merge of it went ahead: into a
+// blank disk it made an empty stored disk, deleting the disk's other overlays (a cut fork's `before` among them).
+test("an overlay a restore was cut off in (marked, or a new fork never filled) isn't merged: nothing deleted", async () => {
+  const w = await world();
+  const { store } = w;
+  await scribble(w.ob.id, w.blank, 3, 0x33);
+  const f = await openOverlay(overlayDir(w.ob.id), identityOf(w.blank));
+  assert.ok(writeMeta(f.meta, { ...readMeta(f.meta), generation: 5, filling: true })); // a replace's fill, cut off
+  f.close();
+  await navigator.locks.request(`waarm64-overlay:${overlayDir(w.ob.id)}`, async () => {});
+  assert.equal((await refreshOverlay(store, w.ob.id))?.bytes, 0, "shown as holding nothing, whatever its files' size");
+  const other: OverlayRecord = { ...w.ob, id: `${w.ob.id.slice(0, 10)}ff`, name: 'Other' };
+  await store.put('overlays', other);
+  const refused = (e: unknown) => msgOf(e)?.key === 'disks:merge.cutOff';
+  await assert.rejects(async () => mergeIntoDisk(store, w.ob.id, (await mergeEffect(store, w.ob.id))!), refused);
+  assert.equal((await store.get('disks', w.blank.id))!.kind, 'blank', 'the disk as it was');
+  assert.ok(await store.get('overlays', other.id), 'its other overlay kept');
+  // A restore's new fork the worker never opened (generation 0, its record's `before`): refused too.
+  const fork: OverlayRecord = { ...w.ob, id: `${w.ob.id.slice(0, 10)}fe`, name: 'Fork', fork: { snapshot: 'k', generation: 1, before: { overlay: other.id } } };
+  await store.put('overlays', fork);
+  await assert.rejects(async () => mergeIntoDisk(store, fork.id, (await mergeEffect(store, fork.id))!), refused);
+  assert.ok(await store.get('overlays', other.id), 'the overlay it forked from kept');
 });

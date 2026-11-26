@@ -10,6 +10,7 @@ import { MsgError } from './msg.ts';
 import {
   endFill,
   mapBlocks,
+  mergeLock,
   mapEntry,
   openOverlay,
   overlay,
@@ -77,6 +78,38 @@ export async function openStored(path: string, size: number): Promise<Source & {
   await resumeMerge(path, size);
   const files = await openOverlay(path, undefined, undefined, { readOnly: true });
   return { ...blockSource(files.data, files.map, size), close: files.close };
+}
+
+/**
+ * Holds the stored disks `paths` (`disks/<id>`) against a merge until the release it resolves to: each one's
+ * `mergeLock`, shared, taken only if free. A merge under way (web/app/merge.ts holds it, exclusive, from its checks to
+ * the end: its overlay's files deleted, then its record, then the machines unchosen) refuses this at once, an error
+ * whose `problem` is `disk-merging` (the page says it), rather than let a machine open that overlay as a new one; one asked for
+ * meanwhile waits for the release, by when the machine's overlays are open and the merge finds them in use. A
+ * machine's start holds them while it opens its disks (web/devices.ts `Devices.open`). Where there are no Web Locks,
+ * nothing is held.
+ */
+export async function holdAgainstMerges(paths: string[]): Promise<() => void> {
+  const releases: (() => void)[] = [];
+  const release = () => releases.forEach((r) => r());
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a probe: no Web Locks in some contexts
+  if (typeof navigator === 'undefined' || !navigator.locks) return release;
+  for (const path of new Set(paths)) {
+    const got = await new Promise<boolean>((answer) => {
+      void navigator.locks
+        .request(mergeLock(path), { mode: 'shared', ifAvailable: true }, (lock) => {
+          if (!lock) return answer(false);
+          answer(true);
+          return new Promise<void>((r) => releases.push(r));
+        })
+        .catch(() => answer(false));
+    });
+    if (!got) {
+      release();
+      throw Object.assign(new Error(`stored disk ${path} is being merged into`), { problem: 'disk-merging' });
+    }
+  }
+  return release;
 }
 
 /** Opens stored disk `path` for writing (exclusive): in place, an import or a merge. An interrupted merge is finished first. */

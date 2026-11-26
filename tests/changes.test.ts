@@ -279,3 +279,75 @@ test("a changes file over a qcow2 base whose file is larger than its virtual siz
   assert.equal(r.blocks, 1);
   assert.equal(await heldAt('over-qcow2', q, 1), 0x42);
 });
+
+// Review cut-jobs 3: the worker opened the base outside the chain that posts failures, so a base that couldn't be
+// opened (a URL disk offline, a stored disk in use or gone) posted nothing, and the page waited for good.
+test("Import changes' worker posts the failure when the disk's base can't be opened, as any other", async () => {
+  const posted: { type: string; error?: unknown }[] = [];
+  const g = globalThis as Record<string, unknown>;
+  const had = g.self;
+  g.self = { postMessage: (m: { type: string }) => posted.push(m) } as unknown;
+  try {
+    await import('../web/app/import-worker.ts');
+    const worker = g.self as { onmessage: (e: { data: unknown }) => Promise<void> };
+    // A ramdisk has nothing to read outside its machine: `openSource` refuses it, as it would a base that is gone.
+    await worker.onmessage({ data: { changes: new Blob([]), disk: { source: { ramdisk: 4096 }, overlay: 'none' }, label: 'x' } });
+    assert.deepEqual(posted.map((m) => m.type), ['error']);
+  } finally {
+    g.self = had;
+  }
+});
+
+// Review cut-jobs 6: `check` passed an L1 entry past the disk's end whose L2 table lies past the file's end, and the
+// load then read that table after the overlay was emptied (it named nothing of the disk).
+test("a changes file whose spare L1 entries (past the disk's end) name tables past its end loads: they name nothing of the disk", async () => {
+  const base = randomBase(13n);
+  const file = Buffer.from(await changesFile(base, [[100 * 4096, new Uint8Array(4096).fill(6)]]));
+  const l1Offset = Number(file.readBigUInt64BE(40));
+  assert.equal(file.readUInt32BE(36), 1, 'one L1 entry covers the disk');
+  assert.equal(file.readBigUInt64BE(l1Offset + 8), 0n, 'the L1 cluster has room for a second');
+  file.writeUInt32BE(2, 36);
+  file.writeBigUInt64BE(BigInt(file.length + (1 << 20)), l1Offset + 8); // a table past the file's end
+  await load('spare-l1', file, base);
+  const merged = (await mergedOf('spare-l1', base))!;
+  assert.ok(merged.subarray(100 * 4096, 101 * 4096).every((x) => x === 6), 'the change loaded');
+});
+
+/** A changes file from qemu-img with compressed clusters, and its compressed clusters' offsets in the file, ascending. */
+function qemuCompressed() {
+  const base = Uint8Array.from({ length: 1 << 20 }, (_, i) => 97 + (i * 7 + (i >> 9)) % 23);
+  const merged = base.slice();
+  merged.fill(0x5a, 70000, 75000);
+  writeFileSync(join(dir, 'tb.raw'), base);
+  writeFileSync(join(dir, 'tm.raw'), merged);
+  const r = spawnSync('qemu-img', ['convert', '-c', '-O', 'qcow2', '-B', 'tb.raw', '-F', 'raw', 'tm.raw', 'tc.qcow2'], { cwd: dir, encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  const bytes = readFileSync(join(dir, 'tc.qcow2'));
+  const bits = bytes.readUInt32BE(20);
+  const l1 = Number(bytes.readBigUInt64BE(40));
+  const x = BigInt(62 - (bits - 8));
+  const offsets: number[] = [];
+  for (let i = 0; i < bytes.readUInt32BE(36); i++) {
+    const l2 = Number(bytes.readBigUInt64BE(l1 + i * 8) & 0x00fffffffffffe00n);
+    if (!l2) continue;
+    for (let k = 0; k < 2 ** bits / 8; k++) {
+      const e = bytes.readBigUInt64BE(l2 + k * 8);
+      if (e & (1n << 62n)) offsets.push(Number(e & ((1n << x) - 1n)));
+    }
+  }
+  return { bytes, offsets: offsets.sort((a, b) => a - b) };
+}
+
+// Review cut-jobs 6: a file cut through its last compressed cluster passed `check` (only an extent past the end was
+// refused), and the load found it only once the overlay was emptied.
+test('a changes file cut through a compressed cluster is refused by its check, before the overlay is touched', { skip: !have && 'SKIPPED: no qemu-img/qemu-io' }, async () => {
+  const { bytes, offsets } = qemuCompressed();
+  assert.ok(offsets.length > 0, 'compressed clusters');
+  const whole = readChanges((o, l) => (o + l <= bytes.length ? bytes.subarray(o, o + l) : undefined), bytes.length)!;
+  await whole.check(); // the whole file passes
+  const last = offsets.at(-1)!;
+  assert.ok(last + 64 < bytes.length, 'the last compressed cluster is the end of the file');
+  const cut = bytes.subarray(0, last + 32);
+  const c = readChanges((o, l) => (o + l <= cut.length ? cut.subarray(o, o + l) : undefined), cut.length)!;
+  await assert.rejects(Promise.resolve().then(() => c.check()), (e: unknown) => msgOf(e)?.key === 'disks:qcow2.changesTruncated');
+});

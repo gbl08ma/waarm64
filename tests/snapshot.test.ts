@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { lzCodec } from '../web/lz.ts';
-import { ramStarts, readSnapshot, runThroughSnapshots, writeSnapshot } from '../web/snapshot.ts';
+import { ramStarts, readSnapshot, runThroughSnapshots, writeSnapshot, type DiskPlan } from '../web/snapshot.ts';
 import { dropSuspend, openOverlay, overlay, overlayMeta, removeOverlay, suspended, suspendWriter } from '../web/overlay.ts';
 import { diskIdentity } from '../web/devices.ts';
 import { zeroDisk } from '../web/stored.ts';
@@ -16,6 +16,9 @@ import { applyRam, crc32, frameHeader, openSnapshot, SnapshotError, SnapshotWrit
 import { poolSize, startPool } from '../web/snapshot-pool.ts';
 import { STEPS } from './steps.ts';
 import { ABI, bootVm, type BootOptions } from '../web/vm.ts';
+import { explain } from '../web/app/worker-errors.ts';
+import { MACHINES } from '../web/app/machine.ts';
+import { msgOf } from '../web/msg.ts';
 import { Exit, PSCI_SYSTEM_OFF, compileCore } from '../web/core.ts';
 import { CONSOLE_INPUT, CONSOLE_INPUT_STEP, CONSOLE_INPUT_WANT, DISTROS, GUEST_CMDLINE, guestDevices, runToPowerOff } from '../web/test-guests.ts';
 
@@ -585,7 +588,7 @@ test("a restore refused after some of its disk's blocks were written leaves the 
   await assert.rejects(async () => {
     const r = await readSnapshot(new Blob([new Uint8Array(file)]).stream(), codec, codec.snapshotVersion, { devices: [spec] });
     await r.restore.fill(new Uint8Array(65536));
-  }, (e: unknown) => e instanceof SnapshotError && e.problem === 'corrupt');
+  }, (e: unknown) => e instanceof SnapshotError && e.problem === 'corrupt' && (e as { emptied?: unknown }).emptied === true, "refused, saying the overlay's own changes were deleted");
   assert.equal((await overlayMeta(name)).filling, true, 'cut off part way: still marked');
   // A plan that keeps it at the fill's generation (another tab's, planned on its record) is refused too.
   const gen = (await overlayMeta(name)).generation;
@@ -611,6 +614,98 @@ test("a restore refused after some of its disk's blocks were written leaves the 
     g.close();
   }
   await removeOverlay(name);
+});
+
+/** A two-disk snapshot (slots 0 and 1, `blocks` each) and the disks' specs, over overlays `<name>-0` and `<name>-1`. */
+async function twoDisks(name: string, codec: Awaited<ReturnType<typeof lzCodec>>, damaged = false) {
+  const size = 64 * 4096;
+  const specs = [0, 1].map((k) => ({ type: 'blk', url: `file:///two/${k}.img`, overlay: `${name}-${k}` }) as const);
+  const header: SnapshotHeader = { ...HEADER, coreVersion: codec.snapshotVersion, ramSize: 65536, disks: specs.map((spec, slot) => ({ slot, identity: diskIdentity(spec, size), size, blocks: 2 })) };
+  const parts: Uint8Array[] = [];
+  const w = new SnapshotWriter((b) => { parts.push(b.slice()); }, header, { codec, concurrency: 1 });
+  await w.bytes('CORE', new Uint8Array(3000).fill(9));
+  await w.bytes('DEVS', new TextEncoder().encode(JSON.stringify({ devices: [], input: [] })));
+  await w.disk([1, 30, 2 ** 40 + 1, 2 ** 40 + 30].map((b) => ({ block: b, data: new Uint8Array(4096).fill((b % 2 ** 40) + 1) })));
+  await w.end();
+  const file = Buffer.from(Buffer.concat(parts));
+  if (damaged) {
+    // The last DISK frame names a slot the header doesn't pin (its CRC right): refused once the others were written.
+    const f = framesOf(file).filter((x) => x.tag === 'DISK').at(-1)!;
+    const head = file.subarray(f.at - 32, f.at);
+    head.writeUInt32LE(head.readUInt32LE(12) + 7 * 256, 12);
+    head.writeUInt32LE(crc32(file.subarray(f.at, f.at + f.len), crc32(head.subarray(0, 24))), 24);
+  }
+  for (const spec of specs) {
+    await removeOverlay(spec.overlay);
+    const f = await openOverlay(spec.overlay, diskIdentity(spec, size));
+    assert.ok(await overlay(zeroDisk(size), f.data, f.map, f.meta).write(6 * 4096, new Uint8Array(4096).fill(7)));
+    f.close();
+  }
+  return { size, specs, file: new Uint8Array(file) };
+}
+
+// Review cut-jobs 4: the disk phase emptied each target in turn as it took its lock, so a later disk open elsewhere
+// (another tab's job, another machine) failed the restore with "in use" after the earlier ones were emptied.
+test("a restore of several disks takes every disk's lock before it empties any: one in use elsewhere leaves the others as they were", async () => {
+  const codec = await lzCodec(WASM);
+  const name = 'snapshot-test-two-locks';
+  const { size, specs, file } = await twoDisks(name, codec);
+  let letGo!: () => void;
+  const held = new Promise<void>((r) => { letGo = r; });
+  let taken!: () => void;
+  const got = new Promise<void>((r) => { taken = r; });
+  // Disk 1 open elsewhere until the restore waits on it.
+  const holder = navigator.locks.request(`waarm64-overlay:${specs[1].overlay}`, () => (taken(), held));
+  await got;
+  const was = await overlayMeta(specs[0].overlay);
+  const r = await readSnapshot(new Blob([file]), codec, codec.snapshotVersion, { devices: [...specs] });
+  const filled = r.restore.fill(new Uint8Array(65536));
+  // The restore asks for disk 1's lock (the condition, not a time).
+  for (;;) {
+    const q = await navigator.locks.query();
+    if ((q.pending ?? []).some((l) => l.name === `waarm64-overlay:${specs[1].overlay}`)) break;
+    await new Promise((res) => setImmediate(res));
+  }
+  assert.deepEqual(await overlayMeta(specs[0].overlay), was, 'disk 0 not emptied nor marked while disk 1 is held');
+  letGo();
+  await holder;
+  await filled;
+  for (const spec of specs) {
+    const f = await openOverlay(spec.overlay, diskIdentity(spec, size));
+    try {
+      assert.deepEqual([...overlay(zeroDisk(size), f.data, f.map).written()], [1, 30], `${spec.overlay}: the snapshot's blocks`);
+    } finally {
+      f.close();
+    }
+    await removeOverlay(spec.overlay);
+  }
+});
+
+// Review cut-jobs 7: refused once the disks were being written, the message said the same whether a disk's own
+// changes were deleted (a replace, the page's own disk) or only a new fork took part of the snapshot (put back).
+test("a restore refused part way says whether it emptied a disk's own overlay: a new fork's isn't (the page puts the machine back), a replaced one's is", async () => {
+  const codec = await lzCodec(WASM);
+  const name = 'snapshot-test-emptied';
+  const { size, specs, file } = await twoDisks(name, codec, true);
+  const refusal = async (plan: DiskPlan[]) => {
+    try {
+      const r = await readSnapshot(new Blob([file]).stream(), codec, codec.snapshotVersion, { devices: [...specs], plan });
+      await r.restore.fill(new Uint8Array(65536));
+    } catch (e) {
+      assert.ok(e instanceof SnapshotError && e.problem === 'corrupt', String(e));
+      return (e as { emptied?: unknown }).emptied;
+    }
+    assert.fail('not refused');
+  };
+  const write = (k: number, fork?: true): DiskPlan => ({ slot: k, action: 'write', overlay: specs[k].overlay, identity: diskIdentity(specs[k], size), size, ...(fork ? { fork } : {}) });
+  assert.equal(await refusal([write(0, true), write(1, true)]), undefined, 'new forks only: none of the disks lost its changes');
+  assert.equal(await refusal([write(0, true), write(1)]), true, 'a replace: its changes were deleted');
+  const [problem, error] = explain(Object.assign(new SnapshotError('snapshots:snapshot.damage', {}, 'corrupt'), { emptied: true }), MACHINES.buildroot, { restoring: true, ramMiB: 64 });
+  assert.equal(problem, 'snapshot');
+  assert.equal(msgOf((error as Error).cause)?.key, 'snapshots:worker-errors.notRestored.emptied');
+  const [, plain] = explain(new SnapshotError('snapshots:snapshot.damage', {}, 'corrupt'), MACHINES.buildroot, { restoring: true, ramMiB: 64 });
+  assert.equal(msgOf((plain as Error).cause)?.key, 'snapshots:worker-errors.notRestored.cause');
+  for (const spec of specs) await removeOverlay(spec.overlay);
 });
 
 test('a snapshot of another machine, another version or with a damaged state is refused', { skip }, async () => {

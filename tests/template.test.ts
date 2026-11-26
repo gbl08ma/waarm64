@@ -12,6 +12,7 @@ import { createDisk, createMachine, attach, knownDisk } from '../web/app/machine
 import { resolveUrls } from '../web/app/template.ts';
 import { planRestore } from '../web/app/snapshots.ts';
 import { undoCutRestores } from '../web/app/snapshot-undo.ts';
+import { MachineLock } from '../web/app/run/machine-lock.ts';
 import { canonical, shapeHash, shapeOf, type MachineRecord } from '../web/app/shape.ts';
 import { overlayDir, Store } from '../web/app/store.ts';
 import { memoryFiles, memoryRecords } from '../web/app/store-backends.ts';
@@ -84,7 +85,7 @@ test("a template's restore onto a new machine with no overlay yet forks: a new o
   const steps = await plan.commit(false);
   const m = (await b.get('machines', machine.id))!;
   const o = (await b.get('overlays', m.attachments[0].overlay!))!;
-  assert.deepEqual(steps, [{ slot: pins[0].slot, action: 'write', overlay: overlayDir(o.id), identity: canonical(o.identity), size: 256 * MiB, whole: false }]);
+  assert.deepEqual(steps, [{ slot: pins[0].slot, action: 'write', overlay: overlayDir(o.id), identity: canonical(o.identity), size: 256 * MiB, whole: false, fork: true }]);
   assert.deepEqual([o.name, o.fork], ['Alpine', { snapshot: 'k1', generation: 1, before: {} }], 'what the attachment had: no overlay');
   assert.equal((await b.all('overlays')).length, 1);
 });
@@ -173,6 +174,75 @@ test("a fork whose restore was cut off before its fill was done is never reused;
   assert.deepEqual(third.forks.map((x) => x.reused), [true]);
 });
 
+/** `imported()` with the user's own overlay attached (written: generation 2). */
+async function withMine() {
+  const { b, machine, pins } = await imported();
+  const disk = (await b.all('disks'))[0];
+  const now = Date.now();
+  const mine = { id: 'e00000000003', name: 'Mine', disk: disk.id, identity: disk.identity, generation: 2, bytes: 4096, created: now, modified: now };
+  await b.put('overlays', mine);
+  machine.attachments[0].overlay = mine.id;
+  await b.put('machines', machine);
+  return { b, machine, pins, disk, mine };
+}
+/** Waits for overlay `id`'s lock to be let go (a close's release lands a moment later). */
+const letGo = (id: string) => navigator.locks.request(`waarm64-overlay:${overlayDir(id)}`, async () => {});
+
+// Review cut-jobs 1: the restore records and attaches its fork before the worker's check pass; cut off there (the tab
+// closed, the file refused), the fork had no mark and no files, the undo left it attached, and the machine booted on an
+// empty disk with the user's overlay detached.
+test("a fork the restore attached but no fill opened is undone: the machine goes back on the overlay it had, except while a start holds the machine", async () => {
+  const { b, machine, pins, mine } = await withMine();
+  const plan = await planRestore(b, machine, await disksOf(b), { name: 'Alpine', key: 'k6', pins }, { display: '2d' });
+  await plan.commit(false);
+  const m = (await b.get('machines', machine.id))!;
+  const fork = m.attachments[0].overlay!;
+  assert.notEqual(fork, mine.id);
+  // The restore's own start holds the machine's lock from before its commit (here, or in another tab): its fork is its own.
+  await navigator.locks.request(`waarm64-machine:${machine.id}`, async () => {
+    assert.equal(await undoCutRestores(b, m), m, 'not while a start holds the machine');
+  });
+  // The tab closed during the check pass: the worker never opened the fork.
+  const back = await undoCutRestores(b, m);
+  assert.equal(back.attachments[0].overlay, mine.id, 'back on the overlay it had');
+  assert.equal(await b.get('overlays', fork), undefined, 'the fork deleted');
+  assert.ok(await b.get('overlays', mine.id), "the user's overlay kept");
+});
+
+// Review cut-jobs 2: a replace writes into the attached overlay, an earlier fork whose record still had the `before` of
+// its own restore; cut off, the undo put the machine back on what that fork had replaced and deleted the fork.
+test("a replace into an earlier fork, cut off, leaves the machine on that fork (read as empty), not on what the fork replaced", async () => {
+  const { b, machine, pins, disk, mine } = await withMine();
+  const first = await planRestore(b, machine, await disksOf(b), { name: 'Alpine', key: 'k7', pins }, { display: '2d' });
+  await first.commit(false);
+  const m = (await b.get('machines', machine.id))!;
+  const fork = m.attachments[0].overlay!;
+  {
+    const f = await openOverlay(overlayDir(fork), canonical(disk.identity)); // its fill done: generation 1, no mark
+    assert.ok(writeMeta(f.meta, { generation: 1, merging: '', size: 0 }));
+    f.close();
+  }
+  await letGo(fork);
+  // Another snapshot restored over it, the user answering replace: a write into the fork.
+  const second = await planRestore(b, m, await disksOf(b), { name: 'Other', key: 'k8', pins }, { display: '2d' });
+  assert.deepEqual(second.forks.map((x) => x.replaceable?.overlay), [fork]);
+  const steps = await second.commit(true);
+  assert.deepEqual(steps.map((s) => s.action === 'write' && s.overlay), [overlayDir(fork)]);
+  // The worker's fill: emptied and marked one past its generation, then cut off.
+  {
+    const f = await openOverlay(overlayDir(fork), canonical(disk.identity), undefined, { fresh: true });
+    assert.ok(writeMeta(f.meta, { generation: 2, merging: '', size: 0, filling: true }));
+    f.close();
+  }
+  await letGo(fork);
+  const m2 = (await b.get('machines', machine.id))!;
+  const after = await undoCutRestores(b, m2);
+  assert.equal(after.attachments[0].overlay, fork, 'still on the fork the replace emptied');
+  assert.ok(await b.get('overlays', fork), "the fork's record kept");
+  assert.equal(after.attachments[0].inPlace, undefined);
+  assert.ok(await b.get('overlays', mine.id));
+});
+
 // REVIEW.md (review/demo-page) R1: a definition naming an image's content id from another URL (another store's demo,
 // an imported file) doesn't decide where a later definition's disk is read from: a URL disk is the same disk only at
 // the same URL (its identity, the shape's, still matches on any host).
@@ -218,4 +288,24 @@ test("a definition's blank disk whose identity names an existing record's id doe
   assert.throws(() => parseDefinition(bad({ kind: 'url', chunked: ID, bytes: MiB })), /damaged/);
   assert.throws(() => parseDefinition(bad({ kind: 'blank', bytes: MiB })), /damaged/);
   assert.throws(() => parseDefinition(JSON.stringify({ ...base, disks: [{ ...base.disks[0], identity: { kind: 'url', chunked: '../x', bytes: 1 } }] })), /damaged/);
+});
+
+// Review cut-jobs 1: the undo skips a machine whose lock is held (a start owns its forks), so a page reading its
+// records again right after its own run ended must not find that run's lock still on its way out.
+test("a page's machine lock, let go, is released by the time `settled` says so: the undo then sees the machine free", async () => {
+  const lock = new MachineLock();
+  const id = 'f00000000001';
+  const held = async () => ((await navigator.locks.query()).held ?? []).some((l) => l.name === `waarm64-machine:${id}`);
+  assert.ok(await lock.hold(id));
+  assert.ok(await held());
+  lock.drop();
+  // It waits for the lock's request to end (in Chromium the release lands a moment after the drop), not for the drop.
+  let first = '';
+  const settled = lock.settled().then(() => (first ||= 'settled'));
+  await Promise.resolve();
+  first ||= 'drop';
+  await settled;
+  assert.equal(first, 'drop', "settled only once the lock's request ended");
+  assert.equal(await held(), false, 'released');
+  await lock.settled(); // none held since: at once
 });

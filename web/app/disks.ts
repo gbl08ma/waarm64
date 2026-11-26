@@ -140,7 +140,9 @@ export async function deleteOverlay(store: Store, id: string) {
 export async function refreshOverlay(store: Store, id: string) {
   const o = await store.get('overlays', id);
   if (!o) return undefined;
-  const [meta, bytes] = await Promise.all([overlayMeta(overlayDir(id)), overlayBytes(overlayDir(id))]);
+  const meta = await overlayMeta(overlayDir(id));
+  // One a fill was cut off in (still marked) reads as empty, whatever its files hold (web/overlay.ts `openOverlay`).
+  const bytes = meta.filling ? 0 : await overlayBytes(overlayDir(id));
   // A meta past its record (a resize cut off between the two, §4.5): the device opened it at that size, so it's the size.
   const size = meta.size > (o.size ?? 0) ? meta.size : o.size;
   if (meta.generation === o.generation && bytes === o.bytes && size === o.size) return o;

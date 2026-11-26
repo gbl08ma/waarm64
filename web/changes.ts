@@ -108,7 +108,7 @@ export async function loadChanges(o: {
     });
   // Every table and cluster the file names is in it, checked before the overlay is touched (they are read lazily, as
   // the blocks are loaded).
-  c.check();
+  await c.check();
   const hash = await baseHash(o.base, o.made, (done) => progress(msg('disks:changes.checkingBase'), done, hashed));
   if (hash !== c.hash) {
     throw new MsgError('disks:changes.otherBase', {

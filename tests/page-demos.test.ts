@@ -264,7 +264,21 @@ test("started before says whether the machine has changes since the demo started
     await page.locator('[data-field="changes"]').waitFor({ timeout: 30_000 });
     return { said: await text(page, '[data-field="changes"]'), is: await page.locator('[data-field="changes"]').getAttribute('data-changes') };
   };
-  // The stand-in wrote nothing where the restore would have (its overlay's generation 0, not the fork's 1): moved on.
+  // The stand-in fills nothing: a fork left at generation 0 is a restore cut off before its fill, which the next load
+  // undoes (review cut-jobs 1). As the worker would leave it, filled (generation 1), then written by the guest (2): moved on.
+  // Once the start reached the worker (the fork recorded and attached by then).
+  await page.waitForFunction(() => (window as unknown as { __starts: unknown[] }).__starts.length === 1, null, { timeout: 30_000, polling: 50 });
+  await page.evaluate(async (id) => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const { encodeMeta } = await import('/web/overlay.ts' as string);
+    const store = await Store.open();
+    const fork = (await store.get('machines', id)).attachments[0].overlay;
+    const dir = await (await (await navigator.storage.getDirectory()).getDirectoryHandle('overlays', { create: true })).getDirectoryHandle(fork, { create: true });
+    const w = await (await dir.getFileHandle('meta', { create: true })).createWritable();
+    await w.write(encodeMeta({ generation: 2, merging: '', size: 0 }));
+    await w.close();
+    store.close();
+  }, m.id);
   assert.deepEqual(await changes(), { said: t('machines:DemoChanges.disk'), is: 'disk' });
   const mark = (restoreFirst: string | undefined) => page.evaluate(async ([id, restoreFirst]) => {
     const { Store } = await import('/web/app/store.ts' as string);

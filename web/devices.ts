@@ -21,7 +21,7 @@ import type { BlockCacheStats } from './blockcache.ts';
 import { openOverlay, storageNumbers, type OverlayFiles, type WritableDisk } from './overlay.ts';
 import type { InspectAnswer, InspectQuery } from './surface.ts';
 import { ramDisk, swapHeader } from './ramdisk.ts';
-import { openStored, openStoredForWriting, resumeMerge } from './stored.ts';
+import { holdAgainstMerges, openStored, openStoredForWriting, resumeMerge } from './stored.ts';
 import { coreModule } from './deflate.ts';
 import { Usb, type UsbAttach } from './usb.ts';
 import { sndBackend } from './snd.ts';
@@ -796,6 +796,22 @@ export class Devices {
     notice: (m: Msg) => void = () => {},
   ) {
     if (init.core) void coreModule(init.core);
+    // Held against a merge from here until the disks are open (`holdAgainstMerges`): one under way (in another tab)
+    // refuses the start, else it could delete an overlay this machine is about to open as a new one.
+    const stored = init.specs.flatMap((d) =>
+      d.type !== 'blk'
+        ? []
+        : [d.stored, d.overlay?.startsWith('disks/') ? d.overlay : undefined].filter((x): x is string => !!x),
+    );
+    const unhold = await holdAgainstMerges(stored);
+    try {
+      return await Devices.#open(init, out, notice);
+    } finally {
+      unhold();
+    }
+  }
+
+  static async #open(init: DevicesInit, out: (device: number, text: string) => void, notice: (m: Msg) => void) {
     // A merge into a stored disk that was cut off or refused is finished before any overlay is opened: it reads the
     // overlay it merges (perhaps one of these, its machine's choice), and this worker holding that one's lock would
     // keep it waiting (web/stored.ts `resumeMerge`; docs/machines.md §4.4). One disk at a time: two attachments of one

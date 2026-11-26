@@ -1316,6 +1316,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   snapshot's. To keep the old blocks until the new ones are whole: fill a new directory (`overlays/<id>.fill`) and
   switch at the end, which OPFS can't do in one step for a directory: a pointer file the opening reads (which
   directory is current), written last, with the old one deleted after, and every opener and the sweep taught it.
+- **A template's first start cut off before its fill boots plain next time** (PERF loop 78): `first`
+  (web/app/areas/snapshot-restore.ts) clears the machine's `restoreFirst` before its start, so a first start whose
+  restore is cut off (the tab closed during the check pass, the file refused) leaves a machine that next boots its
+  image (its new fork undone as never filled, or its fresh overlay read as empty), and the demo's snapshot is never
+  restored. To do: clear `restoreFirst` only once the restore loaded (the worker's `loaded`
+  message), or have the next load put it back where its fresh overlays are still at generation 0; a page test with
+  the stand-in worker (tests/demo-fixture.ts) answering `failed` checks the next start restores the snapshot.
 - **The Alpine demo's loose ends** (bench/demo/REPORT.md "DEMO loop 3"), ranked:
   - **The resume's disk reads, prefetched with the snapshot:** 2–3 dependent 2 MiB misses before the first command (a
     trace from the resume, as loop 1 ranked it: ~0.3 s each at 100/20).

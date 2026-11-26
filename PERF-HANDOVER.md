@@ -126,7 +126,7 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried and lost: polled code without `acc`").
 
-## State (2026-11-26, after loop 77; paused by the user)
+## State (2026-11-26, after loop 78)
 
 **The rule since 2026-11-24 (the user): spend as little time in benchmarks and CI as the answers allow
 ("Batching", above).** Loop 76 took rows 14 and 15 (bench/io/REPORT.md "PERF loop 76", `bench/io/results/2026-11-25-perf76/`):
@@ -136,15 +136,19 @@ it in the VM, 3.3× on the Mac) and nothing else's (buffered and fsync'd writes 
 map entries would lose a closed tab's writes). Built: Import changes in runs with merged reads of the file (256 MiB:
 ~21 s → 0.3 s on the VM's profile, 18-29 s → 0.17 s on the Mac's) and the import's store unordered (the Mac's 2×).
 Loop 77 fixed loop 76's review of disk writes (bench/io/REPORT.md "PERF loop 77": a bulk fill's mark in the
-overlay's `meta`, cut-off restores undone, the merge resumed before a machine's overlays open). Loop 75's notes still hold: `bench/boot/results/perf75/diag.patch` applies to 3a08fdf3; loop 67's warm-up is not
-landed (local branches `perf67-warmup`, `perf-smp-warm`, unpushed); `../waarm64-base` is detached at 5d8f29ef.
-**Paused 2026-11-26 (the user), to resume in a new session.** **Next: loop 78 fixes loop 77's out-of-context review** (`origin/review/cut-jobs`, ad551489, `review/cut-jobs.md`: ten findings on cut-off jobs, the first two confirmed by a throwaway Node test: a fork attached but never filled is not undone, and a cut-off replace into an earlier fork goes back to that fork's old `before`), each with its test failing first, the push tier `ci.sh`, `ci-machines.sh`, `ci-debian.sh`, then deletes the branch on origin; **then row 16**, virgl's per-draw GL state (count, build). Outside the track, 554848b8 bounded a host folder's permission query at a machine's start (a hang on the user's Chromium; docs/shares.md). `target/snapbench/pages.waarm64snap` loads into the current
+overlay's `meta`, cut-off restores undone, the merge resumed before a machine's overlays open); loop 78 fixed loop 77's
+review of cut-off disk jobs (bench/io/REPORT.md "PERF loop 78": a fork never filled undone too, under the machine's
+lock the restore takes before its commit; a replace drops a fork's `before`; a restore's disks all locked before any is
+emptied; a start refused while a merge runs; Import changes' worker posts every failure; the changes check's two gaps;
+a marked overlay neither counted nor merged). Loop 75's notes still hold: `bench/boot/results/perf75/diag.patch`
+applies to 3a08fdf3; loop 67's warm-up is not landed (local branches `perf67-warmup`, `perf-smp-warm`, unpushed);
+`../waarm64-base` is detached at 5d8f29ef. **Next: row 16**, virgl's per-draw GL state (count, build). Outside the track, 554848b8 bounded a host folder's permission query at a machine's start (a hang on the user's Chromium; docs/shares.md). `target/snapbench/pages.waarm64snap` loads into the current
 state layout; `target/archarm/desktop.qcow2` is ab-mac.sh's default disk. The ABI is 74.
 
 What every loop kept, dropped and found is in its REPORT entry (bench/boot/REPORT.md "PERF loop 36" to "PERF loop
 66" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
-36, 42, 47, 50, 55, 58, 71, 73, 74, 76 and 77) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43, 48, 56, 60, 72, 75
-and 77 (50's: comments only), 73's in its own commit while paused; 77's is loop 78's. Built but off by default (measured slower): I8MM, FCMA,
+36, 42, 47, 50, 55, 58, 71, 73, 74, 76 and 77) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43, 48, 56, 60, 72, 75,
+77 and 78 (50's: comments only), 73's in its own commit while paused. Built but off by default (measured slower): I8MM, FCMA,
 FP16, FHM, BF16. The ABI is 74.
 
 ## Still open (the queue: the first is next; by expected gain, highest first)
