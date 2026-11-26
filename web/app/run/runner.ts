@@ -25,16 +25,16 @@ import type { UsbPorts } from '../usb-live.ts';
 import { checkDisks, isGone } from '../demo-open.ts';
 import { gpuInitKnobs } from './knobs.ts';
 import { MachineLock } from './machine-lock.ts';
+import { mergeRuns, mergingInto } from '../machine-hold.ts';
 import type { Messages } from './messages.ts';
-import { filesNeedingUser, refreshRecords, startDisks } from './page-disks.ts';
-import { sharesPath, type PageMachine } from './page-machine.svelte.ts';
+import { filesNeedingUser, NeedsUser, refreshRecords, startDisks } from './page-disks.ts';
+import { loadStored, sharesPath, type PageMachine } from './page-machine.svelte.ts';
 import type { Problems } from './problems.ts';
 import type { Replies } from './replies.ts';
 import { dispatch, Run } from './run.ts';
 import { channels, startMessage, type Channels, type StartWith } from './start-message.ts';
 import type { RunAgent } from '../areas/agent-actions.ts';
 import { displayHandlers, gpuHandlers, ledEvent, workerHandlers } from './worker-messages.ts';
-import type { DiskRecord } from '../shape.ts';
 import type { DiskPlan } from '../../snapshot.ts';
 
 /** How long a panicked machine's workers are kept for the rest of its panic's output (the trace after the line), ms. */
@@ -76,27 +76,26 @@ export type RunnerDeps = {
 /** `first`: a template's first start (`restoreFirst`), which boots instead when its snapshot can't load here. */
 type StartArgs = { snapshot?: File; resume: boolean; plan?: DiskPlan[]; first?: boolean; config: MachineConfig };
 
-/** A file disk whose file the page can't read without the user: no handle (picked again), or a handle without permission (granted again by a click). */
-export class NeedsUser extends Error {
-  readonly disks: DiskRecord[];
-  constructor(disks: DiskRecord[]) {
-    super(`${disks.map((d) => d.name).join(', ')}: no permission in this session`);
-    this.disks = disks;
-  }
-}
-
 export class Runner {
   readonly d: RunnerDeps;
   readonly lock = new MachineLock();
 
   /**
-   * A template's first start whose snapshot can't load once under way (`plan`: its restore's disks; `restart`: its run
-   * has ended): the restore's to handle (web/app/areas/snapshot-restore.ts `bootInstead`).
+   * A template's first start whose snapshot can't load once under way (`restart`: its run has ended): the restore's to
+   * handle (web/app/areas/snapshot-restore.ts `bootInstead`).
    */
-  firstFailed: (plan: DiskPlan[], restart: boolean) => Promise<void> = () => Promise.resolve();
+  firstFailed: (restart: boolean) => Promise<void> = () => Promise.resolve();
+  /**
+   * What Retry does after the last start failed, where it isn't a restart (web/app/run/problems.ts `again`): set by a
+   * snapshot's restore right after its start (the restore again: a restart would boot), cleared by every start.
+   */
+  again: (() => Promise<void>) | undefined;
   constructor(d: RunnerDeps) {
     this.d = d;
   }
+
+  /** Run `r` loaded its snapshot (the worker's `loaded`): the restore's to handle (web/app/areas/snapshot-restore.ts). */
+  loaded: (r: Run) => Promise<void> = () => Promise.resolve();
 
   /** A key or a click for a guest that sleeps: it wakes (as a machine does on its keyboard), and the input goes on to it. */
   wake() {
@@ -114,6 +113,7 @@ export class Runner {
    */
   start(snapshot?: File, resume = true, plan?: DiskPlan[], first = false) {
     const { machine: m, screen, net, audio } = this.d;
+    this.again = undefined;
     const size = m.hasGpu ? screen.wantedSize() : m.spec.framebuffer;
     screen.sent = m.hasGpu ? size : undefined;
     // The machine worker draws the screen (web/display.ts): a canvas hands its drawing over only once.
@@ -124,7 +124,8 @@ export class Runner {
     const ch = channels(config, audio.attach(), nets);
     current.hasNetwork = ch.nets.length > 0;
     const r = this.#newRun(canvas, ch);
-    if (first && snapshot) r.first = plan ?? [];
+    if (first && snapshot) r.first = true;
+    if (snapshot && plan && m.stored) r.plan = plan;
     this.#loading(snapshot);
     const args = { snapshot, resume, plan, first, config };
     if (config.display === '3d') this.#gpu(r, ch, offscreen, args, size);
@@ -219,8 +220,10 @@ export class Runner {
       r.input.detach();
       this.d.machine.run = undefined;
       // A template's snapshot needs the 3D it was taken with (its shape): the machine's first start boots instead.
-      if (args.first && args.snapshot) return void this.firstFailed(args.plan ?? [], false);
+      if (args.first && args.snapshot) return void this.firstFailed(false);
+      const again = this.again; // the same start, without 3D: a restore's Retry is still the restore
       this.start(args.snapshot, args.resume, args.plan);
+      this.again = again;
     };
     const fromGpu = gpuHandlers(this, r, ready, failed);
     gpu.onmessage = r.guard((e: MessageEvent<FromGpuWorker>) => dispatch(fromGpu, e.data));
@@ -237,7 +240,7 @@ export class Runner {
     const { machine: m, folders } = this.d;
     if (!r.live()) return;
     if (!(await this.own(() => r.live()))) return;
-    const opened = await this.#openDisks(r, w.config);
+    const opened = await this.#openDisks(r, w.config, !!w.plan);
     if (!opened) return;
     const ready = await this.#prepare(r, ch);
     if (!ready) return;
@@ -283,27 +286,37 @@ export class Runner {
       return false;
     }
     if (!live() || !s) return false;
-    this.d.messages.setState(
-      'failed',
-      new MsgError(
-        'machine:runner.runsElsewhere',
-        { name: s.record.name },
-        { cause: new MsgError('machine:runner.runsElsewhere.cause') },
-      ),
-      [this.d.later.problems().retry],
-    );
+    // A merge into one of its disks holds the machine off (web/app/merge.ts): said as that.
+    const error = (await mergingInto(s.disks.values()))
+      ? mergeRuns(s.record.name)
+      : new MsgError(
+          'machine:runner.runsElsewhere',
+          { name: s.record.name },
+          { cause: new MsgError('machine:runner.runsElsewhere.cause') },
+        );
+    this.d.messages.setState('failed', error, [this.d.later.problems().retry]);
     return false;
   }
 
-  /** The disks to start with and what snapshots say of the machine; none when they can't be opened (said). */
-  async #openDisks(r: Run, config: MachineConfig) {
+  /**
+   * The disks to start with and what snapshots say of the machine; none when they can't be opened (said). The stored
+   * machine's records are read again first, under its lock (`own`): read before it, they may name an overlay a merge
+   * or a delete in another tab took away meanwhile (web/app/merge.ts holds the machines off, so not after), which the
+   * worker would make anew with no record naming it. A boot (`restore` false) undoes a restore that never ran as the
+   * lock's owner (web/app/snapshot-undo.ts): a reading before the lock found it held, by that restore's run.
+   */
+  async #openDisks(r: Run, config: MachineConfig, restore: boolean) {
     const m = this.d.machine;
     try {
+      if (m.stored) m.stored = await loadStored(m.store, m.stored.record.id, { owned: !restore });
       const needs = m.stored ? await filesNeedingUser(m, m.stored) : [];
       if (needs.length) throw new NeedsUser(needs);
       // A demo's machine (from Home as from the store's page): its files gone from the server is said as that.
       if (m.stored?.record.fromDemo) await checkDisks(m.store, m.stored.record, { goneOnly: true });
       const { disks, home } = await startDisks(m);
+      // The attachments a live surface asks about (`inspect`) as the record read again names them, its new overlays too.
+      const i = current.inspect;
+      if (i?.worker === r.worker) current.inspect = { ...i, attachments: m.stored?.record.attachments };
       status.disks = disks.map((d) => d.name);
       const about = await m.about(config);
       r.about = about;

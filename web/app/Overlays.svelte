@@ -23,7 +23,7 @@
   import type { OverlayRecord, Store } from './store.ts';
   import type { DiskRecord, MachineRecord } from './shape.ts';
   import { bytesText } from './bytes.ts';
-  import { deleteOverlay, renameOverlay } from './disks.ts';
+  import { deleteOverlayAsked, renameOverlay } from './disks.ts';
   import { mergeEffect, mergeIntoDisk } from './merge.ts';
   import type { ExportMode, ExportStepsApi } from './export.ts';
   import { inBar, page } from './page.ts';
@@ -92,7 +92,7 @@
     )
       return;
     await run(t('disks:Overlays.busy.delete'), () =>
-      deleteOverlay(store, o.id).catch((e: unknown) => {
+      deleteOverlayAsked(store, o.id).catch((e: unknown) => {
         throw new MsgError('disks:Overlays.failed.delete', {}, { cause: e });
       }),
     );

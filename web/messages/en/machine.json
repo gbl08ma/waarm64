@@ -69,7 +69,7 @@
   },
   "problems.retry": {
     "message": "Retry",
-    "note": "Button in the message bar (under the toolbar) after the machine couldn't start or stopped (a file missing, the disk in use, no memory): it starts the machine again."
+    "note": "Button in the message bar (under the toolbar) after the machine couldn't start or stopped (a file missing, the disk in use, no memory): it tries again what failed. After a start it starts the machine again; after a snapshot's restore that failed (the restore itself, or its start before the snapshot loaded) it restores the snapshot again."
   },
   "serial-terminal.showLog": {
     "message": "Show serial log",

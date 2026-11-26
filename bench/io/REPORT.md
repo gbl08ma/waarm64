@@ -416,3 +416,61 @@ boots plain next time (`restoreFirst` is cleared before the start).
 
 **CI:** `scripts/ci.sh` OK (706 s, after the demo test's two fixes above), `scripts/ci-machines.sh` OK (306 s),
 `scripts/ci-debian.sh` OK (305 s).
+
+## PERF loop 80 (2026-11-26): the out-of-context review of the machine, disk and merge locks, fixed
+
+The review of how the page takes the machine, disk and merge locks around restores, starts, merges and Import changes
+(branch `review/disk-locks` at 48d222cf, `review/disk-locks.md`; static, at b1b1497e) ranked eight findings. Each was
+checked against the code at d8792cbf (loop 79 touched none of it); each defect got its test at the cheapest layer, run
+first against that code (each failed there: the Node tests in a copy of the base sources, the page tests with `web/`
+stashed), then fixed. Nothing was measured: no change touches a path the guest's I/O takes (a merge, a Delete overlay
+and Import changes take Web Locks a start already took; a start reads its record once more, under its lock; the page
+writes a few records when a restore loads). No stored format changes beyond a record field (`OverlayRecord.restoring`,
+`fork.before.kept`); step counts don't move.
+
+**The one design change behind findings 2, 3 and the loop-78 backlog entry:** a restore was undone at the next load
+only when its fork held no fill (generation 0, or still marked), and a template's first start cleared `restoreFirst`
+before its start. Now the commit marks every overlay a restore writes or attaches `restoring`, and the page clears the
+marks (with the forks' `before`, and a template's `restoreFirst`) when the worker says the snapshot loaded (`loaded`,
+posted before the vCPUs run: web/app/snapshot-undo.ts `restoreLoaded`). At the next load with the machine free, a
+restore that never loaded is undone whatever its fill reached: a new fork deleted and its attachment back on what it
+had, an earlier fork attached again kept (`before.kept`), an overlay written into (a replace, a template's fresh
+overlay) left attached, re-marked as a cut-off fill (`markCutFill`: read as empty) and no fork of the snapshot. Old
+records' forks keep the old rule (a `before` with no fill). One fix covers the backlog entry and finding 2: the
+entry's `restoreFirst` now stays to the load (the next start restores again), and the fresh overlay's fork mark goes
+at the next load (a boot on it is never taken for the snapshot's blocks); `unfork` is gone (the undo at the boot's
+start does its work).
+
+| # | the review's finding | outcome | test (failing first) | fix |
+|---|---|---|---|---|
+| 1 | High: Merge into the disk and Delete overlay ignore the machine lock; a start or a restore in another tab opens a deleted overlay anew (blank disks, a merge that ended in the window, a restore's fill) | **defect** (confirmed) | `tests/merge.test.ts` "a merge or a Delete overlay is refused while a machine that attaches the disk holds its lock…" (failed: merged, B's overlay deleted); `tests/page-restore.test.ts` "a start opens its machine's record as it is once it holds the machine's lock…" (a 3D start held at its GPU stand-in while the disk is converted: failed, the start opened the stale blank source) | `holdMachines` (web/app/machine-hold.ts, `resize.ts`'s `lockMachines` moved there): the merge holds every machine that attaches the disk off for its length, refused while one holds its lock (`disks:merge.running`); Delete overlay (`deleteOverlayAsked`, the Overlays dialog's) holds the machines that choose it, and for a fork every machine that attaches its disk (`disks:disks.overlayUsersRunning`); the start reads its records again under its lock (`Runner`'s `#openDisks`, a boot undoing a restore that never ran as the lock's owner); a start refused while a merge holds it says the merge, not another tab (`mergingInto`) |
+| 2 | High: a template's first restore cut off before its fill leaves the fresh overlay marked as the snapshot's fork; after a boot a restore reuses it | **defect** (confirmed) | `tests/template.test.ts` "a template's first restore cut off before its fill: the next load takes the fork mark off…" (failed: reused); `tests/page-template-first.test.ts` "a template's first start cut off before its snapshot loaded restores it again…" (the backlog entry: failed, the mark cleared at the cut-off start) | the `restoring` mark, above; `restoreFirst` kept until `loaded`, cleared where the first start boots instead |
+| 3 | Medium: a restore refused after its disk phase leaves the forks whole and attached, while the words say the disks hold none of the snapshot | **defect** (by reading; the test shows the record) | `tests/template.test.ts` "a restore that never loaded, its fill done (refused after it), is undone as one cut off…" (failed: left on the fork) and "a restore that attached an earlier fork again and never loaded…" (new: the reuse path had no `before` at all) | the `restoring` mark, above: the words (`notRestored.cause`, `.emptied`) now state what happens; their notes say so. A reuse also clears the attachment's in-place mark (it was left set, so a reuse onto a disk written in place ran in place) |
+| 4 | Medium: Import changes into another machine holds no lock and writes back the record copied at the click | **defect** (confirmed in Chromium) | `tests/page-restore.test.ts` "Import changes into another machine keeps what was written to its record since the click, and is refused when it starts meanwhile" (failed: the rename reverted) | the target machine's lock held from the confirmation to the switch (`holdMachines`; the page's own machine through `Runner.own`), refused if it started meanwhile; the switch writes the record read under it |
+| 5 | Low-medium: Retry after a failed restore starts the machine normally, the restore's forks undone | **defect** (confirmed) | `tests/page-restore.test.ts` "Retry after a restore's start failed restores the snapshot again, not a boot" (the stand-in answers the restore's start `disk-in-use`: failed, a boot) | `Runner.again`: a restore sets it for its commit's failure and its start's (Problems' Retry and the file-permission grant run it), cleared by the next start and once the snapshot loaded, kept across the 3D fallback; `machine:problems.retry`'s note says what it does |
+| 6 | Low: a template's first start runs outside `exclusively`; two holds at once say "running in another tab" | **two defects** (confirmed) | `tests/template.test.ts` "a page's machine lock asked for twice at once: both are this page's" (failed: true, false); `tests/page-template-first.test.ts` "a Start while a template's first start is under way at the page's load starts nothing beside it" (the Start fired at the first start's lock take: failed, two restores) | `startOpened` runs the first start within `exclusively` (its caller's, a switch's, or its own); `MachineLock.hold` waits for a take under way |
+| 7 | Low: `undoCutRestores` writes back a record read before it took the lock | **defect** | `tests/template.test.ts` "the undo of a cut-off restore keeps what another tab wrote to the machine's record since it was read" (failed: the rename reverted) | the undo reads the record again under the lock |
+| 8 | Doc nit: web/overlay.ts names `mergeIntoDisk`'s file wrongly | **real** | | web/app/merge.ts. Also stated as they are: `holdAgainstMerges`'s doc (web/stored.ts, web/devices.ts), machines.md §4.4's merge and §5.2's cut-off restore, §6.1's first start, devices.md "blk", frontend.md's Retry and Import changes |
+
+**Planted bugs, each caught by its test:** the merge's machine hold let through; Delete overlay's let through; the
+start's record not read again under its lock; `cutFork` without `restoring`; the commit not marking a new fork; the
+undo leaving a fresh overlay's fork mark; `markCutFill` not marking; a reused fork deleted by the undo, and not marked
+by the commit; the undo writing the record it was given; `MachineLock.hold` not waiting for a take under way; the
+first start outside `exclusively`; `restoreFirst` cleared before the first start; `loaded` not clearing the marks; a
+restore's Retry not set; Import changes writing the clicked record, and taking no lock; `mergingInto` reading the
+wrong lock. A redundant guard has no test of its own: `earlierFork` skips a `restoring` fork (the undo removes it
+first; the guard only matters if the undo didn't run).
+
+**Tests that pinned the old state:** the demos' stand-in worker (tests/demo-fixture.ts) and page-restore's now answer
+a snapshot's start with `loaded`, as the worker does (`cut` / `failing`: the first few not); tests/template.test.ts's
+and tests/page-disks.test.ts's reuse of a filled fork now have its restore loaded first (page-disks' failed the first
+`scripts/ci.sh` run: an unloaded fork is no longer reused); tests/demo-open.test.ts's `unfork` case is the undo's.
+
+**A regression the push tier caught:** the start's record read again under its lock is a new record object, and the
+run's `current.inspect` (what a live disk surface asks about) still held the old one's attachments, without the
+overlay the start made: `tests/page-surface-debian.test.ts` (`scripts/ci-machines.sh`) found the surface window
+offline. `#openDisks` now points the run's `inspect` at the record it read.
+
+**CI:** `scripts/ci.sh` failed once (tests/page-disks.test.ts, above), then OK (714 s); `scripts/ci-machines.sh`
+failed once (the surface, above), then OK (229 s); `scripts/ci-debian.sh` OK (320 s); `scripts/ci.sh` on the final
+tree OK (724 s).

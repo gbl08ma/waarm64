@@ -7,10 +7,12 @@ export type Start = { disks: { overlay?: string }[]; plan?: { slot: number; acti
 
 /**
  * The machine worker as a stand-in: each start recorded (`window.__starts`) and answered "off" (`live`: "running", a
- * machine that runs on); a stop, "stopped". `gpuFails`: the GPU worker too, which answers its `init` with `failed`
- * (3D can't start in this browser).
+ * machine that runs on), a snapshot's start first with `loaded` (it loaded) but for the first `cut` of them (cut off
+ * before that: the tab closed in its check pass); a stop, "stopped". `gpuFails`: the GPU worker too, which answers its
+ * `init` with `failed` (3D can't start in this browser).
  */
-export const standIn = (page: Page, live = false, gpuFails = false) => page.addInitScript(([live, gpuFails]) => {
+export const standIn = (page: Page, live = false, gpuFails = false, cut = 0) => page.addInitScript(([live, gpuFails, cut]) => {
+  let cuts = cut;
   const Real = window.Worker;
   const starts: unknown[] = [];
   (window as unknown as { __starts: unknown[] }).__starts = starts;
@@ -32,12 +34,13 @@ export const standIn = (page: Page, live = false, gpuFails = false) => page.addI
       const msg = m as { type?: string; disks?: { overlay?: string }[]; plan?: unknown; snapshot?: unknown };
       if (msg.type === 'start') {
         starts.push({ disks: (msg.disks ?? []).map((d) => ({ overlay: d.overlay })), plan: msg.plan, snapshot: !!msg.snapshot });
+        if (msg.snapshot && cuts-- <= 0) answer({ type: 'loaded', phases: {} });
         answer({ type: 'state', state: live ? 'running' : 'off' });
       }
       if (msg.type === 'stop') answer({ type: 'stopped' });
     }
   };
-}, [live, gpuFails] as const);
+}, [live, gpuFails, cut] as const);
 
 /** A template's machine made in a fresh profile (`display`: its graphics): its definition, a snapshot file of it, the snapshot's shape hash. */
 export async function makeTemplate(browser: Browser, base: string, display: '2d' | '3d' = '2d'): Promise<{ def: { disks: object[] } & Record<string, unknown>; snapshot: number[]; hash: string }> {

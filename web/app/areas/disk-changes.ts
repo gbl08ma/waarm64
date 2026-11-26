@@ -8,6 +8,7 @@ import { changesHeader as readChangesHeader } from '../../qcow2.ts';
 import { ask } from '../ask.svelte.ts';
 import { loadChangesInto, switchOverlay } from '../disks.ts';
 import { runImport } from '../import.ts';
+import { holdMachines } from '../machine-hold.ts';
 import { isRunning } from '../machines.ts';
 import { sizeSeen } from '../disk-size.ts';
 import { keepSize, sizeOrphans } from '../resize.ts';
@@ -102,8 +103,14 @@ export class DiskChanges {
     const running = into.here && isLive(power.state);
     if (!(await this.#question(file, into, running))) return;
     if (into.m && !into.here) {
-      // Another machine, off: nothing on this page stops.
+      // Another machine, off: nothing on this page stops. Its lock held from here to the switch: it doesn't start
+      // meanwhile, in another tab (a start opens the overlays its record names, which the switch then changes).
       const disk = into.disk.name;
+      const held = await holdMachines([into.m]);
+      if (held.busy) {
+        messages.notify(msg('disks:disk-changes.changes.runsElsewhere', { name: into.m.name }), 'warn');
+        return;
+      }
       try {
         await this.#load(file, into);
         messages.notify(msg('disks:disk-changes.changes.loaded', { name: file.name, disk }));
@@ -114,6 +121,8 @@ export class DiskChanges {
           }),
           'error',
         );
+      } finally {
+        held.release();
       }
       return;
     }
@@ -129,7 +138,11 @@ export class DiskChanges {
       const loaded = await loadChangesInto(pm.store, into.disk, file, progress, (await sourceOf(pm, into.disk)).source);
       // At least the size its guest saw (§4.5): taking changes doesn't shrink the disk, nor orphan its snapshots.
       const o = a ? await keepSize(pm.store, loaded, sizeSeen(into.disk, a, had)) : loaded;
-      await switchOverlay(pm.store, into.m, into.attachment, o.id);
+      // The record as it is now (under the machine's lock), not as it was at the click: what was written to it since
+      // (a restore's forks, a merge's unchoosing, an edit) stays.
+      const now = await pm.store.get('machines', into.m.id);
+      if (!now) throw new MsgError('machine:page-machine.noMachine', { id: into.m.id });
+      await switchOverlay(pm.store, now, into.attachment, o.id);
       if (into.here) await pm.rereadRecord(into.m.id);
     } else
       await runImport(
@@ -145,10 +158,14 @@ export class DiskChanges {
     await runner.stop();
     this.#c.terminal.term.reset();
     messages.setState('off');
+    // A stored machine's lock from here to its start (or the end): it doesn't start in another tab meanwhile, on the
+    // record this switches. Held there (it started there): said.
+    if (into.m && !(await runner.own())) return;
     messages.stateText(msg('disks:disk-changes.changes.loading'));
     try {
       await this.#load(file, into);
     } catch (e) {
+      runner.lock.drop();
       messages.setState(
         'failed',
         new MsgError('disks:disk-changes.changes.failed', undefined, {
@@ -164,8 +181,8 @@ export class DiskChanges {
       );
       return;
     }
-    if (wasOn || start) runner.start();
-    else if (into.m)
-      messages.notify(msg('disks:disk-changes.changes.loaded', { name: file.name, disk: into.disk.name }));
+    if (wasOn || start) return runner.start();
+    runner.lock.drop();
+    if (into.m) messages.notify(msg('disks:disk-changes.changes.loaded', { name: file.name, disk: into.disk.name }));
   }
 }

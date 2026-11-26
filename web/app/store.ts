@@ -34,7 +34,18 @@ export type OverlayRecord = {
   bytes: number;
   created: number;
   modified: number;
-  fork?: { snapshot: string; generation: number; before?: { overlay?: string; inPlace?: boolean } };
+  /**
+   * A restore's fork of snapshot `snapshot` (generation `generation` once filled: a later restore of it attaches it
+   * again while it hasn't moved). `before`: what the attachment had before the restore, while it hasn't loaded (to go
+   * back to: web/app/snapshot-undo.ts); `kept`: the fork was attached again, not made, and stays when that is undone.
+   */
+  fork?: { snapshot: string; generation: number; before?: { overlay?: string; inPlace?: boolean; kept?: true } };
+  /**
+   * A restore writes it and hasn't loaded yet (docs/machines.md §5.2): set at the restore's commit (web/app/snapshots.ts)
+   * with the machine's lock held, cleared once the worker says the snapshot loaded (`loaded`), with `fork.before`. One
+   * found set while its machine is free is a restore that never ran: undone (web/app/snapshot-undo.ts).
+   */
+  restoring?: true;
   /**
    * Its own size, bytes (machines.md §4.5: a grown overlay; its meta file's, which the device worker reads): the guest
    * sees the larger of it and its disk's. Absent: none of its own.

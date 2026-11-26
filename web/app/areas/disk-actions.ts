@@ -201,7 +201,7 @@ export class DiskActions {
       rememberMachine(id);
       m.onRecord();
       this.#d.terminal.term.reset();
-      pw.startOpened();
+      await pw.startOpened(true);
     });
   }
 

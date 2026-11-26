@@ -2,17 +2,17 @@
 // in-memory store and overlays: "started before" says whether it has changes since the demo started (none: not started
 // yet, or its overlays the template's forks as its first restore left them; disk: written since, or another overlay;
 // suspended), a start's check of its disks says only that its files are gone (`goneOnly`), and a template's first start
-// that boots instead leaves the overlays nothing wrote unforked (`unfork`).
+// whose restore never loaded leaves the overlay it wrote into no fork of the template (`undoCutRestores`).
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { changesOf, checkDisks, isGone } from '../web/app/demo-open.ts';
 import { createOverlay } from '../web/app/disks.ts';
 import { attach, createDisk, createMachine } from '../web/app/machines.ts';
-import { unfork } from '../web/app/snapshots.ts';
+import { undoCutRestores } from '../web/app/snapshot-undo.ts';
 import { machineDir, overlayDir, Store, type OverlayRecord } from '../web/app/store.ts';
 import { memoryFiles, memoryRecords } from '../web/app/store-backends.ts';
 import { msgOf } from '../web/msg.ts';
-import { dropSuspend, openOverlay, readMeta, suspendWriter, writeMeta } from '../web/overlay.ts';
+import { dropSuspend, openOverlay, overlayMeta, readMeta, suspendWriter, writeMeta } from '../web/overlay.ts';
 import type { MachineRecord } from '../web/app/shape.ts';
 
 const MiB = 2 ** 20;
@@ -91,14 +91,15 @@ test("a start's check says only that a demo's files are gone; the store's Open m
   await checkDisks(s, m, { goneOnly: true });
 });
 
-test("a template's first start that boots instead: the overlays nothing wrote lose their fork mark, one written keeps it", async () => {
+test("a template's first start whose restore never loaded (it booted instead, or was cut off): the overlay it wrote into is no fork of the template at the next load, and reads as empty", async () => {
   const s = fresh();
-  const { overlay } = await demoMachine(s);
-  const plan = [{ slot: 0, action: 'write' as const, overlay: overlayDir(overlay), identity: 'x', size: 256 * MiB }];
-  await setGeneration(overlay, 1);
-  await unfork(s, plan);
-  assert.deepEqual((await s.get('overlays', overlay))?.fork, { snapshot: 'template', generation: 1 }, 'written by the restore: a fork');
-  await setGeneration(overlay, 0);
-  await unfork(s, [...plan, { slot: 1, action: 'keep', generation: 3 }]);
-  assert.equal((await s.get('overlays', overlay))?.fork, undefined, 'never written: no fork of the snapshot');
+  const { m, overlay } = await demoMachine(s);
+  await s.put('overlays', { ...(await s.get('overlays', overlay))!, restoring: true }); // the first restore's commit
+  await setGeneration(overlay, 1); // its fill done, its RAM never loaded
+  await navigator.locks.request(`waarm64-overlay:${overlayDir(overlay)}`, async () => {}); // let go
+  assert.equal(await undoCutRestores(s, m), m, 'the machine keeps the overlay');
+  const o = (await s.get('overlays', overlay))!;
+  assert.deepEqual([o.fork, o.restoring], [undefined, undefined], 'no fork of the snapshot');
+  assert.equal((await overlayMeta(overlayDir(overlay))).filling, true, 'marked as a fill cut off: its next opening reads it as empty');
+  assert.equal((await s.get('machines', m.id))!.attachments[0].overlay, overlay);
 });

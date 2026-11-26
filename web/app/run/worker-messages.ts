@@ -99,7 +99,7 @@ function state(x: Runner, r: Run, m: StateMessage) {
   if (done) x.d.messages.notify(done);
   stateChanged(x, r, m);
   // A template's first start whose snapshot the worker refused: it boots instead (the restart replaces the failure).
-  if (m.problem === 'snapshot' && r.first) void x.firstFailed(r.first, true);
+  if (m.problem === 'snapshot' && r.first) void x.firstFailed(true);
 }
 
 /** A download's progress, on the boot card and in the state's words. */
@@ -153,6 +153,7 @@ export function workerHandlers(x: Runner, r: Run): Handlers<FromWorker> {
     restored: (m) => x.d.agent.restored(m.template),
     loaded: (m) => {
       messageBar.load = JSON.stringify(m.phases);
+      void x.loaded(r);
     },
     phase: (m) => {
       bootCard.line = text(m.text);

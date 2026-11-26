@@ -2,32 +2,23 @@
 // or a file loaded (a stored machine's restore, or a transient machine replaced by the one the file holds).
 import { msg, MsgError, t, text } from '../../i18n.ts';
 import { msgOf } from '../../msg.ts';
-import { opfsDir, overlayBytes } from '../../overlay.ts';
+import { opfsFile, overlayBytes } from '../../overlay.ts';
 import { readHeader, SnapshotError, type SnapshotHeader } from '../../snapshot-file.ts';
+export { isSnapshot } from '../../snapshot-file.ts'; // what main.ts tells a dropped file by
 import type { DiskPlan, SnapshotDisk } from '../../snapshot.ts';
 import { ask } from '../ask.svelte.ts';
 import { shapeDiff } from '../shape-diff.ts';
 import type { Shape } from '../shape.ts';
-import { planRestore, unfork } from '../snapshots.ts';
+import { planRestore } from '../snapshots.ts';
 import { basesIn } from '../snapshot-lost.ts';
 import { snapshotPath } from '../store.ts';
 import type { Core } from '../run/core.ts';
+import { restoreLoadedOn } from '../run/restore-loaded.ts';
 import { diskName, overlayName } from '../run/page-disks.ts';
 import type { Stored } from '../run/page-machine.svelte.ts';
 import { isLive, power } from './power.svelte.ts';
 
 type Plan = Awaited<ReturnType<typeof planRestore>>;
-
-/** Whether `file` starts with the snapshot signature (`WAARMSNP`): how a chosen or dropped file is told from a disk image. */
-export const isSnapshot = async (file: File) =>
-  new TextDecoder().decode(await file.slice(0, 8).arrayBuffer()) === 'WAARMSNP';
-
-/** The OPFS file at `path`. */
-async function opfsFile(path: string) {
-  const parts = path.split('/');
-  const name = parts.pop() ?? '';
-  return (await opfsDir(parts.join('/'))).getFileHandle(name);
-}
 
 /** The restore's question: then a line on the disks the snapshot left as they are, and one per disk that forks. */
 function restoreQuestion(name: string, header: SnapshotHeader, plan: Plan, running: boolean) {
@@ -89,7 +80,8 @@ export class SnapshotRestore {
   constructor(c: Core) {
     this.#c = c;
     c.power.restoreFirst = (id) => this.first(id); // a machine from a template's first start
-    c.runner.firstFailed = (plan, restart) => this.#bootInstead(plan, restart);
+    c.runner.firstFailed = (restart) => this.#bootInstead(restart);
+    c.runner.loaded = (r) => restoreLoadedOn(c.machine, c.runner, r);
   }
 
   /** What a snapshot's disk is called, for messages. */
@@ -166,7 +158,7 @@ export class SnapshotRestore {
    * the start runs on the record the restore wrote.
    */
   async #restore(file: File, header: SnapshotHeader, key: string, name: string) {
-    const { power: pw, runner, messages, terminal } = this.#c;
+    const { power: pw } = this.#c;
     if (!isLive(power.state) && !(await pw.reloadStored())) return;
     const s = this.#c.machine.stored;
     if (!s) return;
@@ -183,11 +175,24 @@ export class SnapshotRestore {
       return;
     const replace = await replaceForks(plan);
     if (pw.busy()) return; // a save began while the questions were open: said, nothing restored
+    await this.#restoreNow(file, header, name, plan, replace);
+  }
+
+  /**
+   * The restore as the user answered it (`replace`), carried out: the machine stopped, the records read again and the
+   * shape checked on them, the plan committed under the machine's lock, the start on the record it wrote. Retry after
+   * its failure (its own, or its start's) runs this again, not a boot: a restore that never loaded is undone at the
+   * records' reading (web/app/snapshot-undo.ts), and planned again on them.
+   */
+  async #restoreNow(file: File, header: SnapshotHeader, name: string, plan: Plan, replace: boolean) {
+    const { power: pw, runner, messages, terminal } = this.#c;
+    const again = () => this.#restoreNow(file, header, name, plan, replace);
     await pw.exclusively(async () => {
       await runner.stop();
+      runner.again = again; // Retry after a failure from here to the snapshot's load (`Runner.loaded` clears it)
       const failed = (cause: unknown) =>
         messages.setState('failed', new MsgError('snapshots:snapshot-restore.restore.failed', { name }, { cause }), [
-          runner.d.later.problems().retry,
+          { label: t('machine:problems.retry'), run: () => void again() },
         ]);
       // The records as they are now (what changed while the questions were open), the shape checked on them.
       if (!(await pw.reloadStored())) return;
@@ -208,6 +213,7 @@ export class SnapshotRestore {
       if (!(await pw.reloadStored())) return runner.lock.drop();
       terminal.term.reset();
       runner.start(file, true, disks);
+      runner.again = again;
     });
   }
 
@@ -224,21 +230,18 @@ export class SnapshotRestore {
 
   /**
    * A stored machine's first start that restores kept snapshot `id` (its record's `restoreFirst`: a machine from a
-   * template, web/app/template.ts) with no question: the fresh overlays take its blocks (a fork), and the mark is
-   * cleared before the start. Called from a start (within its `exclusively`, where there is one). One that can't be
-   * restored (another shape, refused: said) boots the machine instead.
+   * template, web/app/template.ts) with no question: the fresh overlays take its blocks (a fork). The mark stays until
+   * the snapshot loaded (web/app/snapshot-undo.ts `restoreLoaded`, at the worker's `loaded`): a first start cut off or
+   * refused before that (the tab closed, a disk that didn't open) restores it again at the next start. Called from a
+   * start, within its `exclusively`. One that can't be restored (another shape, refused: said) boots the machine
+   * instead, the mark cleared.
    */
   async first(id: string) {
     const { machine: m, runner, terminal } = this.#c;
     const s = m.stored;
     const rec = await m.store.get('snapshots', id);
-    const clear = async () => {
-      const r = s && (await m.store.get('machines', s.record.id));
-      if (r?.restoreFirst) await m.store.put('machines', { ...r, restoreFirst: undefined });
-      return this.#c.power.reloadStored();
-    };
     if (!s || rec?.machine !== s.record.id) {
-      if (await clear()) runner.start();
+      if ((await this.#clearFirst()) && (await this.#c.power.reloadStored())) runner.start();
       return;
     }
     const file = new File([await (await opfsFile(snapshotPath(rec.machine, id))).getFile()], `${rec.name}.waarm64snap`);
@@ -255,20 +258,33 @@ export class SnapshotRestore {
         'error',
       );
     }
-    if (!(await clear())) return runner.lock.drop();
+    // A boot instead: what the commit wrote before it failed is undone at the boot's start (it owns the machine).
+    if (!disks) await this.#clearFirst();
+    if (!(await this.#c.power.reloadStored())) return runner.lock.drop();
     terminal.term.reset();
     if (disks) runner.start(file, true, disks, true);
     else runner.start();
   }
 
+  /** The stored machine's `restoreFirst` cleared in its record (it boots instead); true (a failure is said in the console). */
+  async #clearFirst() {
+    const { machine: m } = this.#c;
+    const r = m.stored && (await m.store.get('machines', m.stored.record.id).catch(() => undefined));
+    if (r?.restoreFirst)
+      await m.store.put('machines', { ...r, restoreFirst: undefined }).catch((e: unknown) => console.warn(e));
+    return true;
+  }
+
   /**
    * A first start whose snapshot can't load once under way (3D failed in this browser: another shape; or the worker
-   * refused it): a boot instead, said once it runs. The overlays its `plan` named that nothing wrote are no forks of
-   * it (`unfork`). `restart`: the run has ended (the worker's refusal); else its workers are gone (3D's failure).
+   * refused it): a boot instead, said once it runs, the mark cleared. What its restore wrote is no fork of the snapshot:
+   * undone at the boot's start, as a restore that never loaded (web/app/snapshot-undo.ts). `restart`: the run has
+   * ended (the worker's refusal); else its workers are gone (3D's failure).
    */
-  async #bootInstead(plan: DiskPlan[], restart: boolean) {
+  async #bootInstead(restart: boolean) {
     const { machine: m, runner, messages } = this.#c;
-    await unfork(m.store, plan).catch((e: unknown) => console.warn('waarm64: unfork:', e));
+    await this.#clearFirst();
+    await m.rereadRecord();
     const name = m.stored?.record.name ?? m.spec.title;
     messages.notifyLater(msg('snapshots:snapshot-restore.firstBooted', { machine: name }));
     if (restart) await this.#c.power.restart();

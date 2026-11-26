@@ -455,6 +455,14 @@
     "message": "A machine using this overlay is running, in this tab or another. Power it off first.",
     "note": "Detail of an error on the Home page (Disks), under Disks.failed.delete, when an overlay can't be deleted: a machine (in this tab or another) has it open."
   },
+  "disks.overlayUsersRunning_one": {
+    "message": "<name>{{machines}}</name> uses this overlay and is running. Power it off first.",
+    "note": "Detail of an error in the Overlays dialog, under Overlays.failed.delete, when an overlay can't be deleted: a machine that has it chosen (or, for a snapshot's restore's overlay, any machine that attaches its disk, which a restore could attach it to again) runs or is starting, in this tab or another. {{machines}}: the machine's name; {{count}}: 1."
+  },
+  "disks.overlayUsersRunning_other": {
+    "message": "<name>{{machines}}</name> use this overlay and are running. Power them off first.",
+    "note": "Detail of an error in the Overlays dialog, under Overlays.failed.delete, when an overlay can't be deleted: machines that have it chosen (or, for a snapshot's restore's overlay, machines that attach its disk, which a restore could attach it to again) run or are starting, in this tab or another. {{machines}}: their names, comma-separated; {{count}}: how many."
+  },
   "merge.onlyStored": {
     "message": "Only an overlay of a disk stored in this browser, or of a blank disk, can be merged into it.",
     "note": "Detail of an error on the Home page (Disks), under Disks.failed.merge, when Merge into the disk is asked of a disk that isn't stored in this browser nor blank."
@@ -474,6 +482,14 @@
   "merge.changed": {
     "message": "The disk's overlays changed since you were asked (in another tab, or by a machine). Look again and merge it again.",
     "note": "Detail of an error on the Home page (Disks), under Overlays.failed.merge, when Merge into the disk is refused because what it would do is no longer what the confirmation said: the overlay was written meanwhile (a grow became a conversion), or another overlay the merge would delete was made."
+  },
+  "merge.running_one": {
+    "message": "<name>{{machines}}</name> uses this disk and is running. Power it off first.",
+    "note": "Detail of an error in the Overlays dialog, under Overlays.failed.merge, when Merge into the disk is refused: a machine that attaches the disk runs or is starting (or restoring a snapshot), in this tab or another. Nothing was changed. {{machines}}: the machine's name; {{count}}: 1."
+  },
+  "merge.running_other": {
+    "message": "<name>{{machines}}</name> use this disk and are running. Power them off first.",
+    "note": "Detail of an error in the Overlays dialog, under Overlays.failed.merge, when Merge into the disk is refused: machines that attach the disk run or are starting (or restoring a snapshot), in this tab or another. Nothing was changed. {{machines}}: their names, comma-separated; {{count}}: how many."
   },
   "merge.diskRunning": {
     "message": "A machine using this disk is running. Power it off first.",

@@ -84,9 +84,11 @@ export async function openStored(path: string, size: number): Promise<Source & {
  * Holds the stored disks `paths` (`disks/<id>`) against a merge until the release it resolves to: each one's
  * `mergeLock`, shared, taken only if free. A merge under way (web/app/merge.ts holds it, exclusive, from its checks to
  * the end: its overlay's files deleted, then its record, then the machines unchosen) refuses this at once, an error
- * whose `problem` is `disk-merging` (the page says it), rather than let a machine open that overlay as a new one; one asked for
- * meanwhile waits for the release, by when the machine's overlays are open and the merge finds them in use. A
- * machine's start holds them while it opens its disks (web/devices.ts `Devices.open`). Where there are no Web Locks,
+ * whose `problem` is `disk-merging` (the page says it); one asked for meanwhile waits for the release, by when the
+ * machine's overlays are open and the merge finds them in use. A machine's start holds them while it opens its disks
+ * (web/devices.ts `Devices.open`). The worker's own check: the page's merge also holds every machine that attaches the
+ * disk off (their machine locks, web/app/machine-hold.ts), which covers a stored machine's start from its record's
+ * reading on, a blank disk's merge and a merge that ends before the worker gets here. Where there are no Web Locks,
  * nothing is held.
  */
 export async function holdAgainstMerges(paths: string[]): Promise<() => void> {

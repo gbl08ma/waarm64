@@ -13,6 +13,11 @@ export type ProblemDeps = {
   messages: Messages;
   /** A restart (`resume` false: a suspended machine is dropped). */
   restart(resume?: boolean): Promise<void>;
+  /**
+   * What failed, again: the last start's own retry where it has one (a snapshot's restore: the restore again,
+   * web/app/areas/snapshot-restore.ts), else a restart.
+   */
+  again(): Promise<void>;
   /** The serial log's actions (web/app/areas/serial-terminal.ts). */
   log: Record<'show' | 'copy' | 'save', Action>;
   /** A disk that isn't the one its changes were made over. */
@@ -31,7 +36,7 @@ export class Problems {
   constructor(d: ProblemDeps) {
     this.#d = d;
     const restart = () => void d.restart();
-    this.retry = { label: t('machine:problems.retry'), run: restart };
+    this.retry = { label: t('machine:problems.retry'), run: () => void d.again() };
     const startNormally: Action = { label: t('snapshots:problems.startNormally'), run: restart };
     const loadAgain: Action = { label: t('snapshots:problems.loadAgain'), run: () => openPicker('snapshot') };
     const { show, copy, save } = d.log;
@@ -71,7 +76,7 @@ export class Problems {
           label: needs.some((x) => x.handle) ? t('disks:problems.allowAndStart') : t('disks:problems.pickAndStart'),
           run: () =>
             void d.grantFiles(needs).then((ok) => {
-              if (ok) void d.restart();
+              if (ok) void d.again();
             }),
         },
       ],

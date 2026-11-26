@@ -9,6 +9,7 @@ import { t } from '../i18n.ts';
 import { MsgError } from '../msg.ts';
 import { lockOverlay, locksInUse, overlayLock, writeOwnSize } from '../overlay.ts';
 import { createOverlay, switchOverlay } from './disks.ts';
+import { holdMachines } from './machine-hold.ts';
 import { machineLock } from './machines.ts';
 import { SECTOR, sizeSeen, type GrowMark } from './disk-size.ts';
 import { newId, serialOf, type Attachment, type DiskRecord, type MachineRecord } from './shape.ts';
@@ -169,23 +170,9 @@ async function lockFiles(path: string) {
  * refuses, naming those that run.
  */
 async function lockMachines(machines: MachineRecord[]) {
-  const releases: (() => void)[] = [];
-  const release = () => releases.forEach((r) => r());
-  const busy: MachineRecord[] = [];
-  for (const m of machines) {
-    const held = await new Promise<(() => void) | undefined>((got) => {
-      void navigator.locks.request(machineLock(m.id), { ifAvailable: true }, (l) => {
-        if (!l) return got(undefined);
-        return new Promise<void>((done) => got(done));
-      });
-    });
-    if (held) releases.push(held);
-    else busy.push(m);
-  }
-  if (busy.length) {
-    release();
+  const { release, busy } = await holdMachines(machines);
+  if (busy)
     throw refused(new MsgError('machines:resize.running', { machines: busy.map((m) => m.name), count: busy.length }));
-  }
   return release;
 }
 

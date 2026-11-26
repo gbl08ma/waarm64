@@ -40,13 +40,14 @@ const hasWebgl2 = () => {
 };
 
 /**
- * A stored machine and its disks' records; refused (an error the page shows) when one of them is missing. A restore cut
- * off before its disks were filled is undone first (`undoCutRestores`): the machine opens on the disks it had.
+ * A stored machine and its disks' records; refused (an error the page shows) when one of them is missing. A restore that
+ * never ran is undone first (`undoCutRestores`; `owned`: the caller holds the machine's lock): the machine opens on the
+ * disks it had.
  */
-export async function loadStored(store: Store, id: string): Promise<Stored> {
+export async function loadStored(store: Store, id: string, o: { owned?: boolean } = {}): Promise<Stored> {
   const found = await store.get('machines', id);
   if (!found) throw new MsgError('machine:page-machine.noMachine', { id });
-  const record = await undoCutRestores(store, found);
+  const record = await undoCutRestores(store, found, o);
   // eslint-disable-next-line svelte/prefer-svelte-reactivity -- filled here, then held raw by `Stored`
   const disks = new Map<string, DiskRecord>();
   for (const a of record.attachments) {

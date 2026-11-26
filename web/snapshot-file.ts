@@ -146,6 +146,10 @@ export type WriteTimes = { scan: number; compress: number; crc: number; sink: nu
 export type ReadTimes = { read: number; crc: number; unpack: number; apply: number };
 
 const MAGIC = new TextEncoder().encode('WAARMSNP');
+
+/** Whether `file` starts with the snapshot signature (`WAARMSNP`): how a chosen or dropped file is told from a disk image. */
+export const isSnapshot = async (file: File) =>
+  new TextDecoder().decode(await file.slice(0, 8).arrayBuffer()) === 'WAARMSNP';
 const VERSION = 3;
 /** The codec of raw deflate's frames (web/lz.ts `deflateCodec`), in files of version 3. */
 export { DEFLATE };

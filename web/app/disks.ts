@@ -7,6 +7,7 @@
 import { fromWire, MsgError } from '../msg.ts';
 import { locksInUse, overlayBytes, overlayLock, overlayMeta, removeOverlay, writeOwnSize } from '../overlay.ts';
 import { sizeSeen, type GrowMark } from './disk-size.ts';
+import { holdMachines } from './machine-hold.ts';
 import type { DiskJob, DiskJobResult } from './disk-worker.ts';
 import { runImport } from './import.ts';
 import type { DiskRef } from './protocol.ts';
@@ -134,6 +135,32 @@ export async function deleteOverlay(store: Store, id: string) {
   }
   await store.deleteOverlay(id);
   await removeOverlay(overlayDir(id));
+}
+
+/**
+ * Delete overlay, the Overlays dialog's (`deleteOverlay`), with the machines that could open it held off meanwhile
+ * (`holdMachines`): those that have it chosen, and, for a restore's fork, every machine that attaches its disk (a
+ * restore attaches an earlier fork again). A start owns its machine's lock from before it reads the record, and opens
+ * the overlay only in its worker's disk phase: deleted in between, it would be made anew with no record naming it.
+ * Refused while one of them holds its lock (it runs, or starts).
+ */
+export async function deleteOverlayAsked(store: Store, id: string) {
+  const o = await store.get('overlays', id);
+  if (!o) return;
+  const users = o.fork
+    ? await store.machinesWith(o.disk)
+    : (await store.all('machines')).filter((m) => m.attachments.some((a) => a.overlay === id));
+  const held = await holdMachines(users);
+  if (held.busy)
+    throw new MsgError('disks:disks.overlayUsersRunning', {
+      machines: held.busy.map((m) => m.name),
+      count: held.busy.length,
+    });
+  try {
+    await deleteOverlay(store, id);
+  } finally {
+    held.release();
+  }
 }
 
 /** Reads an overlay's generation, bytes and own size from its files into its record (after a machine stopped). */

@@ -547,7 +547,9 @@ left column's Disks, Shared folders and Connections the same):
   [Whole disk](ui:disks:ExportSteps.whole), then the format, each explained: compressed or uncompressed qcow2, the
   whole disk also raw; the format's choice saves, Back returns to the first step; a machine on this page running from
   it stops while the file is written and starts again after) and [Import changes…](ui:disks:Disks.importChanges) (a changes file becomes a new overlay, which the disk switches
-  to). There is no Reset for a stored machine: New empty is it, and keeps the old overlay. New empty and Import changes
+  to; the machine's lock is held from the confirmation to the switch, so it can't start in another tab meanwhile
+  ([{{name}} is running in another tab. Power it off there first.](ui:disks:disk-changes.changes.runsElsewhere)), and
+  the switch writes the machine's record as it is then, not as it was at the click: tests/page-restore.test.ts). There is no Reset for a stored machine: New empty is it, and keeps the old overlay. New empty and Import changes
   keep the size the guest sees; a switch to an overlay of another size asks first, naming the snapshots it orphans
   (machines.md §4.5 "Variants keep the attachment's size"). **[Resize…](ui:disks:Disks.resize)** on each writable
   disk is a shortcut to the Resize dialog (below) for what the machine writes to: its chosen overlay, the stored disk
@@ -1153,7 +1155,7 @@ the query's form serves (decisions.md "Demos").
   machine's first start whose template can't be restored here boots instead (machines.md §6.1).
 
 Tests: `tests/demos-route.test.ts` (the address, the first visit, the checks; Node), `tests/demo-store.test.ts` (the
-cut-off download), `tests/demo-open.test.ts` (`changesOf`, a start's `goneOnly` check, `unfork`; Node), `tests/page-demos.test.ts` (Chromium, a stand-in worker and the stores answered by the test: the
+cut-off download), `tests/demo-open.test.ts` (`changesOf`, a start's `goneOnly` check, a first restore that never loaded undone; Node), `tests/page-demos.test.ts` (Chromium, a stand-in worker and the stores answered by the test: the
 first visit's introduction skipped, a row by the keyboard to a machine restored at its first start in its view, a reload, `/demos` and
 started before (its changes: the disk, none, suspended), a fresh copy, a start by the machine's address with its files gone, `?id=`, an unknown id, Home's Demos and Back, the list beside the pane and one column
 when narrow (the first demo by default, another row with no trip back, All demos, the focus), `?store=`'s warning and what it fetches,
@@ -1371,7 +1373,10 @@ From the machine worker, as `problem`:
 | `snapshot` | a snapshot was refused (`SnapshotError`: another machine, another disk, damaged or truncated, devices this page can't make; below, "Snapshots") | Start, Load snapshot… |
 | `emulator` | anything else (an exception, an unimplemented exit) | the same three |
 
-Retry and Restart start a new machine worker. The failed states (`failed`) make the toolbar's
+Retry and Restart start a new machine worker. Retry after a snapshot's restore failed (its commit, or its start
+before the snapshot loaded) restores the snapshot again rather than booting (`Runner.again`, set by the restore and
+cleared once the snapshot loaded; machines.md §5.2). A start that finds its machine's lock held says it runs in
+another tab, or, while a merge into one of its disks holds it, that the merge runs. The failed states (`failed`) make the toolbar's
 Start button read Retry. **The serial log** is kept by the page (the last 1–2 MB of the serial console's
 output, beyond xterm.js's 5,000 lines of scrollback) for Copy (the clipboard) and Save (a
 `waarm64-<machine>-serial-<time>.log` download); Show serial log switches the Screen view to Both.

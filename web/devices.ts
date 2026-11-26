@@ -797,7 +797,8 @@ export class Devices {
   ) {
     if (init.core) void coreModule(init.core);
     // Held against a merge from here until the disks are open (`holdAgainstMerges`): one under way (in another tab)
-    // refuses the start, else it could delete an overlay this machine is about to open as a new one.
+    // refuses the start. The page's merge holds the machines that attach the disk off from before their start reads
+    // its record (web/app/machine-hold.ts); this is the worker's own check, for its stored disks.
     const stored = init.specs.flatMap((d) =>
       d.type !== 'blk'
         ? []

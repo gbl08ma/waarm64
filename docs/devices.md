@@ -1089,9 +1089,10 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   it in place with its generation moved on (no fork record or snapshot pin matches it again), a reader's seeing none
   of it (`openOverlay`). A plan that keeps a marked overlay is refused (`snapshot.keptMoved`), and the page never reuses
   a marked fork (web/app/snapshots.ts `earlierFork`), shows a marked overlay as holding nothing (`refreshOverlay`) and
-  doesn't merge it (`disks:merge.cutOff`), and puts a machine whose new fork holds no fill of its own (never opened by
-  the fill, or marked; not while a start holds the machine) back on what it had (web/app/snapshot-undo.ts
-  `undoCutRestores`, at the machine's loading; machines.md §5.2). A store or overlay an import or a stored machine's Import changes cut
+  doesn't merge it (`disks:merge.cutOff`), and puts a machine whose restore never loaded (its overlays marked
+  `restoring` until the worker's `loaded`; not while a start holds the machine) back on what it had, an overlay the
+  restore wrote into marked as a cut-off fill again (web/app/snapshot-undo.ts `undoCutRestores`, at the machine's
+  loading; machines.md §5.2). A store or overlay an import or a stored machine's Import changes cut
   off leaves has no record (the record comes after the job): the page's start removes those (`Store.dropCutFills`:
   marked, the lock free, no record; tests/stored.test.ts closes a page during an import; one it can't remove is left for
   the next start, the rest removed all the same). A cut-off between the opening and the mark leaves an unrecorded

@@ -230,14 +230,20 @@ export class PowerActions {
   /**
    * A machine opened on the page starts: unless it has no disk yet, its tab went away with it running (a crash before),
    * or this device hasn't the memory for it (each said, with what to do). The first start and a switch to another
-   * machine alike; a restart doesn't ask again (it was asked for, or offered by these).
+   * machine alike; a restart doesn't ask again (it was asked for, or offered by these). A template's first start (its
+   * snapshot restored) runs within `exclusively`, the caller's (`within`: a switch's) or its own, as a restart's does:
+   * a Start meanwhile would run a second one beside it. Settles once the start is under way.
    */
-  startOpened() {
+  async startOpened(within = false): Promise<void> {
     const { machine: m, runner, signal } = this.#d;
     if (needsDisk(m)) return this.waitForDisk();
     if (signal.crashedBefore() || !signal.fits()) return;
     const first = m.stored?.record.restoreFirst;
-    if (first) return void this.restoreFirst(first);
+    if (first) {
+      if (within) await this.restoreFirst(first);
+      else await this.exclusively(() => this.restoreFirst(first));
+      return;
+    }
     runner.start();
   }
 
@@ -284,7 +290,7 @@ export class PowerActions {
     if (m.storedError !== undefined)
       return messages.setState('failed', new MsgError('machine:power-actions.cantOpen', {}, { cause: m.storedError }));
     const asked = takeStartAsked();
-    if (!elsewhere && (!m.stored || asked || autoStart())) return this.startOpened();
+    if (!elsewhere && (!m.stored || asked || autoStart())) return void this.startOpened();
     if (needsDisk(m)) return this.waitForDisk();
     // The machine's own view says what a start would (its tab went away with it running), as a start does.
     if (!elsewhere && signal.crashedBefore()) return;

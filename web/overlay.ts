@@ -1006,6 +1006,13 @@ const inMemory = new Map<string, { data: SyncFile; map: SyncFile; meta: SyncFile
 type LockMode = 'exclusive' | 'shared';
 
 /** The Web Lock whoever opens overlay (or stored disk) `name`'s files holds (`lockOverlay`). */
+/** The OPFS file at `path` (its directory's, which must exist). */
+export async function opfsFile(path: string) {
+  const parts = path.split('/');
+  const name = parts.pop() ?? '';
+  return (await opfsDir(parts.join('/'))).getFileHandle(name);
+}
+
 export const overlayLock = (name: string) => `waarm64-overlay:${name}`;
 
 /** How long an opener waits for the overlay's previous holder (another machine, closing or in another tab). */
@@ -1019,7 +1026,7 @@ export const OVERLAY_WAIT_MS = 10_000;
 export const SURFACE_READER_LOCK = 'waarm64-surface-reader';
 
 /**
- * The lock a merge into stored disk `disk` (`disks/<id>`) holds from its first check to its end (web/app/disks.ts
+ * The lock a merge into stored disk `disk` (`disks/<id>`) holds from its first check to its end (web/app/merge.ts
  * `mergeIntoDisk`): the disk surface's jobs wait for it rather than read the disk half merged.
  */
 export const mergeLock = (disk: string) => `waarm64-merge:${disk}`;
@@ -1358,19 +1365,24 @@ export async function overlayMeta(name: string): Promise<Meta> {
  * no machine has it open). From a page or a worker (a writable stream, not a sync handle).
  */
 export async function writeOwnSize(name: string, size: number) {
+  await patchMeta(name, (was) => ({ ...was, size }));
+}
+
+/** Overlay `name`'s meta as `f` makes it of what it was (made with its directory if it has none); the caller holds its lock. */
+async function patchMeta(name: string, f: (was: Meta) => Meta) {
   if (!(await hasOpfs())) {
     const o = inMemory.get(name) ?? { data: memFile(), map: memFile(), meta: memFile(), base: '' };
     inMemory.set(name, o);
-    if (!writeMeta(o.meta, { ...readMeta(o.meta), size })) throw await storageFullError();
+    if (!writeMeta(o.meta, f(readMeta(o.meta)))) throw await storageFullError();
     return;
   }
   try {
     const handle = await (await opfsDir(name, true)).getFileHandle('meta', { create: true });
-    const was = readMeta(bytesFile(new Uint8Array(await (await handle.getFile()).arrayBuffer())));
+    const next = f(readMeta(bytesFile(new Uint8Array(await (await handle.getFile()).arrayBuffer()))));
     const out = await handle.createWritable();
     try {
-      const b = encodeMeta({ ...was, size });
-      await out.write(was.filling ? b : b.subarray(0, 40)); // 40 bytes without a mark, as `writeMeta` keeps it
+      const b = encodeMeta(next);
+      await out.write(next.filling ? b : b.subarray(0, 40)); // 40 bytes without a mark, as `writeMeta` keeps it
       await out.close();
     } catch (e) {
       await out.abort().catch(() => undefined); // the failure thrown is the one to report
@@ -1380,6 +1392,24 @@ export async function writeOwnSize(name: string, size: number) {
     if ((e as DOMException)?.name === 'QuotaExceededError') throw await storageFullError();
     throw e;
   }
+}
+
+/**
+ * Marks overlay `name` as a fill cut off in it (`filling`), under its lock taken only if free: its next opening reads it
+ * as empty and moves its generation on (`cutFill`), as after a fill the tab closed in. For a restore whose fill ended but
+ * that never loaded (web/app/snapshot-undo.ts): what the overlay held was replaced, and the snapshot's blocks it holds
+ * now are no run's. One never written (generation 0) holds nothing and is left as it is. False where it's held (in
+ * use) or there are no Web Locks. From a page or a worker.
+ */
+export async function markCutFill(name: string) {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a probe: no Web Locks in some contexts
+  if (typeof navigator === 'undefined' || !navigator.locks) return false;
+  return navigator.locks.request(overlayLock(name), { ifAvailable: true }, async (lock) => {
+    if (!lock) return false;
+    const m = await overlayMeta(name);
+    if (m.generation !== 0 && !m.filling) await patchMeta(name, (was) => ({ ...was, filling: true }));
+    return true;
+  });
 }
 
 /** Bytes the overlay `name` holds on OPFS (its written blocks and map), or 0 without one. */

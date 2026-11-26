@@ -43,11 +43,13 @@ export class Run {
   usbStarted = false;
   /** The page's end of each network card's link (`{type: 'flap'}`: web/app/areas/lease-actions.ts). */
   readonly netLinks: MessagePort[];
+  /** A template's first start (`restoreFirst`): it boots instead when its snapshot can't load (`Runner.firstFailed`). */
+  first = false;
   /**
-   * A template's first start (`restoreFirst`): its restore's disk plan, for the boot instead when its snapshot can't
-   * load (web/app/run/runner.ts `bootInstead`).
+   * A restore's disk plan (a kept snapshot's or a file's onto a stored machine): what it wrote is the machine's once the
+   * worker says it loaded (web/app/snapshot-undo.ts `restoreLoaded`), and undone at the next load if it never does.
    */
-  first?: DiskPlan[];
+  plan?: DiskPlan[];
   /** The guest has suspended itself (`Status.asleep`): a key or a click wakes it. */
   asleep = false;
   /** The run's last status (the status bar's rates are since it). */

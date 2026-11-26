@@ -10,9 +10,25 @@ export class MachineLock {
   /** Settles once the lock the last `drop` let go of is released (never waits on a `hold` under way). */
   #letGo: Promise<unknown> = Promise.resolve();
 
+  /** A `hold` under way (its answer): a second one meanwhile waits for it rather than find this page's own lock. */
+  #taking: Promise<boolean> | undefined;
+
   /** Takes machine `id`'s lock (none: a transient machine, true at once); false when another tab holds it. */
-  async hold(id: string | undefined) {
+  async hold(id: string | undefined): Promise<boolean> {
     if (id === undefined || this.#release) return true;
+    if (this.#taking) {
+      await this.#taking;
+      return this.hold(id);
+    }
+    const taking = (this.#taking = this.#take(id));
+    try {
+      return await taking;
+    } finally {
+      if (this.#taking === taking) this.#taking = undefined;
+    }
+  }
+
+  async #take(id: string) {
     await this.#released;
     return new Promise<boolean>((answer) => {
       this.#released = navigator.locks

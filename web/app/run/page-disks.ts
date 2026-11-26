@@ -188,3 +188,12 @@ export async function filesNeedingUser(m: PageMachine, s: Stored) {
   }
   return out;
 }
+
+/** A file disk whose file the page can't read without the user: no handle (picked again), or a handle without permission (granted again by a click). */
+export class NeedsUser extends Error {
+  readonly disks: DiskRecord[];
+  constructor(disks: DiskRecord[]) {
+    super(`${disks.map((d) => d.name).join(', ')}: no permission in this session`);
+    this.disks = disks;
+  }
+}

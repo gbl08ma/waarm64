@@ -158,3 +158,101 @@ test("a 3D template whose 3D can't start in this browser: its first start boots 
   assert.deepEqual(errors, []);
   await visitor.close();
 });
+
+// PERF loop 78's backlog entry and review disk-locks 2: the first start cleared `restoreFirst` before its start, so one
+// cut off before the snapshot loaded left a machine that booted its image next time, the demo's snapshot never restored.
+test("a template's first start cut off before its snapshot loaded restores it again at the next start; the mark goes once it loaded", async () => {
+  const made = await make(browser, base);
+  const visitor = await browser.newContext();
+  const page = await visitor.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  page.on('dialog', (d) => { errors.push(`asked: ${d.message()}`); void d.dismiss(); });
+  await standIn(page, false, false, 1); // the first restore never says it loaded
+  const PIECE = createHash('sha256').update(new Uint8Array(made.snapshot)).digest('hex');
+  await page.route('**/site/**', (r) => {
+    const path = new URL(r.request().url()).pathname;
+    if (path.endsWith('/definition.json')) return r.fulfill({ json: { ...made.def, disks: made.def.disks.map((x: object) => ({ ...x, url: 'manifest.json' })) } });
+    const piece = new Uint8Array(made.snapshot);
+    if (path.endsWith('/snapshot.json'))
+      return r.fulfill({ json: { format: 'waarm64-chunked-1', size: piece.length, piece: 2 << 20, pieces: '../pieces/{hash}.bin', hashes: [PIECE], id: createHash('sha256').update(PIECE).digest('hex') } });
+    return r.fulfill({ body: Buffer.from(piece) });
+  });
+  await page.goto(`${base}/web/app/?autostart=1&hooks`);
+  await page.waitForFunction(() => document.body.dataset.state === 'idle', null, { timeout: 30_000, polling: 50 });
+  const id = await page.evaluate(() => window.__waarm64FromTemplate!('/site/alpine/definition.json', 'snapshot.json'));
+  const startsAre = (n: number) => page.waitForFunction((n) => (window as unknown as { __starts: unknown[] }).__starts.length === n, n, { timeout: 30_000, polling: 50 });
+  const record = () => page.evaluate(async (id) => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const store = await Store.open();
+    const m = await store.get('machines', id);
+    return { restoreFirst: m.restoreFirst as string | undefined, overlay: await store.get('overlays', m.attachments[0].overlay) };
+  }, id);
+  await startsAre(1);
+  await page.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 30_000, polling: 50 });
+  assert.ok((await record()).restoreFirst, 'cut off: the mark stays');
+  await page.evaluate(async () => {
+    const { page: p } = await import('/web/app/page.ts' as string);
+    await p.restart();
+  });
+  await startsAre(2);
+  const starts = await page.evaluate(() => (window as unknown as { __starts: Start[] }).__starts);
+  assert.deepEqual(starts.map((s) => s.snapshot), [true, true], 'the next start restores the snapshot again, not a boot');
+  assert.deepEqual(starts[1].plan?.map((p) => p.action), ['write'], "the snapshot's blocks written again");
+  await page.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 30_000, polling: 50 });
+  const after = await record();
+  assert.equal(after.restoreFirst, undefined, 'loaded: the mark cleared');
+  assert.equal(after.overlay.restoring, undefined, 'and its overlay the machine\'s');
+  assert.deepEqual(errors, []);
+  await visitor.close();
+});
+
+// Review disk-locks 6: a template's first start at the page's load ran outside `exclusively`, so a Start meanwhile ran
+// a second one: two restores, two starts, the first one's worker never stopped.
+test("a Start while a template's first start is under way at the page's load starts nothing beside it", async () => {
+  const made = await make(browser, base);
+  const visitor = await browser.newContext();
+  const page = await visitor.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await standIn(page);
+  const PIECE = createHash('sha256').update(new Uint8Array(made.snapshot)).digest('hex');
+  await page.route('**/site/**', (r) => {
+    const path = new URL(r.request().url()).pathname;
+    if (path.endsWith('/definition.json')) return r.fulfill({ json: { ...made.def, disks: made.def.disks.map((x: object) => ({ ...x, url: 'manifest.json' })) } });
+    const piece = new Uint8Array(made.snapshot);
+    if (path.endsWith('/snapshot.json'))
+      return r.fulfill({ json: { format: 'waarm64-chunked-1', size: piece.length, piece: 2 << 20, pieces: '../pieces/{hash}.bin', hashes: [PIECE], id: createHash('sha256').update(PIECE).digest('hex') } });
+    return r.fulfill({ body: Buffer.from(piece) });
+  });
+  await page.goto(`${base}/web/app/?autostart=1`);
+  await page.waitForFunction(() => document.body.dataset.state === 'idle', null, { timeout: 30_000, polling: 50 });
+  const id = await page.evaluate(async () => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const { machineFromUrls } = await import('/web/app/template.ts' as string);
+    const { machine } = await machineFromUrls(await Store.open(), '/site/alpine/definition.json', 'snapshot.json');
+    return machine.id as string;
+  });
+  // The Start comes while the first start's restore is under way: when it asks for the machine's lock (before its commit).
+  await page.addInitScript(() => {
+    const request = navigator.locks.request.bind(navigator.locks) as (...a: unknown[]) => Promise<unknown>;
+    let once = false;
+    (navigator.locks as unknown as { request: unknown }).request = (...a: unknown[]) => {
+      // The start's own take (web/app/run/machine-lock.ts), not a reading's (the undo's at the page's load).
+      if (!once && String(a[0]).startsWith('waarm64-machine:') && /machine-lock\.ts/.test(new Error().stack ?? '')) {
+        once = true;
+        (window as unknown as { __restarted: Promise<unknown> }).__restarted = import('/web/app/page.ts' as string).then((mod) => mod.page.restart());
+      }
+      return request(...a);
+    };
+  });
+  await page.goto(`${base}/web/app/?autostart=1&m=${id}`);
+  await page.waitForFunction(() => (window as unknown as { __starts: unknown[] }).__starts.length >= 1, null, { timeout: 30_000, polling: 50 });
+  await page.waitForFunction(() => !!(window as unknown as { __restarted?: unknown }).__restarted, null, { timeout: 30_000, polling: 50 });
+  await page.evaluate(() => (window as unknown as { __restarted: Promise<unknown> }).__restarted);
+  await page.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 30_000, polling: 50 });
+  const starts = await page.evaluate(() => (window as unknown as { __starts: Start[] }).__starts);
+  assert.deepEqual(starts.map((s) => s.snapshot), [true], 'one start, the restore');
+  assert.deepEqual(errors, []);
+  await visitor.close();
+});

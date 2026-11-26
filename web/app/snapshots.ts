@@ -139,7 +139,9 @@ async function earlierFork(store: Store, d: DiskRecord, key: string, size: numbe
     if (o.fork?.snapshot !== key || Math.max(d.size, o.size ?? 0) !== size) continue;
     // One whose fill was cut off (still marked) holds part of the snapshot at the fork's generation: not reused.
     const meta = await overlayMeta(overlayDir(o.id));
-    if (meta.generation === o.fork.generation && !meta.filling) return { id: o.id, generation: o.fork.generation };
+    // One a restore marked and that never loaded (its machine's next load undoes it) isn't the snapshot's either.
+    if (meta.generation === o.fork.generation && !meta.filling && !o.restoring)
+      return { id: o.id, generation: o.fork.generation };
   }
   return undefined;
 }
@@ -211,6 +213,26 @@ async function survey(r: Restoring): Promise<{ steps: Step[]; refused?: Msg }> {
   return { steps };
 }
 
+/** Earlier fork `id` attached again by a restore: marked as its, with what the attachment had (`kept`: it stays if undone). */
+async function reattach(store: Store, id: string | undefined, before: { overlay?: string; inPlace?: true }) {
+  const o = id ? await store.get('overlays', id) : undefined;
+  if (!o?.fork) throw new Error(`the earlier fork ${id ?? ''} is gone`); // read just now, under the machine's lock
+  const fork = { ...o.fork, before: { ...before, kept: true as const } };
+  await store.put('overlays', { ...o, fork, restoring: true, modified: Date.now() });
+}
+
+/**
+ * Overlay `id` replaced by a restore (its blocks emptied, the snapshot's written): marked as its. An earlier fork's
+ * `before` (what the attachment had before that restore) is no longer the machine's to go back to, should this restore
+ * never load (`undoCutRestores`: the overlay stays, read as empty).
+ */
+async function replacing(store: Store, id: string) {
+  const o = await store.get('overlays', id);
+  if (!o) return;
+  const fork = o.fork && { snapshot: o.fork.snapshot, generation: o.fork.generation };
+  await store.put('overlays', { ...o, ...(fork ? { fork } : {}), restoring: true, modified: Date.now() });
+}
+
 /** Makes step `s` so (a reused fork attached, the attached overlay written, or a new fork); its part of the worker's plan. */
 async function commitStep(r: Restoring, s: Step, replace: boolean): Promise<DiskPlan> {
   const a = r.m.attachments.find((x) => x.id === s.attachment);
@@ -224,30 +246,28 @@ async function commitStep(r: Restoring, s: Step, replace: boolean): Promise<Disk
     whole,
     ...(fork ? { fork } : {}),
   });
+  // What the attachment had, for a restore that never loads (cut off, refused: `undoCutRestores` goes back to it); each
+  // overlay the restore writes, or attaches, is marked `restoring` until it loaded (`restoreLoaded`).
+  const before = { ...(a.overlay ? { overlay: a.overlay } : {}), ...(a.inPlace ? { inPlace: true as const } : {}) };
   if (s.action === 'reuse') {
+    await reattach(r.store, s.reuse, before);
     a.overlay = s.reuse;
+    a.inPlace = undefined;
     return { slot: s.slot, action: 'keep', generation: s.generation ?? 0 };
   }
   if (replace && s.action === 'fork' && a.overlay) {
-    // Its blocks replaced: an earlier fork's `before` (what the attachment had before that restore) is no longer the
-    // machine's to go back to, should this fill be cut off (`undoCutRestores`: the overlay stays, read as empty).
-    const o = await r.store.get('overlays', a.overlay);
-    if (o?.fork?.before) {
-      const { before: _, ...fork } = o.fork;
-      await r.store.put('overlays', { ...o, fork, modified: Date.now() });
-    }
+    await replacing(r.store, a.overlay);
     return write(a.overlay);
   }
   // A new overlay with the snapshot's blocks: its generation after the restore is 1 (web/snapshot.ts).
   const fork = { snapshot: r.snap.key, generation: 1 };
   const into = s.into === a.overlay && s.into ? await r.store.get('overlays', s.into) : undefined;
   if (into) {
-    // The attached overlay never written: it is the fork (named after the snapshot, reused as one).
-    await r.store.put('overlays', { ...into, name: r.snap.name, fork, modified: Date.now() });
+    // The attached overlay never written: it is the fork (named after the snapshot, reused as one). No `before`: a
+    // restore that never loads leaves it attached, read as empty, and no fork (`undoCutRestores`).
+    await r.store.put('overlays', { ...into, name: r.snap.name, fork, restoring: true, modified: Date.now() });
     return write(into.id);
   }
-  // What the attachment had, for the restore cut off before its fill was done (`undoCutRestores`).
-  const before = { ...(a.overlay ? { overlay: a.overlay } : {}), ...(a.inPlace ? { inPlace: true } : {}) };
   const o = await createOverlay(
     r.store,
     s.disk,
@@ -256,6 +276,7 @@ async function commitStep(r: Restoring, s: Step, replace: boolean): Promise<Disk
     s.size,
     await forkMark(r.store, s.pinned, s.size),
   );
+  await r.store.put('overlays', { ...o, restoring: true });
   a.overlay = o.id;
   a.inPlace = undefined;
   return write(o.id, s.action === 'fork-whole', true);
@@ -307,21 +328,6 @@ function runSlots(m: MachineRecord, run: RunShape) {
     shares: has('9p', m.shares),
     attachments: m.attachments,
   });
-}
-
-/**
- * A restore's plan not carried out (the machine boots instead: a template's first start whose snapshot couldn't load):
- * the overlays it would have written and that nothing wrote (their files' generation 0) are no forks of the snapshot,
- * so their fork marks go (else a later restore would attach one again as the snapshot's blocks, and "started before"
- * would find the demo unchanged).
- */
-export async function unfork(store: Store, plan: DiskPlan[]) {
-  for (const p of plan) {
-    if (p.action !== 'write' || !p.overlay.startsWith('overlays/')) continue;
-    const o = await store.get('overlays', p.overlay.slice('overlays/'.length));
-    if (!o?.fork || (await overlayMeta(p.overlay)).generation !== 0) continue;
-    await store.put('overlays', { ...o, fork: undefined });
-  }
 }
 
 /**

@@ -112,12 +112,12 @@ export const AREAS: Record<string, Area> = {
   },
   snapshots: {
     src: ['core/src/snapshot.rs', 'core/src/vm/state.rs', 'web/snapshot*.ts', 'web/app/snapshot*.ts', 'web/app/Snapshots.svelte', 'web/app/LoadSnapshotMenu.svelte', 'web/app/worker-snapshot.ts', 'web/app/areas/snapshot-*.ts', 'tests/snapshot-*.ts', 'tools/snapshot-template.ts'],
-    heavy: ['tests/snapshot.test.ts', 'tests/page-snapshot.test.ts'],
+    heavy: ['tests/snapshot.test.ts', 'tests/page-snapshot.test.ts', 'tests/page-restore.test.ts'],
     push: ['ci-machines.sh', 'ci-debian.sh'],
   },
   machines: {
     // Stored machines, the store, the Machines and Home pages.
-    heavy: ['tests/storage-full.test.ts'],
+    heavy: ['tests/storage-full.test.ts', 'tests/page-template-first.test.ts'],
     src: ['web/app/store*.ts', 'web/app/machine*.ts', 'web/app/machines*.ts', 'web/app/Machine*.svelte', 'web/app/MachinesPage.svelte', 'web/app/storage-report.ts', 'web/app/Storage*.svelte', 'web/app/locks.ts', 'web/app/areas/machines-nav.svelte.ts', 'web/app/areas/records.svelte.ts', 'web/app/home-route.ts', 'web/app/home-level.ts', 'web/app/Home*.svelte', 'web/app/areas/home-levels.ts', 'tests/home-route.test.ts', 'tests/page-home-levels.test.ts', 'web/app/definitions.ts', 'web/app/template.ts', 'web/app/demo-store.ts', 'web/app/demo-check.ts', 'web/app/demo-open.ts', 'web/app/demos-route.ts', 'web/app/intro-route.ts', 'tests/intro-route.test.ts', 'web/app/demo-leave.ts', 'web/app/Demo*.svelte', 'web/app/NewMachine.svelte', 'tests/page-home.ts', 'web/app/areas/demos.svelte.ts', 'tests/demos-route.test.ts', 'tests/demo-fixture.ts', 'tests/page-demos*.test.ts', 'tools/demo-site.ts', 'tools/publish-demos.ts', 'tools/build-demos.ts', 'bench/demo/make-template.ts', 'bench/demo/screen-like.ts', 'tests/demo-store.test.ts', 'tests/demo-open.test.ts', 'tests/demo-site.test.ts', 'tests/build-demos.test.ts', 'tests/template.test.ts'],
     push: ['ci-machines.sh'],
   },

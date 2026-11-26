@@ -8,8 +8,9 @@ import { test } from 'node:test';
 import { msgOf } from '../web/msg.ts';
 import { openOverlay, overlay, overlayMeta, readMeta, writeMeta } from '../web/overlay.ts';
 import { openStored, openStoredForWriting, zeroDisk } from '../web/stored.ts';
-import { deleteOverlay, identityOf, refreshOverlay } from '../web/app/disks.ts';
+import { deleteOverlay, deleteOverlayAsked, identityOf, refreshOverlay } from '../web/app/disks.ts';
 import { mergeEffect, mergeIntoDisk } from '../web/app/merge.ts';
+import { mergingInto } from '../web/app/machine-hold.ts';
 import { resize } from '../web/app/resize.ts';
 import { shapeOf, type DiskRecord, type MachineRecord } from '../web/app/shape.ts';
 import { diskDir, overlayDir, Store, type OverlayRecord, type SnapshotRecord } from '../web/app/store.ts';
@@ -313,4 +314,47 @@ test("an overlay a restore was cut off in (marked, or a new fork never filled) i
   await store.put('overlays', fork);
   await assert.rejects(async () => mergeIntoDisk(store, fork.id, (await mergeEffect(store, fork.id))!), refused);
   assert.ok(await store.get('overlays', other.id), 'the overlay it forked from kept');
+});
+
+/** Holds machine `id`'s lock as a start does (web/app/run/runner.ts `own`, from before it reads the record); its release. */
+async function startHolds(id: string) {
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  let granted!: () => void;
+  const got = new Promise<void>((r) => (granted = r));
+  void navigator.locks.request(`waarm64-machine:${id}`, { ifAvailable: true }, (l) => (granted(), l ? held : undefined));
+  await got;
+  return release;
+}
+
+// Review disk-locks 1: a merge and Delete overlay looked only at the overlays' file locks, which a start takes only in
+// its worker's disk phase; a start (or a restore's commit) between reading the machine's record and opening its files
+// then opened a deleted overlay anew over the merged disk.
+test('a merge or a Delete overlay is refused while a machine that attaches the disk holds its lock (a start or a restore under way), before its files are open', async () => {
+  const w = await world();
+  const { store } = w;
+  const oc: OverlayRecord = { ...w.ob, id: `${w.ob.id.slice(0, 10)}cc`, name: 'C' };
+  await store.put('overlays', oc);
+  await scribble(oc.id, w.blank, 2, 0x22); // written: a conversion, which deletes B's overlay
+  await scribble(w.ob.id, w.blank, 1, 0x11);
+  const release = await startHolds(w.B.id); // B's start owns B: it read its record (overlay ob), its worker not yet open
+  const running = (e: unknown) => msgOf(e)?.key === 'disks:merge.running' && (msgOf(e)?.params as { machines?: string[] }).machines?.join() === 'bb';
+  await assert.rejects(async () => mergeIntoDisk(store, oc.id, (await mergeEffect(store, oc.id))!), running);
+  assert.ok(await store.get('overlays', w.ob.id), "B's overlay kept");
+  assert.equal((await store.get('disks', w.blank.id))!.kind, 'blank', 'the disk as it was');
+  assert.equal((await store.get('machines', w.B.id))!.attachments[0].overlay, w.ob.id, 'B keeps it chosen');
+  const deleting = (e: unknown) => msgOf(e)?.key === 'disks:disks.overlayUsersRunning';
+  await assert.rejects(deleteOverlayAsked(store, w.ob.id), deleting);
+  assert.ok(await store.get('overlays', w.ob.id), "B's overlay not deleted");
+  // A machine that only attaches the disk, its own overlay another: an overlay it doesn't name is deleted all the same.
+  await assert.doesNotReject(deleteOverlayAsked(store, oc.id));
+  release();
+  await navigator.locks.request(`waarm64-machine:${w.B.id}`, async () => {}); // let go
+  // A start that finds its machine held while a merge into its disk runs says the merge (`Runner.own`).
+  assert.equal(await mergingInto([w.blank]), false);
+  await navigator.locks.request(`waarm64-merge:${diskDir(w.blank.id)}`, async () => {
+    assert.equal(await mergingInto([w.blank]), true, 'a merge into it runs');
+  });
+  const again = await mergeEffect(store, w.ob.id);
+  assert.equal(await mergeIntoDisk(store, w.ob.id, again!), 1, 'B off: merged');
 });

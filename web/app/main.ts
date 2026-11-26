@@ -234,6 +234,7 @@ const disks: DiskActions = new DiskActions({
 const problems = new Problems({
   messages,
   restart: (resume) => powerActions.restart(resume),
+  again: (): Promise<void> => (runner.again ?? (() => powerActions.restart()))(),
   log: terminal.actions(() => pageWindow.showLog(), machine.name),
   resetDisk: disks.resetAction,
   grantFiles: (d) => disks.grantFiles(d),

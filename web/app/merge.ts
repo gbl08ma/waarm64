@@ -6,6 +6,7 @@ import { MsgError } from '../msg.ts';
 import { fillCutOff, mergeLock, overlayBytes, overlayMeta, removeOverlay } from '../overlay.ts';
 import { sizeSeen } from './disk-size.ts';
 import { deleteOverlay, diskJob, identityOf, inUse, refreshStored } from './disks.ts';
+import { holdMachines } from './machine-hold.ts';
 import { cutFork } from './snapshot-undo.ts';
 import { canonical, serialOf, type DiskRecord } from './shape.ts';
 import { diskDir, overlayDir, type OverlayRecord, type Store } from './store.ts';
@@ -45,17 +46,44 @@ export async function mergeIntoDisk(store: Store, overlay: string, confirmed: Co
     if (!o2) throw new MsgError('disks:disks.overlayGone');
     const how = d2 && (await mergeHow(d2, o2));
     if (!d2 || !how) throw new MsgError('disks:merge.onlyStored');
-    // A restore cut off in it reads as empty (marked: web/overlay.ts `openOverlay`; a new fork never filled: its machine
-    // goes back on what it had, web/app/snapshot-undo.ts): nothing of it to merge, and the merge would delete the rest.
-    if ((await fillCutOff(overlayDir(o2.id))) || (await cutFork(o2)))
-      throw new MsgError('disks:merge.cutOff', { name: o2.name });
-    const others = how === 'grow' ? [] : (await store.overlaysOf(d2.id)).filter((x) => x.id !== o2.id);
-    const listed = new Set(confirmed.others.map((x) => x.id));
-    const size = Math.max(d2.size, o2.size ?? 0);
-    if (how !== confirmed.how || size !== confirmed.size || others.some((x) => !listed.has(x.id)))
-      throw new MsgError('disks:merge.changed');
-    return how === 'grow' ? growBlank(store, o2, d2) : merge(store, o2, d2);
+    // The machines that attach the disk, held off for the merge's length: a start (or a restore) owns its machine's
+    // lock from before it reads the record to its run's end, and opens the overlays only in its worker's disk phase,
+    // so their files' locks alone would let it open an overlay this merge deletes (made anew, no record naming it).
+    const held = await holdMachines(await store.machinesWith(d2.id));
+    if (held.busy)
+      throw new MsgError('disks:merge.running', { machines: held.busy.map((m) => m.name), count: held.busy.length });
+    try {
+      await mergeable(store, o2, d2, how, confirmed);
+    } catch (e) {
+      held.release();
+      throw e;
+    }
+    try {
+      return await (how === 'grow' ? growBlank(store, o2, d2) : merge(store, o2, d2));
+    } finally {
+      held.release();
+    }
   });
+}
+
+/** Refuses the merge of overlay `o` into disk `d` (`how`), read under the merge lock, if it isn't the one confirmed. */
+async function mergeable(
+  store: Store,
+  o: OverlayRecord,
+  d: DiskRecord,
+  how: 'stored' | 'grow' | 'convert',
+  confirmed: Confirmed,
+) {
+  // A restore cut off in it reads as empty (marked: web/overlay.ts `openOverlay`; a restore that never loaded: its
+  // machine goes back on what it had, web/app/snapshot-undo.ts): nothing of it to merge, and the merge would delete
+  // the rest.
+  if ((await fillCutOff(overlayDir(o.id))) || (await cutFork(o)))
+    throw new MsgError('disks:merge.cutOff', { name: o.name });
+  const others = how === 'grow' ? [] : (await store.overlaysOf(d.id)).filter((x) => x.id !== o.id);
+  const listed = new Set(confirmed.others.map((x) => x.id));
+  const size = Math.max(d.size, o.size ?? 0);
+  if (how !== confirmed.how || size !== confirmed.size || others.some((x) => !listed.has(x.id)))
+    throw new MsgError('disks:merge.changed');
 }
 
 /** What the user confirmed of a merge (its `mergeEffect`). */

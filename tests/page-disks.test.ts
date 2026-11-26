@@ -153,7 +153,10 @@ test("a restore's plan: keep where the pin matches, fork where it moved on, reus
     const after = await store.get('machines', m.id);
     out.moved = { forks: moved.forks.map((f: { reused: boolean; replaceable?: { name: string } }) => [f.reused, f.replaceable?.name]), plan: forkPlan.map((p: { action: string; overlay?: string }) => [p.action, p.overlay === `overlays/${a.id}`]), attached: after.attachments[0].overlay !== a.id };
     const fork = after.attachments[0].overlay;
-    // The fork hasn't moved since (its generation is still the restore's, 1): the same snapshot again reuses it.
+    // That restore loaded (the worker's `loaded`), and the fork hasn't moved since (its generation is still the
+    // restore's, 1): the same snapshot again reuses it.
+    const { restoreLoaded } = await import('/web/app/snapshot-undo.ts' as string);
+    await restoreLoaded(store, m.id, forkPlan);
     await setGen(`overlays/${fork}`, 1);
     const again = await on({ ...m, attachments: [{ ...m.attachments[0], overlay: a.id }, m.attachments[1]] }, pins(3, 7));
     out.reused = { forks: again.forks.map((f: { reused: boolean }) => f.reused), plan: (await again.commit(false)).map((p: { action: string }) => p.action) };
