@@ -7,10 +7,10 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 
-/** `all`: every process of the tree; `renderer`: its renderers (the page, its workers, the JIT's code). */
+/** `all`: every process of the tree; `renderer`: its renderers (the page, its workers, the JIT's code); `gpu`: its GPU process (WebGL's and WebGPU's calls run there). */
 export type Counters = { instructions: number; cycles: number; cpuNs: number; pInstructions: number; pCycles: number; pCpuNs: number; energyNj: number };
 /** `footprint`: the renderers' memory now, bytes (macOS's physical footprint; on Linux their resident sets). */
-export type ProcStat = { all: Counters; renderer: Counters; pids: number; footprint: number };
+export type ProcStat = { all: Counters; renderer: Counters; gpu: Counters; pids: number; footprint: number };
 
 const zero = (): Counters => ({ instructions: 0, cycles: 0, cpuNs: 0, pInstructions: 0, pCycles: 0, pCpuNs: 0, energyNj: 0 });
 const helper = () => process.env.PROCSTAT ?? './procstat';
@@ -34,10 +34,10 @@ export function procStat(root: number): ProcStat {
     tree.push(p);
     q.push(...(kids.get(p) ?? []));
   }
-  const out: ProcStat = { all: zero(), renderer: zero(), pids: tree.length, footprint: 0 };
+  const out: ProcStat = { all: zero(), renderer: zero(), gpu: zero(), pids: tree.length, footprint: 0 };
   const isRenderer = (pid: number) => args.get(pid)!.includes('--type=renderer');
   const add = (pid: number, c: Counters) => {
-    for (const to of isRenderer(pid) ? [out.all, out.renderer] : [out.all]) {
+    for (const to of isRenderer(pid) ? [out.all, out.renderer] : args.get(pid)!.includes('--type=gpu-process') ? [out.all, out.gpu] : [out.all]) {
       for (const k of Object.keys(c) as (keyof Counters)[]) to[k] += c[k];
     }
   };

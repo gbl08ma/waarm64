@@ -14,6 +14,7 @@ import { summarizeTimeline, type Timeline } from '../../web/profiler.ts';
 import { answerAsks } from '../../tests/page-ask.ts';
 import { loadSnapshotFile, routeCore, sessionTag } from '../snapshot-start.ts';
 import { rendererPid, smapsClasses, uasm } from '../mem/probe.ts';
+import { procStat, type ProcStat } from '../procstat.ts';
 
 const SETTINGS_KEY = 'waarm64.settings';
 /** The guest's desktop user: images/arch/desktop.sh's `arch` (password the same); `alarm` for an Arch Linux ARM disk. */
@@ -364,6 +365,16 @@ export async function openSession(o: SessionOptions) {
   };
 
   let mark = 0;
+  /** The browser's processes' CPU (bench/procstat.ts): a read (none of a remote browser's), and since one the ms a
+   * second of the renderers, the GPU process and all (and the GPU process's cycles, on the Mac). */
+  const hostRead = () => (REMOTE_CDP ? undefined : { t: performance.now(), p: procStat(process.pid) });
+  const hostSince = (from?: { t: number; p: ProcStat }) => {
+    const now = hostRead();
+    if (!from || !now) return undefined;
+    const s = (now.t - from.t) / 1000;
+    const ms = (a: number, b: number) => +((a - b) / 1e6 / s).toFixed(2);
+    return { rendererMs: ms(now.p.renderer.cpuNs, from.p.renderer.cpuNs), gpuMs: ms(now.p.gpu.cpuNs, from.p.gpu.cpuNs), allMs: ms(now.p.all.cpuNs, from.p.all.cpuNs), gpuMcycles: +((now.p.gpu.cycles - from.p.gpu.cycles) / 1e6 / s).toFixed(1) };
+  };
   /** A phase: `secs` of the guest's /proc on the serial side, with the display's, the renderer's and the emulator's
    * stats over the same time; `during` starts and stops something around it (a sampler), and `then` runs as the time ends
    * (before the guest's file is read back, which takes seconds: what the caller counts over the phase). Returns the phase's record
@@ -372,12 +383,14 @@ export async function openSession(o: SessionOptions) {
     await display();
     const m = `L${tag}${++mark}`;
     const v0 = await vmStats();
+    const h0 = hostRead();
     await during?.start();
     await onSerial(`clear; sh /root/load.sh ${secs} ${m}${process.env.SYSCALLS ? ' sys' : ''}\n`);
     await shows(new RegExp(`${m}-done`), (secs + 60) * 1000);
     await during?.stop();
     const v1 = await vmStats();
-    const d = { ...(await display()), vm: vmDelta(v0, v1) };
+    const host = hostSince(h0);
+    const d = { ...(await display()), vm: vmDelta(v0, v1), ...(host ? { host } : {}) };
     const t = await terminal();
     await then?.();
     const cpus = [...t.matchAll(new RegExp(`${m} (cpu\\d?) busy (\\d+) user (\\d+) sys (\\d+) iowait (\\d+)`, 'g'))].map((x) => ({ cpu: x[1], busy: +x[2], user: +x[3], sys: +x[4], iowait: +x[5] }));

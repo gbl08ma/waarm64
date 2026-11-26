@@ -3,8 +3,9 @@
 // follow virglrenderer's vrend_decode.c and vrend_renderer.c (MIT, THIRD_PARTY.json): contexts with sub-contexts that
 // own the objects (shaders, blend, depth-stencil-alpha and rasterizer states, vertex elements, sampler views and
 // states, surfaces, queries), resources shared by the contexts they're attached to, and the GL state set from the
-// sub-context at each draw (one WebGL2 context serves every guest context, so nothing is assumed bound across
-// draws). Resources are guest-backed: uploads read the guest's pages (a staging buffer's for COPY_TRANSFER3D, the
+// sub-context at each draw (one WebGL2 context serves every guest context, so nothing is assumed bound across draws but
+// what only the renderer sets: its framebuffers' attachments, each sub-context's vertex array, each program's uniforms,
+// set where they differ; docs/graphics.md "The renderer"). Resources are guest-backed: uploads read the guest's pages (a staging buffer's for COPY_TRANSFER3D, the
 // resource's own for TRANSFER3D), read-backs write them, before the submit's fence signals.
 //
 // WebGL2 is below what virglrenderer assumes of GLES 3.0 in places, and this is where it's made up for: a buffer
@@ -265,6 +266,23 @@ export class VirglRenderer {
   private externalWaits = new Set<number>();
   private fbo: WebGLFramebuffer;
   private readFbo: WebGLFramebuffer;
+  /** The framebuffers the renderer last bound for drawing and reading (`bindFb`). */
+  private boundFb = { draw: null as WebGLFramebuffer | null, read: null as WebGLFramebuffer | null };
+  /**
+   * What `fbo` and `readFbo` have attached, by point (an object, and a texture's level and face or layer), and `fbo`'s
+   * draw buffers: a call that would set what is already there is left out. The draws set every point at each draw
+   * (nothing is assumed bound), mostly to what it was, and ANGLE on Metal takes an empty point emptied again as a
+   * change of the framebuffer: ~38 µs of the GPU process a draw (bench/gpu/state-cost.ts, PERF loop 79).
+   */
+  private attached = new Map<
+    WebGLFramebuffer,
+    Map<number, { obj: WebGLTexture | WebGLRenderbuffer | null; level: number; layer: number }>
+  >();
+  private fboBuffers = '';
+  /** `?gpu=noattachcache`: every attachment and draw buffer set again (`attached`; PERF loop 79's A/B). */
+  private attachCache: boolean;
+  /** `?gpu=nodrawcache`: a draw's vertex arrays and uniforms set again (`Sub.vaoState`, `Program.set`; PERF loop 79's A/B). */
+  private drawCache: boolean;
   private blitProg?: { prog: WebGLProgram; loc: Map<string, WebGLUniformLocation | null> };
   private anisotropy: boolean;
   private colorBufferFloat: boolean;
@@ -317,6 +335,8 @@ export class VirglRenderer {
       debug?: (m: string) => void;
       video?: { decoders: DecoderFactory; hardware: readonly number[] };
       checkPrograms?: boolean;
+      noAttachCache?: boolean;
+      noDrawCache?: boolean;
     },
   ) {
     this.gl = gl;
@@ -327,6 +347,9 @@ export class VirglRenderer {
     this.log = o.log ?? ((m) => console.warn(`virgl: ${m}`));
     this.fbo = gl.createFramebuffer()!;
     this.readFbo = gl.createFramebuffer()!;
+    this.attached.set(this.fbo, new Map()).set(this.readFbo, new Map());
+    this.attachCache = !o.noAttachCache;
+    this.drawCache = !o.noDrawCache;
     this.anisotropy = !!gl.getExtension('EXT_texture_filter_anisotropic');
     this.quirks = quirksOf(gl);
     this.colorBufferFloat = !!gl.getExtension('EXT_color_buffer_float');
@@ -981,7 +1004,7 @@ export class VirglRenderer {
           box.w,
         );
     }
-    gl.bindFramebuffer(E.READ_FRAMEBUFFER, null);
+    this.bindFb(E.READ_FRAMEBUFFER, null);
     return out;
   }
 
@@ -1014,18 +1037,55 @@ export class VirglRenderer {
   /** The read framebuffer with the resource's level (and layer) as its color attachment. */
   private bindForRead(r: Res, level: number, layer: number) {
     const gl = this.gl;
-    gl.bindFramebuffer(E.READ_FRAMEBUFFER, this.readFbo);
+    this.bindFb(E.READ_FRAMEBUFFER, this.readFbo);
     this.attachTo(E.READ_FRAMEBUFFER, E.COLOR_ATTACHMENT0, r, level, layer);
     return gl.checkFramebufferStatus(E.READ_FRAMEBUFFER) === E.FRAMEBUFFER_COMPLETE;
   }
 
+  /** Binds `fb` at `target`, as `attachTo` and `setDrawBuffers` take it (every binding of the renderer's goes through here). */
+  private bindFb(target: number, fb: WebGLFramebuffer | null) {
+    if (target !== E.READ_FRAMEBUFFER) this.boundFb.draw = fb;
+    if (target !== E.DRAW_FRAMEBUFFER) this.boundFb.read = fb;
+    this.gl.bindFramebuffer(target, fb);
+  }
+
+  /** The draw buffers of the framebuffer bound for drawing, left as they are on `fbo` when they already are (`attached`). */
+  private setDrawBuffers(bufs: number[]) {
+    if (this.boundFb.draw === this.fbo && this.attachCache) {
+      const k = bufs.join();
+      if (k === this.fboBuffers) return;
+      this.fboBuffers = k;
+    }
+    this.gl.drawBuffers(bufs);
+  }
+
+  /** Attaches `r`'s level and layer (nothing without it) at `point` of the framebuffer bound at `target`; on `fbo` and
+   * `readFbo`, only where something else is attached there (`attached`). */
   private attachTo(target: number, point: number, r: Res | undefined, level: number, layer: number) {
     const gl = this.gl;
+    if (r && target === E.DRAW_FRAMEBUFFER) this.dropPicture(r); // drawn into: the plane is what's current
+    const fb = target === E.READ_FRAMEBUFFER ? this.boundFb.read : this.boundFb.draw;
+    const points = fb && this.attachCache ? this.attached.get(fb) : undefined;
+    if (points) {
+      const obj = r ? (r.rb ?? r.tex ?? null) : null;
+      const lv = r && !r.rb ? level : 0,
+        ly = r && !r.rb && r.glTarget !== E.TEXTURE_2D ? layer : 0;
+      // DEPTH_STENCIL_ATTACHMENT is both the depth and the stencil point (GLES 3.0 §4.4.2.4).
+      const at = point === E.DEPTH_STENCIL_ATTACHMENT ? [E.DEPTH_ATTACHMENT, E.STENCIL_ATTACHMENT] : [point];
+      let same = true;
+      for (const q of at) {
+        const a = points.get(q);
+        if (a?.obj !== obj || a.level !== lv || a.layer !== ly) {
+          same = false;
+          points.set(q, { obj, level: lv, layer: ly });
+        }
+      }
+      if (same) return;
+    }
     if (!r) {
       gl.framebufferRenderbuffer(target, point, E.RENDERBUFFER, null);
       return;
     }
-    if (target === E.DRAW_FRAMEBUFFER) this.dropPicture(r); // drawn into: the plane is what's current
     if (r.rb) gl.framebufferRenderbuffer(target, point, E.RENDERBUFFER, r.rb);
     else if (r.glTarget === E.TEXTURE_2D) gl.framebufferTexture2D(target, point, E.TEXTURE_2D, r.tex!, level);
     else if (r.glTarget === E.TEXTURE_CUBE_MAP)
@@ -1422,7 +1482,7 @@ export class VirglRenderer {
           gl.bindTexture(E.TEXTURE_2D, t.tex!);
           gl.copyTexSubImage2D(E.TEXTURE_2D, 0, 0, 0, 0, 0, w, h);
         } else this.upload(t, 0, { x: 0, y: 0, z: 0, w, h, d: 1 }, p.data, p.w * bpp, 0);
-        gl.bindFramebuffer(E.READ_FRAMEBUFFER, null);
+        this.bindFb(E.READ_FRAMEBUFFER, null);
         r.picture = t;
       }
     };
@@ -2088,7 +2148,7 @@ export class VirglRenderer {
       if (depth) {
         // A depth source is read from its depth attachment (as a color one it can't be: Mesa copies its depth
         // textures' uploads this way, and shadow lookups sampled empty textures).
-        gl.bindFramebuffer(E.READ_FRAMEBUFFER, this.readFbo);
+        this.bindFb(E.READ_FRAMEBUFFER, this.readFbo);
         this.attachTo(E.READ_FRAMEBUFFER, E.COLOR_ATTACHMENT0, undefined, 0, 0);
         this.attachTo(E.READ_FRAMEBUFFER, point, src, p[6], box.z + z);
         if (gl.checkFramebufferStatus(E.READ_FRAMEBUFFER) !== E.FRAMEBUFFER_COMPLETE) {
@@ -2096,13 +2156,13 @@ export class VirglRenderer {
           return this.error("copy region: the depth source can't be read");
         }
       } else if (!this.bindForRead(src, p[6], box.z + z)) return this.error("copy region: the source can't be read");
-      gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
+      this.bindFb(E.DRAW_FRAMEBUFFER, this.fbo);
       for (let k = 1; k < this.colorAttachments; k++)
         this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
       this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
       this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, depth ? undefined : dst, p[1], dz + z);
       if (depth) this.attachTo(E.DRAW_FRAMEBUFFER, point, dst, p[1], dz + z);
-      gl.drawBuffers([depth ? E.NONE : E.COLOR_ATTACHMENT0]);
+      this.setDrawBuffers([depth ? E.NONE : E.COLOR_ATTACHMENT0]);
       gl.disable(E.SCISSOR_TEST);
       // GLES 3.0's blits ignore the write masks (§4.3.3: only the scissor and pixel ownership tests apply); every mask
       // on all the same, as `blit` and `resolve` set them, so no implementation leaves a draw's masks on a raw copy.
@@ -2190,10 +2250,10 @@ export class VirglRenderer {
       if (color) {
         if (same || ints || src.rb) {
           if (!this.bindForRead(src, sb.level, sz)) return this.error("blit: the source can't be read");
-          gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
+          this.bindFb(E.DRAW_FRAMEBUFFER, this.fbo);
           this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
           this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, dst, db.level, db.z + z);
-          gl.drawBuffers([E.COLOR_ATTACHMENT0]);
+          this.setDrawBuffers([E.COLOR_ATTACHMENT0]);
           this.blitScissor(scissor, p);
           gl.colorMask(true, true, true, true);
           gl.blitFramebuffer(
@@ -2218,13 +2278,13 @@ export class VirglRenderer {
             : f.kind === 'stencil'
               ? E.STENCIL_ATTACHMENT
               : E.DEPTH_STENCIL_ATTACHMENT;
-        gl.bindFramebuffer(E.READ_FRAMEBUFFER, this.readFbo);
+        this.bindFb(E.READ_FRAMEBUFFER, this.readFbo);
         this.attachTo(E.READ_FRAMEBUFFER, E.COLOR_ATTACHMENT0, undefined, 0, 0);
         this.attachTo(E.READ_FRAMEBUFFER, pt(src.fmt), src, sb.level, sz);
-        gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
+        this.bindFb(E.DRAW_FRAMEBUFFER, this.fbo);
         this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, undefined, 0, 0);
         this.attachTo(E.DRAW_FRAMEBUFFER, pt(dst.fmt), dst, db.level, db.z + z);
-        gl.drawBuffers([E.NONE]);
+        this.setDrawBuffers([E.NONE]);
         this.blitScissor(scissor, p);
         gl.depthMask(true);
         gl.stencilMask(0xff);
@@ -2290,17 +2350,17 @@ export class VirglRenderer {
     }
     const color = bits === E.COLOR_BUFFER_BIT;
     const point = color ? E.COLOR_ATTACHMENT0 : f.kind === 'depth' ? E.DEPTH_ATTACHMENT : E.DEPTH_STENCIL_ATTACHMENT;
-    gl.bindFramebuffer(E.READ_FRAMEBUFFER, this.readFbo);
+    this.bindFb(E.READ_FRAMEBUFFER, this.readFbo);
     for (const pt of [E.COLOR_ATTACHMENT0, E.DEPTH_STENCIL_ATTACHMENT])
       this.attachTo(E.READ_FRAMEBUFFER, pt, undefined, 0, 0);
     this.attachTo(E.READ_FRAMEBUFFER, point, src, 0, 0);
-    gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
+    this.bindFb(E.DRAW_FRAMEBUFFER, this.fbo);
     for (let k = 0; k < this.colorAttachments; k++)
       this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
     this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
     this.attachTo(E.DRAW_FRAMEBUFFER, point, t, 0, 0);
     gl.readBuffer(color ? E.COLOR_ATTACHMENT0 : E.NONE);
-    gl.drawBuffers([color ? E.COLOR_ATTACHMENT0 : E.NONE]);
+    this.setDrawBuffers([color ? E.COLOR_ATTACHMENT0 : E.NONE]);
     gl.disable(E.SCISSOR_TEST);
     gl.colorMask(true, true, true, true);
     gl.depthMask(true);
@@ -2330,14 +2390,14 @@ export class VirglRenderer {
     if (!src.tex || src.glTarget !== E.TEXTURE_2D) return this.error('blit: only 2D sources are converted');
     this.pauseQueries(); // a blit counts no samples (also a resource copy's or an upload's)
     const b = this.blitProgram();
-    gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
+    this.bindFb(E.DRAW_FRAMEBUFFER, this.fbo);
     // Only the destination attached: the source may still be another of the last draw's targets, and sampling an
     // attached texture is a feedback loop WebGL refuses (dEQP-GLES3 fragment_out: the second of three outputs).
     for (let k = 1; k < this.colorAttachments; k++)
       this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
     this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
     this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, dst, db.level, dz);
-    gl.drawBuffers([E.COLOR_ATTACHMENT0]);
+    this.setDrawBuffers([E.COLOR_ATTACHMENT0]);
     gl.useProgram(b.prog);
     gl.bindVertexArray(null);
     gl.activeTexture(E.TEXTURE0);
@@ -2449,11 +2509,11 @@ void main() {
       gl.texParameteri(E.TEXTURE_2D, E.TEXTURE_MIN_FILTER, E.NEAREST);
       gl.texParameteri(E.TEXTURE_2D, E.TEXTURE_MAG_FILTER, E.NEAREST);
     }
-    gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
+    this.bindFb(E.DRAW_FRAMEBUFFER, this.fbo);
     for (let k = 0; k < this.colorAttachments; k++)
       this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
     this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
-    gl.drawBuffers([E.NONE]);
+    this.setDrawBuffers([E.NONE]);
     for (const e of [
       E.BLEND,
       E.CULL_FACE,
@@ -2593,8 +2653,7 @@ void main() {
 
   /** Binds the draw framebuffer for the sub-context's surfaces; false if it can't be drawn to. */
   private bindFramebuffer(c: Ctx, s: Sub): { width: number; height: number } | null {
-    const gl = this.gl;
-    gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
+    this.bindFb(E.DRAW_FRAMEBUFFER, this.fbo);
     let width = 0,
       height = 0;
     const bufs: number[] = [];
@@ -2619,7 +2678,7 @@ void main() {
       this.attachTo(E.DRAW_FRAMEBUFFER, point, zs, s.fb.zs!.level, s.fb.zs!.firstLayer);
       if (!width) [width, height] = [Math.max(1, zs.width >> s.fb.zs!.level), Math.max(1, zs.height >> s.fb.zs!.level)];
     }
-    gl.drawBuffers(bufs.length ? bufs : [E.NONE]);
+    this.setDrawBuffers(bufs.length ? bufs : [E.NONE]);
     if (!width) return null;
     return { width, height };
   }
@@ -2859,15 +2918,15 @@ void main() {
           : E.COLOR_BUFFER_BIT;
     const color = bits === E.COLOR_BUFFER_BIT;
     const point = color ? E.COLOR_ATTACHMENT0 : f.kind === 'depth' ? E.DEPTH_ATTACHMENT : E.DEPTH_STENCIL_ATTACHMENT;
-    gl.bindFramebuffer(E.READ_FRAMEBUFFER, this.readFbo);
+    this.bindFb(E.READ_FRAMEBUFFER, this.readFbo);
     for (const pt of [E.COLOR_ATTACHMENT0, E.DEPTH_STENCIL_ATTACHMENT])
       this.attachTo(E.READ_FRAMEBUFFER, pt, undefined, 0, 0);
-    gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
+    this.bindFb(E.DRAW_FRAMEBUFFER, this.fbo);
     for (let k = 0; k < this.colorAttachments; k++)
       this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
     this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
     gl.readBuffer(color ? E.COLOR_ATTACHMENT0 : E.NONE);
-    gl.drawBuffers([color ? E.COLOR_ATTACHMENT0 : E.NONE]);
+    this.setDrawBuffers([color ? E.COLOR_ATTACHMENT0 : E.NONE]);
     gl.disable(E.SCISSOR_TEST);
     gl.colorMask(true, true, true, true);
     gl.depthMask(true);
@@ -3150,7 +3209,21 @@ void main() {
     const prog = this.program(vs, fs, state);
     if (!prog) return;
     gl.useProgram(prog.prog);
-    // Uniforms: constant buffer 0 and the system values.
+    // Uniforms: constant buffer 0 and the system values; a value the program's uniform already has isn't set again
+    // (`Program.set`).
+    const kept = this.drawCache ? (prog.set ??= new Map<string, number | Float64Array>()) : undefined;
+    /** Whether uniform `n` holds `v`'s first `len` values already; if not, they're kept as its. */
+    const holds = (n: string, v: ArrayLike<number>, len = v.length) => {
+      if (!kept) return false;
+      let o = kept.get(n);
+      if (o instanceof Float64Array && o.length === len) {
+        let k = 0;
+        while (k < len && o[k] === v[k]) k++;
+        if (k === len) return true;
+      } else kept.set(n, (o = new Float64Array(len)));
+      for (let k = 0; k < len; k++) o[k] = v[k];
+      return false;
+    };
     for (const st of ['vs', 'fs'] as const) {
       const n = prog.layout.consts[st];
       if (!n) continue;
@@ -3160,13 +3233,16 @@ void main() {
         d.set(data);
         data = d;
       }
-      gl.uniform4uiv(prog.loc.get(`${st[0]}c0`)!, data, 0, n * 4);
+      const name = `${st[0]}c0`;
+      if (!holds(name, data, n * 4)) gl.uniform4uiv(prog.loc.get(name)!, data, 0, n * 4);
     }
     const vp = s.viewport;
     const negative = vp.scale[1] < 0;
     const set1 = (n: string, v: number) => {
       const l = prog.loc.get(n);
-      if (l) gl.uniform1f(l, v);
+      if (!l || kept?.get(n) === v) return;
+      kept?.set(n, v);
+      gl.uniform1f(l, v);
     };
     set1('u_adjy', negative ? -1 : 1);
     // Clip control's 0-to-1 depth (the rasterizer's clip_halfz, CLIP_HALFZ in the caps), where the browser has it.
@@ -3178,14 +3254,21 @@ void main() {
     const inverted = s.viewport.scale[2] < 0;
     const adjz = prog.loc.get('u_adjz');
     // An inverted depth range turns z round: -z between -1 and 1, w - z between 0 and 1.
-    if (adjz) gl.uniform2f(adjz, inverted ? -1 : 1, inverted && halfz ? 1 : 0);
+    if (adjz) {
+      const az = inverted ? -1 : 1,
+        bz = inverted && halfz ? 1 : 0;
+      if (kept?.get('u_adjz') !== az * 2 + bz) {
+        kept?.set('u_adjz', az * 2 + bz);
+        gl.uniform2f(adjz, az, bz);
+      }
+    }
     set1('u_fbh', fb.height);
     if (dsa) set1('u_alpharef', dsa.alpha.ref);
     const lbc = prog.loc.get('u_blendc');
-    if (lbc) gl.uniform4fv(lbc, s.blendColor);
+    if (lbc && !holds('u_blendc', s.blendColor)) gl.uniform4fv(lbc, s.blendColor);
     set1('u_psize', rs?.pointSize || 1);
     const stl = prog.loc.get('u_stipple');
-    if (stl) gl.uniform1uiv(stl, s.stipple);
+    if (stl && !holds('u_stipple', s.stipple)) gl.uniform1uiv(stl, s.stipple);
     // Textures and samplers.
     for (const st of ['vs', 'fs'] as const) {
       for (const n of prog.layout.samplers[st]) {
@@ -3366,28 +3449,40 @@ void main() {
     // Vertex attributes.
     s.vao ??= gl.createVertexArray();
     gl.bindVertexArray(s.vao);
+    // What the sub-context's array already has is left as it is (`Sub.vaoState`).
+    const va = this.drawCache ? (s.vaoState ??= { on: 0, buf: [], ptr: [], divisor: [] }) : undefined;
+    const enable = (k: number, on: boolean) => {
+      if (va) {
+        const bit = 1 << k;
+        if (!!(va.on & bit) === on) return;
+        va.on = on ? va.on | bit : va.on & ~bit;
+      }
+      if (on) gl.enableVertexAttribArray(k);
+      else gl.disableVertexAttribArray(k);
+    };
     for (let k = 0; k < 16; k++) {
       const e = s.ve[k];
       if (!e || !prog.layout.attribs.includes(k)) {
-        gl.disableVertexAttribArray(k);
+        enable(k, false);
         continue;
       }
       const vf = VERTEX_FORMATS.get(e.format);
       const vb = s.vbs[e.vb];
       const r = vb && this.resources.get(vb.res);
       if (!vf || !r?.buf || !r.shadow) {
-        gl.disableVertexAttribArray(k);
+        enable(k, false);
         if (!vf) this.error(`vertex format ${e.format} isn't supported`);
         continue;
       }
       if (vb.stride === 0) {
         // One value for every vertex: from the buffer's copy.
-        gl.disableVertexAttribArray(k);
+        enable(k, false);
         this.constantAttrib(k, vf, r.shadow, vb.offset + e.offset);
         continue;
       }
-      gl.enableVertexAttribArray(k);
+      enable(k, true);
       let [stride, at] = [vb.stride, vb.offset + e.offset];
+      let buf = r.buf;
       const comp =
         vf.type === E.FLOAT ||
         vf.type === E.INT ||
@@ -3405,14 +3500,34 @@ void main() {
         const st = Math.ceil(vf.bytes / 4) * 4;
         const packed = new Uint8Array(Math.max(4, n * st));
         for (let i = 0; i < n; i++) packed.set(r.shadow.subarray(at + i * stride, at + i * stride + vf.bytes), i * st);
-        const buf = (this.scratchVb[k] ??= gl.createBuffer());
+        buf = this.scratchVb[k] ??= gl.createBuffer();
         gl.bindBuffer(E.ARRAY_BUFFER, buf);
         gl.bufferData(E.ARRAY_BUFFER, packed, E.STREAM_DRAW);
         [stride, at] = [st, 0];
-      } else gl.bindBuffer(E.ARRAY_BUFFER, r.buf);
-      if (vf.int) gl.vertexAttribIPointer(k, vf.size, vf.type, stride, at);
-      else gl.vertexAttribPointer(k, vf.size, vf.type, vf.normalized, stride, at);
-      gl.vertexAttribDivisor(k, e.divisor);
+      }
+      const was = va?.ptr[k];
+      const int = vf.int ? 1 : 0,
+        norm = vf.normalized ? 1 : 0;
+      if (
+        !va ||
+        !was ||
+        va.buf[k] !== buf ||
+        was[0] !== vf.size ||
+        was[1] !== vf.type ||
+        was[2] !== norm ||
+        was[3] !== stride ||
+        was[4] !== at ||
+        was[5] !== int
+      ) {
+        gl.bindBuffer(E.ARRAY_BUFFER, buf);
+        if (vf.int) gl.vertexAttribIPointer(k, vf.size, vf.type, stride, at);
+        else gl.vertexAttribPointer(k, vf.size, vf.type, vf.normalized, stride, at);
+        if (va) [va.buf[k], va.ptr[k]] = [buf, [vf.size, vf.type, norm, stride, at, int]];
+      }
+      if (va?.divisor[k] !== e.divisor) {
+        gl.vertexAttribDivisor(k, e.divisor);
+        if (va) va.divisor[k] = e.divisor;
+      }
     }
     const prim = PRIM[mode];
     this.stats.draws++;
@@ -3673,11 +3788,11 @@ void main() {
       const rb = gl.createRenderbuffer();
       gl.bindRenderbuffer(E.RENDERBUFFER, rb);
       gl.renderbufferStorage(E.RENDERBUFFER, E.RGBA8, 1, 1);
-      gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.nullFbo);
+      this.bindFb(E.DRAW_FRAMEBUFFER, this.nullFbo);
       gl.framebufferRenderbuffer(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, E.RENDERBUFFER, rb);
     }
-    gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.nullFbo);
-    gl.drawBuffers([E.COLOR_ATTACHMENT0]);
+    this.bindFb(E.DRAW_FRAMEBUFFER, this.nullFbo);
+    this.setDrawBuffers([E.COLOR_ATTACHMENT0]);
     return { width: 1, height: 1 };
   }
 
@@ -4205,8 +4320,8 @@ void main() {
     const gl = this.gl;
     this.snapFbos ??= [gl.createFramebuffer(), gl.createFramebuffer()];
     const [read, draw] = this.snapFbos;
-    gl.bindFramebuffer(E.READ_FRAMEBUFFER, read);
-    gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, draw);
+    this.bindFb(E.READ_FRAMEBUFFER, read);
+    this.bindFb(E.DRAW_FRAMEBUFFER, draw);
     for (const t of [E.READ_FRAMEBUFFER, E.DRAW_FRAMEBUFFER]) {
       this.attachTo(t, E.COLOR_ATTACHMENT0, undefined, 0, 0);
       this.attachTo(t, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
@@ -4230,7 +4345,7 @@ void main() {
     this.attachTo(E.DRAW_FRAMEBUFFER, point, dst, 0, 0);
     const color = point === E.COLOR_ATTACHMENT0;
     gl.readBuffer(color ? E.COLOR_ATTACHMENT0 : E.NONE);
-    gl.drawBuffers([color ? E.COLOR_ATTACHMENT0 : E.NONE]);
+    this.setDrawBuffers([color ? E.COLOR_ATTACHMENT0 : E.NONE]);
     gl.disable(E.SCISSOR_TEST);
     gl.colorMask(true, true, true, true); // the write masks, as `copyRegion`'s blit
     gl.depthMask(true);
@@ -4309,7 +4424,7 @@ void main() {
       p = this.snapProgram('copy');
     this.snapFramebuffers();
     this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, r, 0, 0);
-    gl.drawBuffers([E.COLOR_ATTACHMENT0]);
+    this.setDrawBuffers([E.COLOR_ATTACHMENT0]);
     this.snapDrawState(w, h);
     gl.useProgram(p.prog);
     gl.uniform1i(p.loc.get('u_t')!, 0);
@@ -4355,14 +4470,14 @@ void main() {
         gl.texStorage2D(E.TEXTURE_2D, 1, GL.R32UI, w, h);
         this.snapFramebuffers();
         gl.framebufferTexture2D(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, E.TEXTURE_2D, target, 0);
-        gl.drawBuffers([E.COLOR_ATTACHMENT0]);
+        this.setDrawBuffers([E.COLOR_ATTACHMENT0]);
         this.snapDrawState(w, h);
         const p = this.snapProgram('depth');
         gl.useProgram(p.prog);
         gl.uniform1i(p.loc.get('u_t')!, 0);
         this.bindNearest(copy.tex!);
         gl.drawArrays(E.TRIANGLES, 0, 3);
-        gl.bindFramebuffer(E.READ_FRAMEBUFFER, this.snapFbos![1]);
+        this.bindFb(E.READ_FRAMEBUFFER, this.snapFbos![1]);
         gl.readBuffer(E.COLOR_ATTACHMENT0);
         const px = new Uint32Array(n * 4);
         gl.readPixels(0, 0, w, h, E.RGBA_INTEGER, E.UNSIGNED_INT, px);
@@ -4377,7 +4492,7 @@ void main() {
         this.snapFramebuffers();
         gl.framebufferTexture2D(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, E.TEXTURE_2D, target, 0);
         this.attachTo(E.DRAW_FRAMEBUFFER, point, copy, 0, 0);
-        gl.drawBuffers([E.COLOR_ATTACHMENT0]);
+        this.setDrawBuffers([E.COLOR_ATTACHMENT0]);
         this.snapDrawState(w, h);
         gl.clearBufferfv(E.COLOR, 0, [0, 0, 0, 0]);
         gl.enable(E.BLEND);
@@ -4392,7 +4507,7 @@ void main() {
           gl.uniform1f(p.loc.get('u_v')!, (1 << b) / 255);
           gl.drawArrays(E.TRIANGLES, 0, 3);
         }
-        gl.bindFramebuffer(E.READ_FRAMEBUFFER, this.snapFbos![1]);
+        this.bindFb(E.READ_FRAMEBUFFER, this.snapFbos![1]);
         gl.readBuffer(E.COLOR_ATTACHMENT0);
         const px = new Uint8Array(n * 4);
         gl.readPixels(0, 0, w, h, E.RGBA, E.UNSIGNED_BYTE, px);
@@ -4410,7 +4525,7 @@ void main() {
   /** The GL state the snapshot's passes changed, back to what the draws expect of it. */
   private resetAfterSnapshot() {
     const gl = this.gl;
-    gl.bindFramebuffer(E.FRAMEBUFFER, null);
+    this.bindFb(E.FRAMEBUFFER, null);
     gl.disable(E.BLEND);
     gl.disable(E.STENCIL_TEST);
     gl.colorMask(true, true, true, true);

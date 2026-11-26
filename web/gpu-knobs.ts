@@ -13,6 +13,10 @@ export type GpuWorkerKnobs = {
   debug?: boolean;
   /** `?gpu=checkprograms`: the renderer reads every part of a draw's program key again and refuses the draw whose kept one is stale (web/virgl-renderer.ts `checkPrograms`; tests, dEQP runs). */
   checkPrograms?: boolean;
+  /** `?gpu=noattachcache`: the renderer sets every framebuffer attachment again at each use (web/virgl-renderer.ts `attached`; PERF loop 79's A/B). */
+  noAttachCache?: boolean;
+  /** `?gpu=nodrawcache`: the renderer sets a draw's vertex arrays and uniforms again at each draw (web/virgl-renderer.ts `Sub.vaoState`; PERF loop 79's A/B). */
+  noDrawCache?: boolean;
   /** `?avprobe`: `flash` when a present turns the screen's centre bright (bench/audio/avsync.ts). */
   probe?: boolean;
   /** Advertise the browser's video decoders and decode with them (docs/graphics.md "Video"; the page's default, `?gpu=novideo` turns it off). */
@@ -91,6 +95,8 @@ export function parseGpuKnobs(query: URLSearchParams, shaderMiB?: number): GpuWo
     stats: query.has('displaystats'),
     debug: list.includes('debug'),
     checkPrograms: list.includes('checkprograms'),
+    noAttachCache: list.includes('noattachcache'),
+    noDrawCache: list.includes('nodrawcache'),
     probe: query.has('avprobe'),
     video: !list.includes('novideo'),
     softwareVideo: list.includes('swvideo'),

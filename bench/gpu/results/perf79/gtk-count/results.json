@@ -1,0 +1,2991 @@
+{
+ "mode": "virgl",
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "chromium": "158.0.8127.88",
+ "warmS": 10,
+ "phaseS": 8,
+ "info": "7.3.5-arch1-1gtk4 1:4.24.1-1 gtk4-demos 1:4.24.1-1 sway 1:1.12-4 mesa 1:26.3.1-2",
+ "sway": "",
+ "fishbowl-gl": {
+  "alive": true,
+  "flushes": 53.22222222222222,
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 10,
+    "user": 3,
+    "sys": 6,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 6,
+    "user": 1,
+    "sys": 5,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 7,
+    "user": 1,
+    "sys": 5,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 11,
+    "user": 5,
+    "sys": 5,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 15,
+    "user": 4,
+    "sys": 10,
+    "iowait": 0
+   }
+  ],
+  "processes": [
+   {
+    "process": "gtk4-demo",
+    "cpu": 238,
+    "user": 143,
+    "sys": 95,
+    "threads": 13,
+    "runs": 142,
+    "wait": 2
+   },
+   {
+    "process": "sway",
+    "cpu": 103,
+    "user": 0,
+    "sys": 103,
+    "threads": 4,
+    "runs": 115,
+    "wait": 0
+   },
+   {
+    "process": "kworker/0:2-events",
+    "cpu": 16,
+    "user": 0,
+    "sys": 16,
+    "threads": 1,
+    "runs": 185,
+    "wait": 4
+   },
+   {
+    "process": "kworker/u16:3-events_unbound",
+    "cpu": 7,
+    "user": 0,
+    "sys": 7,
+    "threads": 1,
+    "runs": 89,
+    "wait": 0
+   },
+   {
+    "process": "kworker/u16:4+events_unbound",
+    "cpu": 5,
+    "user": 0,
+    "sys": 5,
+    "threads": 1,
+    "runs": 65,
+    "wait": 0
+   },
+   {
+    "process": "rcu_preempt",
+    "cpu": 3,
+    "user": 0,
+    "sys": 3,
+    "threads": 1,
+    "runs": 119,
+    "wait": 0
+   },
+   {
+    "process": "kworker/u16:5-flush-254:0",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "threads": 1,
+    "runs": 28,
+    "wait": 0
+   },
+   {
+    "process": "sh",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   },
+   {
+    "process": "kworker/2:0-events",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 3,
+    "wait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "gtk4-demo/gtk4-demo",
+    "cpu": 235,
+    "user": 141,
+    "sys": 93,
+    "runs": 136,
+    "wait": 2
+   },
+   {
+    "thread": "sway/sway",
+    "cpu": 104,
+    "user": 0,
+    "sys": 103,
+    "runs": 115,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/0:2-events/kworker/0:2-events",
+    "cpu": 17,
+    "user": 0,
+    "sys": 17,
+    "runs": 185,
+    "wait": 4
+   },
+   {
+    "thread": "kworker/u16:3-events_unbound/kworker/u16:3-events_unbound",
+    "cpu": 7,
+    "user": 0,
+    "sys": 7,
+    "runs": 89,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/u16:4+events_unbound/kworker/u16:4+events_unbound",
+    "cpu": 5,
+    "user": 0,
+    "sys": 5,
+    "runs": 65,
+    "wait": 0
+   },
+   {
+    "thread": "rcu_preempt/rcu_preempt",
+    "cpu": 3,
+    "user": 0,
+    "sys": 3,
+    "runs": 119,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/u16:5-flush-254:0/kworker/u16:5-flush-254:0",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "runs": 28,
+    "wait": 0
+   }
+  ],
+  "display": {
+   "seconds": 9,
+   "requests": 575.3333333333334,
+   "commands": {
+    "SET_SCANOUT": 53.222222222222214,
+    "RESOURCE_FLUSH": 53.222222222222214,
+    "ATTACH_BACKING": 51.22222222222222,
+    "CTX_ATTACH_RESOURCE": 51.22222222222222,
+    "CTX_DETACH_RESOURCE": 51,
+    "RESOURCE_CREATE_3D": 51.22222222222222,
+    "SUBMIT_3D": 213.3333333333333,
+    "RESOURCE_UNREF": 50.88888888888889
+   },
+   "fences": {
+    "n": 211.22222222222223,
+    "meanMs": 2.2665860074749125,
+    "maxMs": 456.74000000953674,
+    "heldMs": 3823.9983325534395,
+    "behindMs": 1553.898888402515,
+    "fullMs": 0.0011111100514729817,
+    "heldMax": 16,
+    "toGpuMs": 2.2472179025144814,
+    "toGpuMaxMs": 456.719970703125,
+    "backMs": 0.02598884016635981,
+    "backMaxMs": 3.955078125
+   },
+   "flushes": 53.22222222222222,
+   "submits": 213.33333333333334,
+   "submitKB": 1274.9574652777778,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 8.389443821377224,
+   "draws": 53.22222222222222,
+   "renderer": {
+    "glTotals": {
+     "0": {
+      "bindFramebuffer": [
+       878,
+       254
+      ],
+      "viewport": [
+       423,
+       236
+      ],
+      "useProgram": [
+       423,
+       13
+      ],
+      "bindVertexArray": [
+       423,
+       423
+      ],
+      "activeTexture": [
+       423,
+       423
+      ],
+      "bindTexture": [
+       948,
+       58
+      ],
+      "texParameteri": [
+       880,
+       423
+      ],
+      "bindSampler": [
+       423,
+       13
+      ],
+      "uniform1i": [
+       423,
+       423
+      ],
+      "uniform4f": [
+       423,
+       423
+      ],
+      "uniform4iv": [
+       423,
+       423
+      ],
+      "disable": [
+       3448,
+       3114
+      ],
+      "colorMask": [
+       878,
+       878
+      ],
+      "drawArrays": [
+       423,
+       0
+      ],
+      "bindBuffer": [
+       1988,
+       68
+      ],
+      "bufferSubData": [
+       1920,
+       0
+      ],
+      "createTexture": [
+       457,
+       0
+      ],
+      "texStorage2D": [
+       457,
+       0
+      ],
+      "pixelStorei": [
+       272,
+       0
+      ],
+      "texSubImage2D": [
+       68,
+       0
+      ],
+      "framebufferTexture2D": [
+       455,
+       0
+      ],
+      "depthMask": [
+       455,
+       0
+      ],
+      "stencilMask": [
+       455,
+       455
+      ],
+      "clearBufferfv": [
+       455,
+       0
+      ],
+      "deleteTexture": [
+       454,
+       0
+      ]
+     },
+     "1": {
+      "bindFramebuffer": [
+       18848,
+       18652
+      ],
+      "framebufferTexture2D": [
+       960,
+       0
+      ],
+      "createShader": [
+       34,
+       0
+      ],
+      "shaderSource": [
+       34,
+       0
+      ],
+      "compileShader": [
+       34,
+       0
+      ],
+      "createProgram": [
+       17,
+       0
+      ],
+      "attachShader": [
+       34,
+       0
+      ],
+      "linkProgram": [
+       17,
+       0
+      ],
+      "getProgramParameter": [
+       17,
+       0
+      ],
+      "deleteShader": [
+       34,
+       0
+      ],
+      "getUniformLocation": [
+       160,
+       0
+      ],
+      "useProgram": [
+       17,
+       0
+      ],
+      "uniform1i": [
+       7,
+       0
+      ],
+      "getUniformBlockIndex": [
+       20,
+       0
+      ],
+      "uniformBlockBinding": [
+       20,
+       0
+      ]
+     },
+     "2": {
+      "useProgram": [
+       18848,
+       12711
+      ],
+      "uniform4uiv": [
+       36109,
+       36071
+      ],
+      "uniform1f": [
+       18848,
+       18831
+      ],
+      "uniform2f": [
+       18848,
+       18831
+      ],
+      "activeTexture": [
+       23572,
+       10832
+      ],
+      "bindTexture": [
+       23572,
+       21073
+      ],
+      "texParameteri": [
+       47144,
+       46687
+      ],
+      "bindSampler": [
+       23572,
+       22156
+      ],
+      "viewport": [
+       18848,
+       17620
+      ],
+      "depthRange": [
+       18848,
+       18848
+      ],
+      "disable": [
+       154937,
+       151623
+      ],
+      "frontFace": [
+       18848,
+       16114
+      ],
+      "colorMask": [
+       18848,
+       18848
+      ],
+      "depthMask": [
+       18848,
+       18393
+      ],
+      "bindVertexArray": [
+       18848,
+       0
+      ],
+      "enableVertexAttribArray": [
+       56881,
+       48869
+      ],
+      "bindBuffer": [
+       56881,
+       53171
+      ],
+      "vertexAttribPointer": [
+       56881,
+       3333
+      ],
+      "vertexAttribDivisor": [
+       56881,
+       54052
+      ],
+      "disableVertexAttribArray": [
+       244687,
+       236675
+      ],
+      "bindBufferRange": [
+       23613,
+       52
+      ],
+      "enable": [
+       33543,
+       29895
+      ],
+      "scissor": [
+       16778,
+       3544
+      ],
+      "blendFuncSeparate": [
+       16765,
+       15855
+      ],
+      "blendEquationSeparate": [
+       16765,
+       16765
+      ],
+      "blendColor": [
+       16765,
+       16765
+      ],
+      "createSampler": [
+       1,
+       0
+      ],
+      "samplerParameteri": [
+       5,
+       0
+      ],
+      "samplerParameterf": [
+       2,
+       0
+      ]
+     },
+     "3": {
+      "drawArrays": [
+       16722,
+       0
+      ],
+      "bindVertexArray": [
+       18848,
+       0
+      ],
+      "drawArraysInstanced": [
+       2126,
+       0
+      ]
+     }
+    },
+    "drawTimes": {
+     "pre": 623.0000176429749,
+     "state": 364.50998401641846,
+     "call": 8.52000379562378,
+     "n": 18848
+    },
+    "seconds": 9,
+    "busyMs": 118.68277759022183,
+    "submitMs": 116.83666658401489,
+    "drawMs": 1.5277775923411052,
+    "presents": 47,
+    "glDraws": 2094.222222222222,
+    "commands": 15521.666666666666,
+    "uploadKB": 451.85850694444446,
+    "readbacks": 0,
+    "readbackKB": 0,
+    "compileMs": 63.941111140780976,
+    "shareRefreshes": 0,
+    "shareMs": 0,
+    "importBinds": 0,
+    "importMade": 0,
+    "importPictures": 0,
+    "importKB": 0,
+    "importMs": 0,
+    "venusTextures": 0,
+    "programs": 39,
+    "errors": 0,
+    "video": {
+     "frames": 0,
+     "decoded": 0,
+     "dropped": 0,
+     "errors": 0,
+     "latencyMs": 0,
+     "latencyMaxMs": 0,
+     "writeMs": 0,
+     "ahead": 0,
+     "maxWaitMs": 0
+    }
+   },
+   "vm": {
+    "seconds": 9.000005000114442,
+    "Msteps": 182.795974,
+    "irqs": 2270,
+    "exceptions": {
+     "0x0": 1,
+     "0x15": 5816,
+     "0x20": 64,
+     "0x24": 352,
+     "0x25": 15
+    },
+    "tlbMisses": 22979,
+    "tlbFlushes": 608,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 1.391132
+   },
+   "host": {
+    "rendererMs": 953.38,
+    "gpuMs": 104.94,
+    "allMs": 1071.7,
+    "gpuMcycles": 371.6
+   }
+  },
+  "took": [
+   "2 Using renderer 'GskGLRenderer' for surface 'GdkWaylandToplevel'"
+  ],
+  "stderr": [
+   "2 Using renderer 'GskGLRenderer' for surface 'GdkWaylandToplevel'",
+   "1 Environment variable GSK_RENDERER=gl set, trying GskGLRenderer",
+   "1 (gtk4-demo:584): Gdk-WARNING **: 03:16:31.284: Cannot get portal org.freedesktop.portal.Inhibit version: GDBus.Error:org.freedesktop.DBus.Error.InvalidArgs: No such interface “org.freedesktop.portal.Inhibit”",
+   "1"
+  ]
+ },
+ "frames-gl": {
+  "alive": true,
+  "flushes": 60,
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 7,
+    "user": 1,
+    "sys": 6,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 2,
+    "user": 0,
+    "sys": 2,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 12,
+    "user": 0,
+    "sys": 12,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 13,
+    "user": 4,
+    "sys": 8,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 2,
+    "user": 0,
+    "sys": 2,
+    "iowait": 0
+   }
+  ],
+  "processes": [
+   {
+    "process": "sway",
+    "cpu": 130,
+    "user": 1,
+    "sys": 128,
+    "threads": 4,
+    "runs": 122,
+    "wait": 0
+   },
+   {
+    "process": "gtk4-demo",
+    "cpu": 127,
+    "user": 47,
+    "sys": 80,
+    "threads": 6,
+    "runs": 128,
+    "wait": 0
+   },
+   {
+    "process": "kworker/u16:2+events_unbound",
+    "cpu": 13,
+    "user": 0,
+    "sys": 13,
+    "threads": 1,
+    "runs": 95,
+    "wait": 0
+   },
+   {
+    "process": "kworker/u16:0-events_unbound",
+    "cpu": 6,
+    "user": 0,
+    "sys": 6,
+    "threads": 1,
+    "runs": 38,
+    "wait": 0
+   },
+   {
+    "process": "kworker/0:2-events",
+    "cpu": 6,
+    "user": 0,
+    "sys": 6,
+    "threads": 1,
+    "runs": 186,
+    "wait": 5
+   },
+   {
+    "process": "sh",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   },
+   {
+    "process": "migration/0",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   },
+   {
+    "process": "kworker/u16:5-events_power_efficient",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 1,
+    "wait": 0
+   },
+   {
+    "process": "kworker/1:2-events",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "sway/sway",
+    "cpu": 129,
+    "user": 1,
+    "sys": 128,
+    "runs": 122,
+    "wait": 0
+   },
+   {
+    "thread": "gtk4-demo/gtk4-demo",
+    "cpu": 127,
+    "user": 47,
+    "sys": 80,
+    "runs": 128,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/u16:2+events_unbound/kworker/u16:2+events_unbound",
+    "cpu": 13,
+    "user": 0,
+    "sys": 13,
+    "runs": 95,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/0:2-events/kworker/0:2-events",
+    "cpu": 6,
+    "user": 0,
+    "sys": 6,
+    "runs": 186,
+    "wait": 5
+   },
+   {
+    "thread": "kworker/u16:0-events_unbound/kworker/u16:0-events_unbound",
+    "cpu": 5,
+    "user": 0,
+    "sys": 6,
+    "runs": 38,
+    "wait": 0
+   }
+  ],
+  "display": {
+   "seconds": 8,
+   "requests": 360,
+   "commands": {
+    "SET_SCANOUT": 60,
+    "RESOURCE_FLUSH": 60,
+    "SUBMIT_3D": 240
+   },
+   "fences": {
+    "n": 180,
+    "meanMs": 0.15546528382433786,
+    "maxMs": 0.9049999713897705,
+    "heldMs": 1958.5600010454655,
+    "behindMs": 433.74062499403954,
+    "fullMs": 0,
+    "heldMax": 4,
+    "toGpuMs": 0.13756450135030865,
+    "toGpuMaxMs": 0.869873046875,
+    "backMs": 0.02283969455295139,
+    "backMaxMs": 0.330078125
+   },
+   "flushes": 60,
+   "submits": 240,
+   "submitKB": 981.09375,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 7.064999371767044,
+   "draws": 60,
+   "renderer": {
+    "glTotals": {
+     "0": {
+      "bindBuffer": [
+       1080,
+       0
+      ],
+      "bufferSubData": [
+       1080,
+       0
+      ],
+      "bindFramebuffer": [
+       434,
+       0
+      ],
+      "viewport": [
+       434,
+       182
+      ],
+      "useProgram": [
+       434,
+       0
+      ],
+      "bindVertexArray": [
+       434,
+       434
+      ],
+      "activeTexture": [
+       434,
+       434
+      ],
+      "bindTexture": [
+       434,
+       0
+      ],
+      "texParameteri": [
+       434,
+       434
+      ],
+      "bindSampler": [
+       434,
+       18
+      ],
+      "uniform1i": [
+       434,
+       434
+      ],
+      "uniform4f": [
+       434,
+       434
+      ],
+      "uniform4iv": [
+       434,
+       434
+      ],
+      "disable": [
+       2604,
+       2604
+      ],
+      "colorMask": [
+       434,
+       434
+      ],
+      "drawArrays": [
+       434,
+       0
+      ]
+     },
+     "1": {
+      "bindFramebuffer": [
+       1080,
+       646
+      ],
+      "framebufferTexture2D": [
+       1080,
+       0
+      ]
+     },
+     "2": {
+      "useProgram": [
+       1080,
+       0
+      ],
+      "uniform4uiv": [
+       1620,
+       1080
+      ],
+      "uniform1f": [
+       1080,
+       1080
+      ],
+      "uniform2f": [
+       1080,
+       1080
+      ],
+      "activeTexture": [
+       540,
+       540
+      ],
+      "bindTexture": [
+       540,
+       0
+      ],
+      "texParameteri": [
+       1080,
+       1080
+      ],
+      "bindSampler": [
+       540,
+       123
+      ],
+      "viewport": [
+       1080,
+       252
+      ],
+      "depthRange": [
+       1080,
+       1080
+      ],
+      "disable": [
+       10800,
+       10800
+      ],
+      "frontFace": [
+       1080,
+       1080
+      ],
+      "colorMask": [
+       1080,
+       1080
+      ],
+      "depthMask": [
+       1080,
+       1080
+      ],
+      "bindVertexArray": [
+       1080,
+       0
+      ],
+      "enableVertexAttribArray": [
+       1080,
+       1080
+      ],
+      "bindBuffer": [
+       1080,
+       0
+      ],
+      "vertexAttribPointer": [
+       1080,
+       0
+      ],
+      "vertexAttribDivisor": [
+       1080,
+       1080
+      ],
+      "disableVertexAttribArray": [
+       16200,
+       16200
+      ]
+     },
+     "3": {
+      "drawArrays": [
+       1080,
+       0
+      ],
+      "bindVertexArray": [
+       1080,
+       0
+      ]
+     }
+    },
+    "drawTimes": {
+     "pre": 23.145002126693726,
+     "state": 98.13499736785889,
+     "call": 4.644995450973511,
+     "n": 1080
+    },
+    "seconds": 9,
+    "busyMs": 17.290555079778034,
+    "submitMs": 16.814443879657322,
+    "drawMs": 3.797777281867133,
+    "presents": 48.22222222222222,
+    "glDraws": 120,
+    "commands": 1500,
+    "uploadKB": 11.25,
+    "readbacks": 0,
+    "readbackKB": 0,
+    "compileMs": 0,
+    "shareRefreshes": 0,
+    "shareMs": 0,
+    "importBinds": 0,
+    "importMade": 0,
+    "importPictures": 0,
+    "importKB": 0,
+    "importMs": 0,
+    "venusTextures": 0,
+    "programs": 64,
+    "errors": 0,
+    "video": {
+     "frames": 0,
+     "decoded": 0,
+     "dropped": 0,
+     "errors": 0,
+     "latencyMs": 0,
+     "latencyMaxMs": 0,
+     "writeMs": 0,
+     "ahead": 0,
+     "maxWaitMs": 0
+    }
+   },
+   "vm": {
+    "seconds": 7.993275000095368,
+    "Msteps": 73.408877,
+    "irqs": 1660,
+    "exceptions": {
+     "0x0": 1,
+     "0x15": 5396,
+     "0x20": 58,
+     "0x24": 289,
+     "0x25": 14
+    },
+    "tlbMisses": 10745,
+    "tlbFlushes": 492,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 0.236551
+   },
+   "host": {
+    "rendererMs": 682.13,
+    "gpuMs": 70.96,
+    "allMs": 762.9,
+    "gpuMcycles": 142.7
+   }
+  },
+  "took": [
+   "2 Using renderer 'GskGLRenderer' for surface 'GdkWaylandToplevel'"
+  ],
+  "stderr": [
+   "2 Using renderer 'GskGLRenderer' for surface 'GdkWaylandToplevel'",
+   "1 Environment variable GSK_RENDERER=gl set, trying GskGLRenderer",
+   "1 (gtk4-demo:794): Gdk-WARNING **: 03:17:02.175: Cannot get portal org.freedesktop.portal.Inhibit version: GDBus.Error:org.freedesktop.DBus.Error.InvalidArgs: No such interface “org.freedesktop.portal.Inhibit”",
+   "1"
+  ]
+ },
+ "iconscroll-gl": {
+  "alive": true,
+  "flushes": 13.625,
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 7,
+    "user": 3,
+    "sys": 3,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 3,
+    "user": 0,
+    "sys": 3,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 0,
+    "user": 0,
+    "sys": 0,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 1,
+    "user": 0,
+    "sys": 1,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 23,
+    "user": 15,
+    "sys": 8,
+    "iowait": 0
+   }
+  ],
+  "processes": [
+   {
+    "process": "gtk4-demo",
+    "cpu": 241,
+    "user": 163,
+    "sys": 77,
+    "threads": 6,
+    "runs": 58,
+    "wait": 0
+   },
+   {
+    "process": "sway",
+    "cpu": 20,
+    "user": 0,
+    "sys": 20,
+    "threads": 4,
+    "runs": 32,
+    "wait": 0
+   },
+   {
+    "process": "kworker/0:2-events",
+    "cpu": 12,
+    "user": 0,
+    "sys": 12,
+    "threads": 1,
+    "runs": 434,
+    "wait": 0
+   },
+   {
+    "process": "kworker/0:1-events",
+    "cpu": 7,
+    "user": 0,
+    "sys": 7,
+    "threads": 1,
+    "runs": 244,
+    "wait": 0
+   },
+   {
+    "process": "kworker/u16:3+events_unbound",
+    "cpu": 3,
+    "user": 0,
+    "sys": 3,
+    "threads": 1,
+    "runs": 46,
+    "wait": 0
+   },
+   {
+    "process": "rcu_preempt",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 67,
+    "wait": 0
+   },
+   {
+    "process": "kworker/u16:0-flush-254:0",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 3,
+    "wait": 0
+   },
+   {
+    "process": "khugepaged",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "gtk4-demo/gtk4-demo",
+    "cpu": 240,
+    "user": 163,
+    "sys": 78,
+    "runs": 58,
+    "wait": 0
+   },
+   {
+    "thread": "sway/sway",
+    "cpu": 21,
+    "user": 0,
+    "sys": 21,
+    "runs": 32,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/0:2-events/kworker/0:2-events",
+    "cpu": 12,
+    "user": 0,
+    "sys": 13,
+    "runs": 434,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/0:1-events/kworker/0:1-events",
+    "cpu": 8,
+    "user": 0,
+    "sys": 7,
+    "runs": 244,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/u16:3+events_unbound/kworker/u16:3-events_unbound",
+    "cpu": 3,
+    "user": 0,
+    "sys": 3,
+    "runs": 46,
+    "wait": 0
+   }
+  ],
+  "display": {
+   "seconds": 8,
+   "requests": 3745.125,
+   "commands": {
+    "RESOURCE_UNREF": 738.875,
+    "SET_SCANOUT": 13.625,
+    "RESOURCE_FLUSH": 13.625,
+    "ATTACH_BACKING": 729.125,
+    "CTX_ATTACH_RESOURCE": 729.125,
+    "CTX_DETACH_RESOURCE": 737.375,
+    "RESOURCE_CREATE_3D": 729.125,
+    "SUBMIT_3D": 54.25
+   },
+   "fences": {
+    "n": 769.875,
+    "meanMs": 3.2367299893282127,
+    "maxMs": 594.7699999809265,
+    "heldMs": 12167.696873903275,
+    "behindMs": 9675.670623749495,
+    "fullMs": 729.8043747544289,
+    "heldMax": 16,
+    "toGpuMs": 3.4066903720334083,
+    "toGpuMaxMs": 594.7451171875,
+    "backMs": 0.020530875289117026,
+    "backMaxMs": 1.465087890625
+   },
+   "flushes": 13.625,
+   "submits": 54.25,
+   "submitKB": 1585.8212890625,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 17.815624326467514,
+   "draws": 13.625,
+   "renderer": {
+    "glTotals": {
+     "0": {
+      "deleteTexture": [
+       6271,
+       0
+      ],
+      "createTexture": [
+       6199,
+       0
+      ],
+      "bindTexture": [
+       6856,
+       394
+      ],
+      "texStorage2D": [
+       6199,
+       0
+      ],
+      "texParameteri": [
+       6325,
+       126
+      ],
+      "bindFramebuffer": [
+       6275,
+       6067
+      ],
+      "viewport": [
+       126,
+       126
+      ],
+      "useProgram": [
+       126,
+       22
+      ],
+      "bindVertexArray": [
+       126,
+       126
+      ],
+      "activeTexture": [
+       126,
+       126
+      ],
+      "bindSampler": [
+       126,
+       22
+      ],
+      "uniform1i": [
+       126,
+       126
+      ],
+      "uniform4f": [
+       126,
+       126
+      ],
+      "uniform4iv": [
+       126,
+       126
+      ],
+      "disable": [
+       13054,
+       7034
+      ],
+      "colorMask": [
+       6275,
+       6275
+      ],
+      "drawArrays": [
+       126,
+       0
+      ],
+      "bindBuffer": [
+       1051,
+       531
+      ],
+      "bufferSubData": [
+       518,
+       0
+      ],
+      "pixelStorei": [
+       2124,
+       0
+      ],
+      "texSubImage2D": [
+       531,
+       0
+      ],
+      "framebufferTexture2D": [
+       6149,
+       0
+      ],
+      "depthMask": [
+       6149,
+       0
+      ],
+      "stencilMask": [
+       6149,
+       6149
+      ],
+      "clearBufferfv": [
+       6149,
+       0
+      ],
+      "createBuffer": [
+       2,
+       0
+      ],
+      "bufferData": [
+       2,
+       0
+      ],
+      "deleteBuffer": [
+       2,
+       0
+      ]
+     },
+     "1": {
+      "bindFramebuffer": [
+       47497,
+       47497
+      ],
+      "framebufferTexture2D": [
+       258,
+       0
+      ],
+      "createShader": [
+       176,
+       0
+      ],
+      "shaderSource": [
+       176,
+       0
+      ],
+      "compileShader": [
+       176,
+       0
+      ],
+      "createProgram": [
+       88,
+       0
+      ],
+      "attachShader": [
+       176,
+       0
+      ],
+      "linkProgram": [
+       88,
+       0
+      ],
+      "getProgramParameter": [
+       88,
+       0
+      ],
+      "deleteShader": [
+       176,
+       0
+      ],
+      "getUniformLocation": [
+       848,
+       0
+      ],
+      "useProgram": [
+       88,
+       0
+      ],
+      "uniform1i": [
+       56,
+       0
+      ],
+      "getUniformBlockIndex": [
+       114,
+       0
+      ],
+      "uniformBlockBinding": [
+       114,
+       0
+      ]
+     },
+     "2": {
+      "useProgram": [
+       47497,
+       27202
+      ],
+      "uniform4uiv": [
+       94478,
+       91712
+      ],
+      "uniform1f": [
+       47497,
+       47409
+      ],
+      "uniform2f": [
+       47497,
+       47409
+      ],
+      "activeTexture": [
+       48130,
+       36807
+      ],
+      "bindTexture": [
+       48130,
+       35731
+      ],
+      "texParameteri": [
+       96260,
+       90061
+      ],
+      "bindSampler": [
+       48130,
+       46820
+      ],
+      "bindBufferRange": [
+       56312,
+       3896
+      ],
+      "viewport": [
+       47497,
+       44100
+      ],
+      "depthRange": [
+       47497,
+       47497
+      ],
+      "enable": [
+       89682,
+       81860
+      ],
+      "scissor": [
+       46852,
+       19466
+      ],
+      "disable": [
+       385288,
+       383486
+      ],
+      "frontFace": [
+       47497,
+       46465
+      ],
+      "blendFuncSeparate": [
+       42830,
+       42304
+      ],
+      "blendEquationSeparate": [
+       42830,
+       42830
+      ],
+      "colorMask": [
+       47497,
+       47497
+      ],
+      "blendColor": [
+       42830,
+       42830
+      ],
+      "depthMask": [
+       47497,
+       41348
+      ],
+      "bindVertexArray": [
+       47497,
+       0
+      ],
+      "enableVertexAttribArray": [
+       202135,
+       157520
+      ],
+      "bindBuffer": [
+       202135,
+       200845
+      ],
+      "vertexAttribPointer": [
+       202135,
+       0
+      ],
+      "vertexAttribDivisor": [
+       202135,
+       201103
+      ],
+      "disableVertexAttribArray": [
+       557817,
+       513202
+      ]
+     },
+     "3": {
+      "drawArrays": [
+       37534,
+       0
+      ],
+      "bindVertexArray": [
+       47497,
+       0
+      ],
+      "drawArraysInstanced": [
+       9963,
+       0
+      ]
+     }
+    },
+    "drawTimes": {
+     "pre": 1539.189983844757,
+     "state": 5660.245017290115,
+     "call": 15.7749924659729,
+     "n": 47497
+    },
+    "seconds": 9,
+    "busyMs": 839.3905535009172,
+    "submitMs": 834.4088887903425,
+    "drawMs": 1.937777943081326,
+    "presents": 14,
+    "glDraws": 5277.444444444444,
+    "commands": 43744.88888888889,
+    "uploadKB": 1467.5355902777778,
+    "readbacks": 0,
+    "readbackKB": 0,
+    "compileMs": 159.30777790811328,
+    "shareRefreshes": 0,
+    "shareMs": 0,
+    "importBinds": 0,
+    "importMade": 0,
+    "importPictures": 0,
+    "importKB": 0,
+    "importMs": 0,
+    "venusTextures": 0,
+    "programs": 264,
+    "errors": 0,
+    "video": {
+     "frames": 0,
+     "decoded": 0,
+     "dropped": 0,
+     "errors": 0,
+     "latencyMs": 0,
+     "latencyMaxMs": 0,
+     "writeMs": 0,
+     "ahead": 0,
+     "maxWaitMs": 0
+    }
+   },
+   "vm": {
+    "seconds": 8.00159500002861,
+    "Msteps": 286.314237,
+    "irqs": 1887,
+    "exceptions": {
+     "0x0": 1,
+     "0x15": 4101,
+     "0x20": 34,
+     "0x24": 170,
+     "0x25": 8
+    },
+    "tlbMisses": 105499,
+    "tlbFlushes": 318,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 0.514201
+   },
+   "host": {
+    "rendererMs": 1351.99,
+    "gpuMs": 197.12,
+    "allMs": 1554.88,
+    "gpuMcycles": 765.4
+   }
+  },
+  "took": [
+   "2 Using renderer 'GskGLRenderer' for surface 'GdkWaylandToplevel'"
+  ],
+  "stderr": [
+   "2 Using renderer 'GskGLRenderer' for surface 'GdkWaylandToplevel'",
+   "1 Environment variable GSK_RENDERER=gl set, trying GskGLRenderer",
+   "1 (gtk4-demo:939): Gdk-WARNING **: 03:17:34.111: Cannot get portal org.freedesktop.portal.Inhibit version: GDBus.Error:org.freedesktop.DBus.Error.InvalidArgs: No such interface “org.freedesktop.portal.Inhibit”",
+   "1"
+  ]
+ },
+ "gears-gl": {
+  "alive": true,
+  "flushes": 26.125,
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 2,
+    "user": 0,
+    "sys": 2,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 0,
+    "user": 0,
+    "sys": 0,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 3,
+    "user": 0,
+    "sys": 3,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 0,
+    "user": 0,
+    "sys": 0,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 6,
+    "user": 2,
+    "sys": 4,
+    "iowait": 0
+   }
+  ],
+  "processes": [
+   {
+    "process": "gtk4-demo",
+    "cpu": 63,
+    "user": 23,
+    "sys": 40,
+    "threads": 6,
+    "runs": 79,
+    "wait": 0
+   },
+   {
+    "process": "sway",
+    "cpu": 35,
+    "user": 3,
+    "sys": 31,
+    "threads": 4,
+    "runs": 52,
+    "wait": 0
+   },
+   {
+    "process": "kworker/u16:0+events_unbound",
+    "cpu": 6,
+    "user": 0,
+    "sys": 6,
+    "threads": 1,
+    "runs": 79,
+    "wait": 0
+   },
+   {
+    "process": "kworker/0:1-events",
+    "cpu": 3,
+    "user": 0,
+    "sys": 3,
+    "threads": 1,
+    "runs": 107,
+    "wait": 0
+   },
+   {
+    "process": "systemd-resolve",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 1,
+    "wait": 0
+   },
+   {
+    "process": "khugepaged",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "gtk4-demo/gtk4-demo",
+    "cpu": 64,
+    "user": 25,
+    "sys": 38,
+    "runs": 79,
+    "wait": 0
+   },
+   {
+    "thread": "sway/sway",
+    "cpu": 33,
+    "user": 2,
+    "sys": 30,
+    "runs": 52,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/u16:0+events_unbound/kworker/u16:0+events_unbound",
+    "cpu": 5,
+    "user": 0,
+    "sys": 6,
+    "runs": 79,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/0:1-events/kworker/0:1-events",
+    "cpu": 3,
+    "user": 0,
+    "sys": 3,
+    "runs": 107,
+    "wait": 0
+   }
+  ],
+  "display": {
+   "seconds": 8,
+   "requests": 182.375,
+   "commands": {
+    "SET_SCANOUT": 26.125,
+    "RESOURCE_FLUSH": 26.125,
+    "SUBMIT_3D": 130.125
+   },
+   "fences": {
+    "n": 104,
+    "meanMs": 56.40102764906791,
+    "maxMs": 74.39499998092651,
+    "heldMs": 8834.036875665188,
+    "behindMs": 1977.879375219345,
+    "fullMs": 0,
+    "heldMax": 10,
+    "toGpuMs": 56.05672087973736,
+    "toGpuMaxMs": 74.385009765625,
+    "backMs": 0.016336687443929427,
+    "backMaxMs": 0.97021484375
+   },
+   "flushes": 26.125,
+   "submits": 130.125,
+   "submitKB": 956.92578125,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 2.4106249511241913,
+   "draws": 26.125,
+   "renderer": {
+    "glTotals": {
+     "0": {
+      "bindBuffer": [
+       940,
+       0
+      ],
+      "bufferSubData": [
+       940,
+       0
+      ],
+      "bindFramebuffer": [
+       235,
+       235
+      ],
+      "framebufferTexture2D": [
+       470,
+       235
+      ],
+      "disable": [
+       470,
+       470
+      ],
+      "colorMask": [
+       235,
+       235
+      ],
+      "depthMask": [
+       235,
+       0
+      ],
+      "stencilMask": [
+       235,
+       235
+      ],
+      "clearBufferfv": [
+       470,
+       0
+      ],
+      "deleteProgram": [
+       4,
+       0
+      ]
+     },
+     "1": {
+      "bindFramebuffer": [
+       67210,
+       67210
+      ],
+      "framebufferTexture2D": [
+       66270,
+       65800
+      ],
+      "framebufferRenderbuffer": [
+       66035,
+       66035
+      ]
+     },
+     "2": {
+      "useProgram": [
+       67210,
+       65565
+      ],
+      "uniform4uiv": [
+       68385,
+       67680
+      ],
+      "uniform1f": [
+       67210,
+       67210
+      ],
+      "uniform2f": [
+       67210,
+       67210
+      ],
+      "activeTexture": [
+       705,
+       705
+      ],
+      "bindTexture": [
+       705,
+       0
+      ],
+      "texParameteri": [
+       1410,
+       1410
+      ],
+      "bindSampler": [
+       705,
+       235
+      ],
+      "viewport": [
+       67210,
+       66505
+      ],
+      "depthRange": [
+       67210,
+       67210
+      ],
+      "disable": [
+       538620,
+       537680
+      ],
+      "frontFace": [
+       67210,
+       66740
+      ],
+      "colorMask": [
+       67210,
+       67210
+      ],
+      "depthMask": [
+       67210,
+       66975
+      ],
+      "bindVertexArray": [
+       67210,
+       0
+      ],
+      "enableVertexAttribArray": [
+       137240,
+       134420
+      ],
+      "bindBuffer": [
+       137240,
+       135830
+      ],
+      "vertexAttribPointer": [
+       137240,
+       130190
+      ],
+      "vertexAttribDivisor": [
+       137240,
+       136770
+      ],
+      "disableVertexAttribArray": [
+       938120,
+       935300
+      ],
+      "enable": [
+       133480,
+       132540
+      ],
+      "cullFace": [
+       65800,
+       65800
+      ],
+      "depthFunc": [
+       65800,
+       65800
+      ],
+      "bindBufferRange": [
+       1175,
+       0
+      ],
+      "scissor": [
+       940,
+       940
+      ],
+      "blendFuncSeparate": [
+       940,
+       940
+      ],
+      "blendEquationSeparate": [
+       940,
+       940
+      ],
+      "blendColor": [
+       940,
+       940
+      ]
+     },
+     "3": {
+      "drawArrays": [
+       66975,
+       0
+      ],
+      "bindVertexArray": [
+       67210,
+       0
+      ],
+      "drawArraysInstanced": [
+       235,
+       0
+      ]
+     }
+    },
+    "drawTimes": {
+     "pre": 110.11999225616455,
+     "state": 8821.88002204895,
+     "call": 21.639983892440796,
+     "n": 67210
+    },
+    "seconds": 9,
+    "busyMs": 998.6627774768406,
+    "submitMs": 998.6416663328806,
+    "drawMs": 0,
+    "presents": 0,
+    "glDraws": 7467.777777777777,
+    "commands": 9609.666666666666,
+    "uploadKB": 42.02256944444444,
+    "readbacks": 0,
+    "readbackKB": 0,
+    "compileMs": 0,
+    "shareRefreshes": 0,
+    "shareMs": 0,
+    "importBinds": 0,
+    "importMade": 0,
+    "importPictures": 0,
+    "importKB": 0,
+    "importMs": 0,
+    "venusTextures": 0,
+    "programs": 290,
+    "errors": 0,
+    "video": {
+     "frames": 0,
+     "decoded": 0,
+     "dropped": 0,
+     "errors": 0,
+     "latencyMs": 0,
+     "latencyMaxMs": 0,
+     "writeMs": 0,
+     "ahead": 0,
+     "maxWaitMs": 0
+    }
+   },
+   "vm": {
+    "seconds": 7.993799999952317,
+    "Msteps": 59.432961,
+    "irqs": 929,
+    "exceptions": {
+     "0x0": 1,
+     "0x15": 3134,
+     "0x20": 34,
+     "0x24": 158,
+     "0x25": 8
+    },
+    "tlbMisses": 13608,
+    "tlbFlushes": 321,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 0.128388
+   },
+   "host": {
+    "rendererMs": 1286.07,
+    "gpuMs": 154.85,
+    "allMs": 1446.05,
+    "gpuMcycles": 565.9
+   }
+  },
+  "took": [
+   "2 Using renderer 'GskGLRenderer' for surface 'GdkWaylandToplevel'"
+  ],
+  "stderr": [
+   "3",
+   "2 Using renderer 'GskGLRenderer' for surface 'GdkWaylandToplevel'",
+   "1 Environment variable GSK_RENDERER=gl set, trying GskGLRenderer",
+   "1 (gtk4-demo:1112): Gdk-WARNING **: 03:18:07.094: Cannot get portal org.freedesktop.portal.Inhibit version: GDBus.Error:org.freedesktop.DBus.Error.InvalidArgs: No such interface “org.freedesktop.portal.Inhibit”"
+  ]
+ },
+ "mask-gl": {
+  "alive": true,
+  "flushes": 60,
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 9,
+    "user": 1,
+    "sys": 7,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 7,
+    "user": 0,
+    "sys": 6,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 8,
+    "user": 2,
+    "sys": 6,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 10,
+    "user": 0,
+    "sys": 9,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 10,
+    "user": 3,
+    "sys": 7,
+    "iowait": 0
+   }
+  ],
+  "processes": [
+   {
+    "process": "gtk4-demo",
+    "cpu": 207,
+    "user": 67,
+    "sys": 140,
+    "threads": 6,
+    "runs": 321,
+    "wait": 1
+   },
+   {
+    "process": "sway",
+    "cpu": 75,
+    "user": 3,
+    "sys": 71,
+    "threads": 4,
+    "runs": 124,
+    "wait": 0
+   },
+   {
+    "process": "kworker/0:2-events",
+    "cpu": 17,
+    "user": 0,
+    "sys": 17,
+    "threads": 1,
+    "runs": 330,
+    "wait": 4
+   },
+   {
+    "process": "kworker/0:1-events",
+    "cpu": 13,
+    "user": 0,
+    "sys": 13,
+    "threads": 1,
+    "runs": 242,
+    "wait": 3
+   },
+   {
+    "process": "kworker/u16:3+events_unbound",
+    "cpu": 12,
+    "user": 0,
+    "sys": 12,
+    "threads": 1,
+    "runs": 199,
+    "wait": 0
+   },
+   {
+    "process": "rcu_preempt",
+    "cpu": 3,
+    "user": 0,
+    "sys": 3,
+    "threads": 1,
+    "runs": 227,
+    "wait": 0
+   },
+   {
+    "process": "systemd-resolve",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "systemd",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 1,
+    "wait": 0
+   },
+   {
+    "process": "sh",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 1,
+    "wait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "gtk4-demo/gtk4-demo",
+    "cpu": 207,
+    "user": 68,
+    "sys": 140,
+    "runs": 321,
+    "wait": 1
+   },
+   {
+    "thread": "sway/sway",
+    "cpu": 75,
+    "user": 3,
+    "sys": 72,
+    "runs": 124,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/0:2-events/kworker/0:2-events",
+    "cpu": 17,
+    "user": 0,
+    "sys": 17,
+    "runs": 330,
+    "wait": 4
+   },
+   {
+    "thread": "kworker/0:1-events/kworker/0:1-events",
+    "cpu": 12,
+    "user": 0,
+    "sys": 13,
+    "runs": 242,
+    "wait": 3
+   },
+   {
+    "thread": "kworker/u16:3+events_unbound/kworker/u16:3+events_unbound",
+    "cpu": 11,
+    "user": 0,
+    "sys": 12,
+    "runs": 199,
+    "wait": 0
+   },
+   {
+    "thread": "rcu_preempt/rcu_preempt",
+    "cpu": 4,
+    "user": 0,
+    "sys": 5,
+    "runs": 227,
+    "wait": 0
+   }
+  ],
+  "display": {
+   "seconds": 9,
+   "requests": 3093.8888888888887,
+   "commands": {
+    "RESOURCE_UNREF": 540,
+    "SET_SCANOUT": 59.99999999999999,
+    "RESOURCE_FLUSH": 59.99999999999999,
+    "ATTACH_BACKING": 540,
+    "CTX_ATTACH_RESOURCE": 540.1111111111111,
+    "CTX_DETACH_RESOURCE": 540,
+    "RESOURCE_CREATE_3D": 540.0000000000001,
+    "SUBMIT_3D": 273.7777777777778
+   },
+   "fences": {
+    "n": 746.2222222222222,
+    "meanMs": 1.100546456256603,
+    "maxMs": 5.859999895095825,
+    "heldMs": 11980.711113029056,
+    "behindMs": 7863.033890750673,
+    "fullMs": 669.2161116864946,
+    "heldMax": 16,
+    "toGpuMs": 1.0947112321693946,
+    "toGpuMaxMs": 5.824951171875,
+    "backMs": 0.02008303834825417,
+    "backMaxMs": 1.2900390625
+   },
+   "flushes": 60,
+   "submits": 273.77777777777777,
+   "submitKB": 1437.328125,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 16.814443349838257,
+   "draws": 60,
+   "renderer": {
+    "glTotals": {
+     "0": {
+      "createTexture": [
+       4322,
+       0
+      ],
+      "bindTexture": [
+       4691,
+       0
+      ],
+      "texStorage2D": [
+       4322,
+       0
+      ],
+      "texParameteri": [
+       4691,
+       369
+      ],
+      "bindBuffer": [
+       1920,
+       0
+      ],
+      "bufferSubData": [
+       1920,
+       0
+      ],
+      "bindFramebuffer": [
+       3249,
+       2880
+      ],
+      "framebufferTexture2D": [
+       2880,
+       0
+      ],
+      "disable": [
+       7974,
+       4958
+      ],
+      "colorMask": [
+       3249,
+       3249
+      ],
+      "depthMask": [
+       2880,
+       0
+      ],
+      "stencilMask": [
+       2880,
+       2880
+      ],
+      "clearBufferfv": [
+       2880,
+       0
+      ],
+      "deleteTexture": [
+       4320,
+       0
+      ],
+      "viewport": [
+       369,
+       301
+      ],
+      "useProgram": [
+       369,
+       0
+      ],
+      "bindVertexArray": [
+       369,
+       369
+      ],
+      "activeTexture": [
+       369,
+       301
+      ],
+      "bindSampler": [
+       369,
+       0
+      ],
+      "uniform1i": [
+       369,
+       369
+      ],
+      "uniform4f": [
+       369,
+       369
+      ],
+      "uniform4iv": [
+       369,
+       369
+      ],
+      "drawArrays": [
+       369,
+       0
+      ]
+     },
+     "1": {
+      "bindFramebuffer": [
+       6240,
+       5871
+      ],
+      "framebufferTexture2D": [
+       2400,
+       0
+      ]
+     },
+     "2": {
+      "useProgram": [
+       6240,
+       0
+      ],
+      "uniform4uiv": [
+       12000,
+       10080
+      ],
+      "uniform1f": [
+       6240,
+       6240
+      ],
+      "uniform2f": [
+       6240,
+       6240
+      ],
+      "bindBufferRange": [
+       5760,
+       483
+      ],
+      "viewport": [
+       6240,
+       3428
+      ],
+      "depthRange": [
+       6240,
+       6240
+      ],
+      "enable": [
+       8160,
+       2880
+      ],
+      "scissor": [
+       5280,
+       3360
+      ],
+      "disable": [
+       54240,
+       51976
+      ],
+      "frontFace": [
+       6240,
+       5280
+      ],
+      "colorMask": [
+       6240,
+       6240
+      ],
+      "depthMask": [
+       6240,
+       3360
+      ],
+      "bindVertexArray": [
+       6240,
+       0
+      ],
+      "enableVertexAttribArray": [
+       36480,
+       15840
+      ],
+      "bindBuffer": [
+       36480,
+       34560
+      ],
+      "vertexAttribPointer": [
+       36480,
+       0
+      ],
+      "vertexAttribDivisor": [
+       36480,
+       35520
+      ],
+      "disableVertexAttribArray": [
+       63360,
+       42720
+      ],
+      "activeTexture": [
+       5760,
+       1988
+      ],
+      "bindTexture": [
+       5760,
+       0
+      ],
+      "texParameteri": [
+       11520,
+       7200
+      ],
+      "bindSampler": [
+       5760,
+       4800
+      ],
+      "blendFuncSeparate": [
+       2880,
+       960
+      ],
+      "blendEquationSeparate": [
+       2880,
+       2880
+      ],
+      "blendColor": [
+       2880,
+       2880
+      ]
+     },
+     "3": {
+      "drawArrays": [
+       4320,
+       0
+      ],
+      "bindVertexArray": [
+       6240,
+       0
+      ],
+      "drawArraysInstanced": [
+       1920,
+       0
+      ]
+     }
+    },
+    "drawTimes": {
+     "pre": 27.030011892318726,
+     "state": 1798.7949888706207,
+     "call": 4.885002613067627,
+     "n": 6240
+    },
+    "seconds": 8,
+    "busyMs": 276.10875245928764,
+    "submitMs": 271.688125282526,
+    "drawMs": 11.41500011086464,
+    "presents": 46.125,
+    "glDraws": 780,
+    "commands": 12967.5,
+    "uploadKB": 221.25,
+    "readbacks": 0,
+    "readbackKB": 0,
+    "compileMs": 0,
+    "shareRefreshes": 0,
+    "shareMs": 0,
+    "importBinds": 0,
+    "importMade": 0,
+    "importPictures": 0,
+    "importKB": 0,
+    "importMs": 0,
+    "venusTextures": 0,
+    "programs": 309,
+    "errors": 0,
+    "video": {
+     "frames": 0,
+     "decoded": 0,
+     "dropped": 0,
+     "errors": 0,
+     "latencyMs": 0,
+     "latencyMaxMs": 0,
+     "writeMs": 0,
+     "ahead": 0,
+     "maxWaitMs": 0
+    }
+   },
+   "vm": {
+    "seconds": 8.004214999914169,
+    "Msteps": 134.702044,
+    "irqs": 3394,
+    "exceptions": {
+     "0x0": 1,
+     "0x15": 6932,
+     "0x20": 34,
+     "0x24": 157,
+     "0x25": 9
+    },
+    "tlbMisses": 13949,
+    "tlbFlushes": 327,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 0.160555
+   },
+   "host": {
+    "rendererMs": 1151.25,
+    "gpuMs": 116.3,
+    "allMs": 1277.01,
+    "gpuMcycles": 409.2
+   }
+  },
+  "took": [
+   "2 Using renderer 'GskGLRenderer' for surface 'GdkWaylandToplevel'"
+  ],
+  "stderr": [
+   "2 Using renderer 'GskGLRenderer' for surface 'GdkWaylandToplevel'",
+   "1 Environment variable GSK_RENDERER=gl set, trying GskGLRenderer",
+   "1 (gtk4-demo:1252): Gdk-WARNING **: 03:18:38.896: Cannot get portal org.freedesktop.portal.Inhibit version: GDBus.Error:org.freedesktop.DBus.Error.InvalidArgs: No such interface “org.freedesktop.portal.Inhibit”",
+   "1"
+  ]
+ },
+ "listview_clocks-gl": {
+  "alive": true,
+  "flushes": 1,
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 1,
+    "user": 0,
+    "sys": 0,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 0,
+    "user": 0,
+    "sys": 0,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 0,
+    "user": 0,
+    "sys": 0,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 0,
+    "user": 0,
+    "sys": 0,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 2,
+    "user": 1,
+    "sys": 0,
+    "iowait": 0
+   }
+  ],
+  "processes": [
+   {
+    "process": "gtk4-demo",
+    "cpu": 21,
+    "user": 17,
+    "sys": 3,
+    "threads": 6,
+    "runs": 3,
+    "wait": 0
+   },
+   {
+    "process": "sway",
+    "cpu": 3,
+    "user": 1,
+    "sys": 2,
+    "threads": 4,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "systemd-resolve",
+    "cpu": 2,
+    "user": 1,
+    "sys": 1,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "systemd-userwor",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   },
+   {
+    "process": "systemd-timesyn",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 1,
+    "wait": 0
+   },
+   {
+    "process": "sh",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   },
+   {
+    "process": "kworker/u16:0-events_unbound",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 6,
+    "wait": 0
+   },
+   {
+    "process": "kworker/2:0-events",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 1,
+    "wait": 0
+   },
+   {
+    "process": "kcompactd0",
+    "cpu": 1,
+    "user": 1,
+    "sys": 0,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "gtk4-demo/gtk4-demo",
+    "cpu": 21,
+    "user": 17,
+    "sys": 3,
+    "runs": 3,
+    "wait": 0
+   },
+   {
+    "thread": "sway/sway",
+    "cpu": 3,
+    "user": 0,
+    "sys": 2,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "thread": "systemd-resolve/systemd-resolve",
+    "cpu": 2,
+    "user": 1,
+    "sys": 1,
+    "runs": 2,
+    "wait": 0
+   }
+  ],
+  "display": {
+   "seconds": 9,
+   "requests": 6,
+   "commands": {
+    "SET_SCANOUT": 1.0000000000000002,
+    "RESOURCE_FLUSH": 1.0000000000000002,
+    "SUBMIT_3D": 4.000000000000001
+   },
+   "fences": {
+    "n": 3,
+    "meanMs": 30.851111111817534,
+    "maxMs": 35.920000076293945,
+    "heldMs": 122.70222221480475,
+    "behindMs": 30.145555549197727,
+    "fullMs": 0,
+    "heldMax": 4,
+    "toGpuMs": 30.83667896412037,
+    "toGpuMaxMs": 35.919921875,
+    "backMs": 0.020751953125,
+    "backMaxMs": 0.079833984375
+   },
+   "flushes": 1,
+   "submits": 4,
+   "submitKB": 29.592447916666668,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 0.15888884332444933,
+   "draws": 1,
+   "renderer": {
+    "glTotals": {
+     "0": {
+      "bindBuffer": [
+       28,
+       1
+      ],
+      "bufferSubData": [
+       27,
+       0
+      ],
+      "bindFramebuffer": [
+       18,
+       0
+      ],
+      "framebufferTexture2D": [
+       9,
+       0
+      ],
+      "disable": [
+       72,
+       72
+      ],
+      "colorMask": [
+       18,
+       18
+      ],
+      "depthMask": [
+       9,
+       0
+      ],
+      "stencilMask": [
+       9,
+       9
+      ],
+      "clearBufferfv": [
+       9,
+       0
+      ],
+      "viewport": [
+       9,
+       9
+      ],
+      "useProgram": [
+       9,
+       0
+      ],
+      "bindVertexArray": [
+       9,
+       9
+      ],
+      "activeTexture": [
+       9,
+       9
+      ],
+      "bindTexture": [
+       10,
+       0
+      ],
+      "texParameteri": [
+       9,
+       9
+      ],
+      "bindSampler": [
+       9,
+       0
+      ],
+      "uniform1i": [
+       9,
+       9
+      ],
+      "uniform4f": [
+       9,
+       9
+      ],
+      "uniform4iv": [
+       9,
+       9
+      ],
+      "drawArrays": [
+       9,
+       0
+      ],
+      "pixelStorei": [
+       4,
+       0
+      ],
+      "texSubImage2D": [
+       1,
+       0
+      ]
+     },
+     "1": {
+      "bindFramebuffer": [
+       468,
+       468
+      ],
+      "framebufferTexture2D": [
+       9,
+       0
+      ]
+     },
+     "2": {
+      "useProgram": [
+       468,
+       180
+      ],
+      "uniform4uiv": [
+       936,
+       936
+      ],
+      "uniform1f": [
+       468,
+       468
+      ],
+      "uniform2f": [
+       468,
+       468
+      ],
+      "activeTexture": [
+       108,
+       108
+      ],
+      "bindTexture": [
+       108,
+       91
+      ],
+      "texParameteri": [
+       216,
+       216
+      ],
+      "bindSampler": [
+       108,
+       90
+      ],
+      "bindBufferRange": [
+       459,
+       90
+      ],
+      "viewport": [
+       468,
+       450
+      ],
+      "depthRange": [
+       468,
+       468
+      ],
+      "enable": [
+       918,
+       900
+      ],
+      "scissor": [
+       459,
+       459
+      ],
+      "disable": [
+       3762,
+       3744
+      ],
+      "frontFace": [
+       468,
+       450
+      ],
+      "blendFuncSeparate": [
+       459,
+       459
+      ],
+      "blendEquationSeparate": [
+       459,
+       459
+      ],
+      "colorMask": [
+       468,
+       468
+      ],
+      "blendColor": [
+       459,
+       459
+      ],
+      "depthMask": [
+       468,
+       459
+      ],
+      "bindVertexArray": [
+       468,
+       0
+      ],
+      "enableVertexAttribArray": [
+       2196,
+       1656
+      ],
+      "bindBuffer": [
+       2196,
+       2178
+      ],
+      "vertexAttribPointer": [
+       2196,
+       0
+      ],
+      "vertexAttribDivisor": [
+       2196,
+       2196
+      ],
+      "disableVertexAttribArray": [
+       5292,
+       4752
+      ]
+     },
+     "3": {
+      "drawArraysInstanced": [
+       99,
+       0
+      ],
+      "bindVertexArray": [
+       468,
+       0
+      ],
+      "drawArrays": [
+       369,
+       0
+      ]
+     }
+    },
+    "drawTimes": {
+     "pre": 0.9550025463104248,
+     "state": 277.40499925613403,
+     "call": 0.339998722076416,
+     "n": 468
+    },
+    "seconds": 9,
+    "busyMs": 31.79277780320909,
+    "submitMs": 31.782777786254883,
+    "drawMs": 0.32277774810791016,
+    "presents": 1,
+    "glDraws": 52,
+    "commands": 400.1111111111111,
+    "uploadKB": 20.95269097222222,
+    "readbacks": 0,
+    "readbackKB": 0,
+    "compileMs": 0,
+    "shareRefreshes": 0,
+    "shareMs": 0,
+    "importBinds": 0,
+    "importMade": 0,
+    "importPictures": 0,
+    "importKB": 0,
+    "importMs": 0,
+    "venusTextures": 0,
+    "programs": 313,
+    "errors": 0,
+    "video": {
+     "frames": 0,
+     "decoded": 0,
+     "dropped": 0,
+     "errors": 0,
+     "latencyMs": 0,
+     "latencyMaxMs": 0,
+     "writeMs": 0,
+     "ahead": 0,
+     "maxWaitMs": 0
+    }
+   },
+   "vm": {
+    "seconds": 8.000420000076295,
+    "Msteps": 34.385901,
+    "irqs": 260,
+    "exceptions": {
+     "0x0": 1,
+     "0x15": 1202,
+     "0x20": 34,
+     "0x24": 154,
+     "0x25": 9
+    },
+    "tlbMisses": 4235,
+    "tlbFlushes": 266,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 0.106906
+   },
+   "host": {
+    "rendererMs": 185.44,
+    "gpuMs": 6.84,
+    "allMs": 201.18,
+    "gpuMcycles": 15.4
+   }
+  },
+  "took": [
+   "2 Using renderer 'GskGLRenderer' for surface 'GdkWaylandToplevel'"
+  ],
+  "stderr": [
+   "2 Using renderer 'GskGLRenderer' for surface 'GdkWaylandToplevel'",
+   "1 Environment variable GSK_RENDERER=gl set, trying GskGLRenderer",
+   "1 (gtk4-demo:1415): Gdk-WARNING **: 03:19:11.004: Cannot get portal org.freedesktop.portal.Inhibit version: GDBus.Error:org.freedesktop.DBus.Error.InvalidArgs: No such interface “org.freedesktop.portal.Inhibit”",
+   "1"
+  ]
+ },
+ "warnings": {}
+}

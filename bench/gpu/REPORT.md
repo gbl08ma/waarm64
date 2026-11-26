@@ -393,3 +393,79 @@ set (bench/boot/REPORT.md "PERF loop 20", finding 1). glquery waits on each quer
 and loop 16's numbers stand: the old rule against the new, 3 rounds alternated on the M4 (Chrome for Testing
 157.0.8103.50), waits 0.81 / 0.775 / 0.77 against 0.815 / 0.77 / 0.79 ms, 265.4 / 274.9 / 272.6 against 260.0 /
 271.9 / 268.5 frames/s (`results/perf20/mac-spin-set.json`: `spincount` the old rule, a temporary arm).
+
+## PERF loop 79: a draw's GL calls, counted, and what only the renderer sets kept (2026-11-26)
+
+PERF-HANDOVER.md's row 16: virgl sets the whole GL state at every draw (docs/graphics.md "The renderer": nothing is
+assumed bound, since every guest context draws on one WebGL2 context). The M4 Mac mini (macOS 26.6.2, Metal 4) with
+Chrome for Testing 158.0.8127.88, headless; ANGLE's Metal renderer. Results in `results/perf79/` (the sessions'
+results.json; `counts.py` and `ab.py` read them; `diag.patch` is the counting build).
+
+**The counts** (`diag.patch` on this loop's commit, `?gpu=virgl,glcount`: the GPU worker's WebGL2 context wrapped so
+every call is counted, each state call judged against a shadow of the state it sets; a draw's phases timed). Over
+Firefox's scroll and its five pages (12,209 draws, `ff-count/`): **79 calls before each draw call, 63 of them (80%)
+setting what was already set** (the survey's 60-100 holds). By kind, calls / repeats a draw: the framebuffer 15.0 /
+13.8 (`framebufferRenderbuffer(…, null)` 11.1 / 10.6: the ten points with nothing to attach emptied again; the color
+attachment 1.5 / 0.9; `drawBuffers` 1.1 / 1.1), the vertex attributes 29 / 23 (11.6 of them disabling unused slots),
+the capabilities 10 / 9.3, a view's levels 5.2 / 5.2, the texture units 5.2 / 0.6, samplers 2.6 / 2.1, uniforms 3.2 /
+3.1, the rest (viewport, depth range, front face, masks, blend, depth) ~9 / 6. GTK 4's demos (`gtk-count/`, counted with the framebuffer's cache
+below already in): 42-62 calls a draw past the framebuffer's, 66-97% repeats. Without the counter (`ff-clean/`), a
+Firefox draw costs the GPU worker 76-115 µs, most of it its uploads (30-180 MB/s); its state setting 5.6-8.5 µs.
+
+**What a repeated call costs** (`bench/gpu/state-cost.ts`, no emulator: small textured quads into a framebuffer of
+their own, each preceded by the renderer's calls for a draw, or only those that change something, or all but one
+group's repeats; `state-cost-512.json`, µs a draw to the calls' return / to the GPU's end): all 17.3 / 39.6, only the
+changes 0.25 / 1.43, **all but the framebuffer's 1.60 / 2.15**. The framebuffer's cost is the seven empty color points
+emptied again: those alone add 0.4 µs to the calls but **38 µs to the end**, the same at a 64², 512² and 2048² target
+(`state-cost-64.json`, `-2048.json`): ANGLE takes it as a changed framebuffer, a fixed cost in the GPU process (the
+caller's 17 µs is the command buffer filling). Re-attaching the texture already attached costs 0.3 µs, `drawBuffers`
+0.5. The other groups' repeats, to the calls' return: the vertex attributes 0.68, the capabilities, viewport, blend and
+masks 0.45, the program's uniforms 0.20, a view's unit, levels and sampler 0.07.
+
+**Built** (both kept; `?gpu=noattachcache`, `?gpu=nodrawcache` set everything again, as before):
+1. The attachments of the renderer's two framebuffers and `fbo`'s draw buffers, kept and set only where they differ
+   (`attached`; bindings through `bindFb`, the depth-stencil point both the depth and the stencil ones).
+2. Each sub-context's vertex array (`Sub.vaoState`: enabled bits, each attribute's buffer, pointer and divisor) and each
+   program's uniforms (`Program.set`), likewise. Nothing else changes either, so nothing invalidates them.
+
+Memory: two maps of eleven points, sixteen-entry arrays a sub-context, a program's constants as doubles (well under
+1 MiB for a desktop session's programs).
+
+**The A/B on the Mac** (booted sessions: `pages.waarm64snap` restores with 3D off on the Mac's real renderer, its caps
+being SwiftShader's; each pass alternated which arm went first). gtk4-demo (`bench/gpu/gtk4-load.ts`, WARM_S 10,
+PHASE_S 8; the GPU process's CPU from `bench/procstat.ts`'s new `gpu` set), first the framebuffer's cache against none
+(`gtk-a-*`), then the arrays' and uniforms' added against the framebuffer's alone (`gtk-b-*`), two rounds each:
+
+| | none | framebuffer's | + arrays', uniforms' |
+|---|---|---|---|
+| iconscroll: the GPU process, ms a second | 477 / 507 | 222 / 207 | 232 / 229 (b: attach 235 / 232) |
+| iconscroll: the GPU worker, µs a draw | 22.1 / 18.4 | 12.4 / 7.7 | 6.8 / 7.1 (b: 7.6 / 7.3) |
+| iconscroll: draws a second | 13,982 / 14,795 | 16,611 / 15,291 | 18,062 / 17,488 (b: 17,470 / 17,635) |
+| gears: the GPU worker, µs a draw | 3.4 / 3.4 | 3.0 / 3.0 | 2.6 / 2.6 (b: 3.0 / 3.1) |
+| mask: the GPU process, ms a second | 155 / 147 | 140 / 133 | 134 / 130 (b: 138 / 135) |
+| frames: the GPU worker, µs a draw | 65.3 / 62.4 | 61.7 / 60.2 | 60.2 / 59.4 (b: 61.5 / 63.5) |
+
+fishbowl (it adds fish while it keeps up) drew 2,098 / 475 draws a second with none and 7,639 / 1,316 with the
+framebuffer's cache, but its rounds vary 4× (shader compiles inside the phase): a hint, not a measure. Firefox's
+scroll and pages (`bench/gpu/firefox-load.ts`, PHASES=scroll,pages, PHASE_S 5; both caches against none, three rounds,
+`ff-base-*`, `ff-both-*`): the GPU process 86.5 / 96.6 / 86.5 → 81.5 / 90.2 / 80.5 ms a second on wiki, 89.3 / 96.1 /
+94.0 → 83.8 / 87.6 / 88.2 on github, 98.0 / 90.7 / 91.4 → 83.9 / 84.5 / 89.6 on bbc (5-8%; mdn's, hn's and the
+scroll's overlap); the worker's time a draw, the frame rates (60) and the pages' starts unchanged within the rounds'
+spread (its draws are few, 130-500 a second, and their uploads are what they cost).
+
+**Not built: a shadow of the rest** (the capabilities, viewport, blend, masks, depth and stencil, texture units, a
+view's levels, samplers, uniform buffers). Its repeats are ~0.5 µs a draw of the worker's calls (above) and ~0.1 µs of
+the GPU process's: 15-20% of gears' 2.6 µs a draw, ~7% of iconscroll's, under 1% of a Firefox draw's; in none of them
+is the worker the bound (gears and iconscroll run at the compositor's rate or the guest's, the worker 4-13% busy). Unlike
+what was built, that state is global: the blits, clears, copies, uploads, read-backs, snapshots, the video paths and
+the screen (`web/virgl-screen.ts`) set it too (~110 call sites), and each would have to invalidate the shadow. Left
+as a finding.
+
+Tests (tests/virgl.test.ts): sway's, glcomp's and three dEQP traces replayed with the caches and without, the
+framebuffers every draw, clear, blit and read sees (GLES 3.0's model of their state) and every draw's vertex array and
+uniforms the same, with far fewer calls; and two command streams of their own (targets of other levels, layers and
+depth points with a blit and a snapshot between; draws of other buffers, strides, offsets, divisors and contexts).
+Planted and caught: the depth-stencil point as one, the level or the layer left out of an attachment's comparison,
+the draw buffers kept on other framebuffers, an attribute's buffer, stride, offset or divisor left out of the
+comparison, its enabled bit taken as set, one array's state for every sub-context, the constants compared by their
+first vector, a scalar uniform kept by name alone.

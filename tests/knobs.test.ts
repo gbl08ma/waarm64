@@ -14,7 +14,7 @@ function oldGpuInit(params: URLSearchParams, shaderMiB?: number) {
   const knobNumber = (prefix: string) => { const v = knob(prefix); return v === undefined ? undefined : Number(v); };
   const knobList = (prefix: string) => knobs(prefix).flatMap((k) => k.split(/[+ ]/)).filter(Boolean);
   return {
-    stats: params.has('displaystats'), debug: gpuKnobs.includes('debug'), checkPrograms: gpuKnobs.includes('checkprograms'), probe: params.has('avprobe'), video: !gpuKnobs.includes('novideo'),
+    stats: params.has('displaystats'), debug: gpuKnobs.includes('debug'), checkPrograms: gpuKnobs.includes('checkprograms'), noAttachCache: gpuKnobs.includes('noattachcache'), noDrawCache: gpuKnobs.includes('nodrawcache'), probe: params.has('avprobe'), video: !gpuKnobs.includes('novideo'),
     softwareVideo: gpuKnobs.includes('swvideo'), waitAttached: gpuKnobs.includes('waitattached'),
     vkShare: (['readback', 'canvas', 'bitmap'] as const).find((w) => gpuKnobs.includes(`vk${w}`)), vkBreak: knobs('vkbreak='), vkVendor: knob('vkvendor='),
     vkPoll: gpuKnobs.includes('vkpoll=timeout') ? 'timeout' : gpuKnobs.includes('vkpoll=pump') ? 'pump' : undefined,
@@ -57,7 +57,7 @@ const QUERIES = [
   'gpu=vkpoll=pump', 'gpu=vkpipelines=sync', 'gpu=vkpipedelay=200', 'gpu=vkcache=off', 'gpu=vkimport=rewrite', 'gpu=vkpremake=on', 'gpu=vkqueues=2',
   'gpu=vknudge=0', 'gpu=vkgputime', 'gpu=vktick=3', 'gpu=vkidle=40', 'gpu=vkhold=float32-filterable,vkhold=bgra8unorm-storage', 'gpu=vkformats=held',
   'gpu=vkycbcr=off', 'gpu=vkycbcr', 'gpu=vkl9=bindgroups,pad', 'gpu=vkl9=all', 'gpu=vkskip=a,vkskip=b', 'gpu=capsno=B8G8R8A8_UNORM+R8_UNORM',
-  'gpu=virgl,capsno=A capsno=B', 'gpu=capsyes=1+2,capsyes=3', 'gpu=querypoll=spin', 'displaystats', 'displaystats&gpu=virgl', 'avprobe&snd=',
+  'gpu=virgl,capsno=A capsno=B', 'gpu=capsyes=1+2,capsyes=3', 'gpu=querypoll=spin', 'gpu=virgl,noattachcache', 'gpu=nodrawcache,virgl', 'displaystats', 'displaystats&gpu=virgl', 'avprobe&snd=',
   'snd=stats', 'snd=stats,timer', 'snd=', 'jit=nocw', 'jit=other', 'fma=emul', 'growcore', 'vyield=0', 'vyield=2', 'sharesasync=Host',
   'sharesasync=a,b', 'iostats', 'diskcache=0', 'diskcache=1', 'ready=guest', 'ready=serial', 'agentstub', 'gpu=1', 'gpu=verify', 'gpu=vk',
 ];

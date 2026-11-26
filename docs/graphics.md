@@ -90,8 +90,9 @@ gfxstream driver is Vulkan only.
   `virgl-null` (the null renderer: streams walked and counted, nothing drawn, fences at once), `nopace` and `q<N>`
   (the flush pacing and the queue size, for measurements), `novideo`, `swvideo`, `waitattached` (the call queue's old,
   coarser wait: a context waits while it has any pending picture's plane attached; A/B), `debug` (the renderer's trace),
-  `checkprograms` (every part of a draw's program key read again at each draw, a stale kept one refusing the draw) and
-  `capture` (devices.md "Captures"), comma-separated; `?displaystats` turns on the display's counters (commands by
+  `checkprograms` (every part of a draw's program key read again at each draw, a stale kept one refusing the draw),
+  `noattachcache` and `nodrawcache` (every framebuffer attachment, vertex array and uniform set again at each use: "The
+  renderer") and `capture` (devices.md "Captures"), comma-separated; `?displaystats` turns on the display's counters (commands by
   type, fences' round trip and each hop, replies held) and the renderer's; `?display=simple` gives a gpu machine the
   simple framebuffer instead.
 
@@ -404,7 +405,22 @@ contexts with sub-contexts that own the objects (shaders, blend, rasterizer and 
 elements, sampler views and states, surfaces, queries, stream-output targets), resources attached to the contexts
 that use them (a resource the guest unrefs lives until the last context lets go). **Every guest context draws on the
 one WebGL2 context** (WebGL contexts share no objects, where virglrenderer gives each guest context a GL context in one
-share group), so the GL state is set from the sub-context at every draw and nothing is assumed bound between draws.
+share group), so the GL state is set from the sub-context at every draw and nothing is assumed bound between draws,
+except what only the draws and the renderer's own two framebuffers hold, which is kept and set only where it differs:
+- **the attachments of `fbo` and `readFbo` and `fbo`'s draw buffers** (`attached`: every binding of the renderer's goes
+  through `bindFb`, every attachment through `attachTo`, every draw buffer through `setDrawBuffers`; the depth-stencil
+  point is the depth and the stencil points both). A draw sets all eleven points, most to what they were, and ANGLE on
+  Metal takes an empty point emptied again as a change of the framebuffer: ~38 µs of the GPU process a draw, whatever
+  the target's size (`bench/gpu/state-cost.ts`), where the rest of a draw's repeated calls cost it ~0.7 µs;
+- **each sub-context's vertex array** (`Sub.vaoState`: the attributes enabled, each one's buffer, pointer and divisor;
+  nothing else binds a sub-context's array) and **each program's uniforms** (`Program.set`: the constants and the
+  system values; a uniform's value is its program's, and only the draws set them).
+
+The rest (the capabilities, viewport, depth range, blend, masks, depth and stencil, the texture units, a view's levels,
+samplers, uniform buffers) is still set at every draw: the blits, clears, uploads, read-backs, snapshots and the screen
+set it too, and its repeats cost the GPU worker ~0.5 µs a draw on the M4 ("Measurements"; bench/gpu/REPORT.md "PERF loop 79"). `?gpu=noattachcache`
+and `?gpu=nodrawcache` set everything again (tests compare the two ways: the state every draw, clear, blit and read
+sees is the same).
 Programs come from the translator, made at the first draw that needs a (shader pair, draw state) and kept with the
 shaders until either shader object is destroyed (`forgetShader`; a new object of the same text is another shader, so
 before this the cache only grew: every Qt Quick or Firefox process of a desktop session left its programs behind).
@@ -1227,6 +1243,16 @@ compiles: in every steady phase measured (Firefox's scrolls, WebGL, real pages; 
 nothing, and Firefox's start compiles 96 programs, ~0.2 s of a 32 s start: **no program cache across sessions or
 `KHR_parallel_shader_compile` is needed**.
 
+**A draw's GL calls** (PERF loop 79, the M4 with Chrome 158; `bench/gpu/results/perf79/`): before the caches above,
+Firefox's draws (its scrolling and five real pages) made 79 WebGL calls before each draw, 63 of them setting what was
+already set: 14 the framebuffer's points and draw buffers, 23 the vertex attributes, 9 the capabilities, 5 a view's
+levels, 3 the uniforms, the rest viewport, depth range, masks, samplers and blend. GTK 4's GL demos made 42-62 a
+draw past the framebuffer's, 66-97% repeats. The framebuffer's cache took the GPU process's time in gtk4-demo's
+iconscroll from ~490 to ~215 ms a second and the GPU worker's from ~20 to ~10 µs a draw; the vertex arrays' and
+uniforms' took gears' worker time from 3.0 to 2.6 µs a draw. Firefox's draws cost the worker 75-115 µs each, most of
+it their uploads (30-180 MB/s): there the two took 5-8% off the GPU process on three of five pages, and the worker's
+time a draw didn't move past the rounds' spread.
+
 **Firefox's churn and the held replies** (`bench/gpu/results/firefox-churn/`): the device holds every reply behind a
 fenced one (QEMU holds only the fenced reply). On the Mac's GPU a fence's round trip is 0.5–0.7 ms on average, the
 unfenced replies held only behind a fenced one add 26–52 ms a second, and the guest's control queue is full for
@@ -1270,6 +1296,13 @@ Worth not re-discovering:
   the derivate loops (34), switch's dynamic cases (32, FRC above) and mediump `atan2` (8, a recovered program refused).
   And invariance (6 a list, stores made opaque above). Not ANGLE's and not explained: one `draw_buffers_indexed.random`
   case.
+- **A redundant WebGL call costs the GPU worker ~0.03-0.05 µs on the M4, but not every one is that cheap in the GPU
+  process**: `framebufferRenderbuffer(…, null)` on a point that is already empty makes ANGLE on Metal treat the
+  framebuffer as changed, ~38 µs of the GPU process at the next draw whatever the target's size, where re-attaching
+  the texture already attached costs 0.3 µs and a draw's other repeated calls together 0.7 µs (PERF loop 79,
+  `bench/gpu/state-cost.ts`: small quads into a framebuffer of their own, each draw preceded by the renderer's calls or
+  only those that change something). Measure a call's cost to the GPU's end, not only to the call's return: a WebGL
+  call's work in the GPU process shows in the caller only when the command buffer fills.
 - Headed and headless Chromium on the Mac give the same frame rates (no headless throttling).
 - **Headless WebGPU in the dev VM** needs `--enable-unsafe-webgpu` and, to present from a worker's `OffscreenCanvas`,
   `--enable-features=Vulkan --use-angle=swiftshader --use-gl=angle`; WebGPU's `writeBuffer`/`writeTexture` and WebGL's
@@ -1352,3 +1385,7 @@ reasons. A validation run, so other work may run beside it.
   presented video and animation frames each second with the host's video and fence numbers), `filter-probe.ts`; `sway-mac.sh` runs any of them on the Mac
   host's GPU (`SCRIPT=`; `HEADED=1` only when the user isn't using the Mac). `PROFILE=1` samples every vCPU's PC and
   symbolizes the guest kernel's in the guest (benchmarking.md "PC sampling").
+- **WebGL calls' cost** without the emulator: `bench/gpu/state-cost.ts` (a draw's calls, all of them or only the
+  changes or all but one group's repeats, timed to the calls' return and to the GPU's end; run on the Mac through
+  `sway-mac.sh`'s copy, as `filter-probe.ts`). A guest session's phases carry the GPU process's CPU (`host`:
+  `bench/procstat.ts`'s `gpu`), where the browser's share of the WebGL calls is.

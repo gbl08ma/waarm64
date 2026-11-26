@@ -1,0 +1,413 @@
+--- a/web/virgl-renderer.ts
++++ b/web/virgl-renderer.ts
+@@ -3153,7 +3153,36 @@
+     };
+   }
+ 
++  /** PERF loop 79's diagnostic: the GL counter's phase (web/gl-count.ts), and a draw's times by part (ms). */
++  glPhase?: (p: number) => void;
++  drawTimes = { pre: 0, state: 0, call: 0, n: 0, t0: 0, t1: 0, mark: 0 };
+   private draw(c: Ctx, p: Uint32Array) {
++    const dt = this.drawTimes;
++    dt.t0 = dt.t1 = performance.now();
++    dt.mark = 1;
++    this.glPhase?.(1);
++    try {
++      this.drawInner(c, p);
++    } finally {
++      this.glPhase?.(0);
++      const t = performance.now();
++      if (dt.mark === 1) dt.pre += t - dt.t0;
++      else if (dt.mark === 2) dt.state += t - dt.t1;
++      else dt.call += t - dt.t1;
++      dt.n++;
++    }
++  }
++  /** At a draw's phase `p` (2: its state setting from the program on; 3: the draw calls). */
++  private drawMark(p: number) {
++    const dt = this.drawTimes;
++    const t = performance.now();
++    if (p === 2) dt.pre += t - dt.t0;
++    else dt.state += t - dt.t1;
++    dt.t1 = t;
++    dt.mark = p;
++    this.glPhase?.(p);
++  }
++  private drawInner(c: Ctx, p: Uint32Array) {
+     if (p.length !== 12 && p.length !== 14 && p.length !== 20) throw new Error('bad DRAW_VBO');
+     if (p.length === 20 && p[14]) return this.error("indirect draws aren't supported");
+     const gl = this.gl;
+@@ -3206,6 +3235,7 @@
+     const key = state.key;
+     const prog = this.program(vs, fs, state);
+     if (!prog) return;
++    this.drawMark(2);
+     gl.useProgram(prog.prog);
+     // Uniforms: constant buffer 0 and the system values; a value the program's uniform already has isn't set again
+     // (`Program.set`).
+@@ -3527,6 +3557,7 @@
+         if (va) va.divisor[k] = e.divisor;
+       }
+     }
++    this.drawMark(3);
+     const prim = PRIM[mode];
+     this.stats.draws++;
+     this.countQueries(c.sub);
+--- a/web/gpu-worker.ts
++++ b/web/gpu-worker.ts
+@@ -4,6 +4,7 @@
+ // it runs the device's calls (web/virgl-host.ts) in order: the renderer's (web/virgl-renderer.ts) and the screen's
+ // (web/virgl-screen.ts), and answers fences once everything before them has run. With video, what follows a
+ // picture waits until the picture is decoded (web/virgl-host.ts `CallQueue`).
++import { countingGl } from './gl-count.ts';
+ import { capsFromGl, withBits, withVideo, withoutFormats } from './virgl-caps.ts';
+ import {
+   CallQueue,
+@@ -68,7 +69,7 @@
+   const knobs: GpuWorkerKnobs = e.data;
+   const { canvas, port, stats, debug, probe, video, softwareVideo, waitAttached, capsNo, capsYes, queryPoll } = e.data;
+   const post = (m: FromGpuWorker) => (self as unknown as Worker).postMessage(m);
+-  const gl = canvas.getContext('webgl2', {
++  const gl0 = canvas.getContext('webgl2', {
+     alpha: false,
+     antialias: false,
+     depth: false,
+@@ -77,10 +78,13 @@
+     preserveDrawingBuffer: false,
+     powerPreference: 'high-performance',
+   });
+-  if (!gl) {
++  if (!gl0) {
+     post({ type: 'failed', reason: 'this browser has no WebGL2 here' });
+     return;
+   }
++  const counter = knobs.glCount ? countingGl(gl0) : undefined;
++  glCounter = counter;
++  const gl = counter?.gl ?? gl0;
+   // A lost context (the GPU process gone, the device reset) takes every renderer object with it: 3D stops, the machine
+   // doesn't. The device turns 3D off (web/gpu.ts `hostLost`: no new contexts, a snapshot without the renderer's state),
+   // the page says so, and from here on `run` answers fences, reads and snapshots' questions and drops virgl's calls.
+@@ -112,6 +116,7 @@
+     noAttachCache: knobs.noAttachCache,
+     noDrawCache: knobs.noDrawCache,
+   });
++  if (counter) renderer.glPhase = counter.phase;
+   const screen = new Screen(gl, renderer);
+   snapshotBytes = () => renderer.snapshotBytes();
+   grab = (id) => {
+@@ -521,6 +526,7 @@
+   ready({ venus, adapter: vkAdapter, share, imports });
+ }
+ 
++let glCounter: ReturnType<typeof countingGl> | undefined;
+ /** `render-stats` once a second (`?displaystats`, bench/gpu): what the renderer did in the second and the time it took. */
+ function postRenderStats(
+   post: (m: FromGpuWorker) => void,
+@@ -540,6 +546,7 @@
+   vulkan: () => { share?: VenusShare; imports?: VenusImport; venus?: VenusRenderer },
+ ) {
+   let last = { ...renderer.stats };
++  let lastDraw = { ...renderer.drawTimes };
+   let lastShare = { refreshes: 0, ms: 0 };
+   let lastImport = { binds: 0, made: 0, pictures: 0, bytes: 0, ms: 0 };
+   let lastTextures = 0;
+@@ -549,6 +556,13 @@
+     const s = renderer.stats;
+     post({
+       type: 'render-stats',
++      gl: glCounter?.take(),
++      drawTimes: {
++        pre: renderer.drawTimes.pre - lastDraw.pre,
++        state: renderer.drawTimes.state - lastDraw.state,
++        call: renderer.drawTimes.call - lastDraw.call,
++        n: renderer.drawTimes.n - lastDraw.n,
++      },
+       submits: s.submits - last.submits,
+       draws: s.draws - last.draws,
+       commands: s.commands - last.commands,
+@@ -602,6 +616,7 @@
+     queue.maxWaitMs = 0;
+     renderer.videoStats.latencyMaxMs = 0;
+     last = { ...s };
++    lastDraw = { ...renderer.drawTimes };
+     lastShare = { refreshes: share?.stats.refreshes ?? 0, ms: share?.stats.ms ?? 0 };
+     lastImport = { ...(imports?.stats ?? lastImport) };
+     lastTextures = venus?.gpu.stats.textures ?? 0;
+--- a/web/gpu-knobs.ts
++++ b/web/gpu-knobs.ts
+@@ -17,6 +17,8 @@
+   noAttachCache?: boolean;
+   /** `?gpu=nodrawcache`: the renderer sets a draw's vertex arrays and uniforms again at each draw (web/virgl-renderer.ts `Sub.vaoState`; PERF loop 79's A/B). */
+   noDrawCache?: boolean;
++  /** PERF loop 79's diagnostic: `?gpu=glcount` counts the renderer's GL calls (web/gl-count.ts). */
++  glCount?: boolean;
+   /** `?avprobe`: `flash` when a present turns the screen's centre bright (bench/audio/avsync.ts). */
+   probe?: boolean;
+   /** Advertise the browser's video decoders and decode with them (docs/graphics.md "Video"; the page's default, `?gpu=novideo` turns it off). */
+@@ -95,6 +97,7 @@
+     stats: query.has('displaystats'),
+     debug: list.includes('debug'),
+     checkPrograms: list.includes('checkprograms'),
++    glCount: list.includes('glcount'),
+     noAttachCache: list.includes('noattachcache'),
+     noDrawCache: list.includes('nodrawcache'),
+     probe: query.has('avprobe'),
+--- a/web/gpu-messages.ts
++++ b/web/gpu-messages.ts
+@@ -65,6 +65,8 @@
+ /** With `stats`, once a second: what the renderer did and the time it took (bench/gpu, `?displaystats`). */
+ export type RenderStats = {
+   type: 'render-stats';
++  gl?: unknown;
++  drawTimes?: { pre: number; state: number; call: number; n: number };
+   submits: number;
+   draws: number;
+   commands: number;
+--- a/bench/gpu/guest-session.ts
++++ b/bench/gpu/guest-session.ts
+@@ -314,7 +314,14 @@
+         // The submits with a pass: their share and their ms to done (the others are fences' and uploads' alone).
+         withPass: ssum('workDone') / Math.max(1, ssum('done')), withPassDoneMs: ssum('workDone') ? ssum('workDoneMs') / ssum('workDone') : undefined,
+         withPassDoneMsBySecond: steady.map((x) => +((x.workDoneMs ?? 0) / Math.max(1, x.workDone ?? 0)).toFixed(3)) }))(Math.max(1, ssum('submits'))) } : undefined;
+-    const renderer = r.length ? { seconds: r.length, busyMs: rper('busyMs'), submitMs: rper('submitMs'), drawMs: rper('drawMs'), presents: rper('presents'), glDraws: rper('draws'), commands: rper('commands'), uploadKB: rper('uploadBytes') / 1024, readbacks: rper('readbacks'), readbackKB: rper('readbackBytes') / 1024, compileMs: rper('compileMs'), shareRefreshes: rper('shareRefreshes'), shareMs: rper('shareMs'), importBinds: rper('importBinds'), importMade: rper('importMade'), importPictures: rper('importPictures'), importKB: rper('importBytes') / 1024, importMs: rper('importMs'), venusTextures: rper('venusTextures'), programs: r.at(-1)!.programs, errors: r.at(-1)!.errors, ...(video ? { video } : {}), ...(venus ? { venus } : {}) } : undefined;
++    // PERF loop 79's diagnostic: GL calls by phase and name, [all, repeats], and a draw's times by part, totals over the span.
++    const glTotals: Record<string, Record<string, [number, number]>> = {};
++    const drawTimes = { pre: 0, state: 0, call: 0, n: 0 };
++    for (const x of r as unknown as { gl?: Record<string, Record<string, [number, number]>>; drawTimes?: typeof drawTimes }[]) {
++      for (const [ph, t] of Object.entries(x.gl ?? {})) for (const [k, [n, same]] of Object.entries(t)) { const c = ((glTotals[ph] ??= {})[k] ??= [0, 0]); c[0] += n; c[1] += same; }
++      if (x.drawTimes) for (const k of ['pre', 'state', 'call', 'n'] as const) drawTimes[k] += x.drawTimes[k];
++    }
++    const renderer = r.length ? { glTotals, drawTimes, seconds: r.length, busyMs: rper('busyMs'), submitMs: rper('submitMs'), drawMs: rper('drawMs'), presents: rper('presents'), glDraws: rper('draws'), commands: rper('commands'), uploadKB: rper('uploadBytes') / 1024, readbacks: rper('readbacks'), readbackKB: rper('readbackBytes') / 1024, compileMs: rper('compileMs'), shareRefreshes: rper('shareRefreshes'), shareMs: rper('shareMs'), importBinds: rper('importBinds'), importMade: rper('importMade'), importPictures: rper('importPictures'), importKB: rper('importBytes') / 1024, importMs: rper('importMs'), venusTextures: rper('venusTextures'), programs: r.at(-1)!.programs, errors: r.at(-1)!.errors, ...(video ? { video } : {}), ...(venus ? { venus } : {}) } : undefined;
+     const commands: Record<string, number> = {};
+     for (const x of s) for (const [k, n] of Object.entries(x.busy.commands ?? {})) commands[COMMANDS[k] ?? k] = (commands[COMMANDS[k] ?? k] ?? 0) + n / Math.max(1, s.length);
+     // Fenced replies a second, the mean and longest wait for the host; every held reply's time held (ms a second).
+--- /dev/null
++++ b/web/gl-count.ts
+@@ -0,0 +1,227 @@
++// PERF loop 79's diagnostic (not committed: bench/gpu/results/perf79/diag.patch): a WebGL2 context wrapped so every
++// call is counted by name, and each state-setting call is judged against a shadow of the state it sets: a call that
++// sets what is already set (the same value to the same target) is a repeat. Calls made inside a draw's state setting
++// (`glPhase(1)`) are counted apart from the rest.
++const ids = new WeakMap<object, number>();
++let nextId = 1;
++const id = (o: unknown) => {
++  if (o === null || o === undefined) return 0;
++  if (typeof o !== 'object') return String(o);
++  let n = ids.get(o as object);
++  if (!n) ids.set(o as object, (n = nextId++));
++  return n;
++};
++const val = (args: unknown[], from = 0) => {
++  let s = '';
++  for (let k = from; k < args.length; k++) {
++    const a = args[k];
++    if (a && typeof a === 'object' && 'length' in (a as object) && typeof (a as ArrayLike<number>).length === 'number')
++      s += `[${Array.prototype.join.call(a as ArrayLike<number>, ',')}]`;
++    else if (a && typeof a === 'object') s += `#${id(a)}`;
++    else s += String(a);
++    s += ';';
++  }
++  return s;
++};
++
++/** By phase (0 outside draws; 1 a draw's set-up before its program; 2 its state setting; 3 its draw calls): calls by name, [all, repeats]. */
++export type GlCounts = Record<number, Record<string, [number, number]>>;
++
++const E = WebGL2RenderingContext;
++
++export function countingGl(gl: WebGL2RenderingContext): { gl: WebGL2RenderingContext; take: () => GlCounts; phase: (p: number) => void } {
++  const state = new Map<string, string>();
++  let unit = 0;
++  let vao: unknown = 0;
++  let program: unknown = 0;
++  let drawFb: unknown = 0;
++  let readFb: unknown = 0;
++  let arrayBuf: unknown = 0;
++  const bound = new Map<string, unknown>(); // `${unit}:${target}` -> texture
++  let inPhase = 0;
++  let counts: GlCounts = { 0: {}, 1: {}, 2: {}, 3: {} };
++  /** Sets `key` to `v`; true if it already was. */
++  const set = (key: string, v: string) => {
++    const same = state.get(key) === v;
++    state.set(key, v);
++    return same;
++  };
++  const invalidate = (prefix: string) => {
++    for (const k of state.keys()) if (k.startsWith(prefix)) state.delete(k);
++  };
++  /** Judges a call: true (a repeat), false (a change), undefined (not a state call). */
++  const judge = (name: string, a: unknown[]): boolean | undefined => {
++    switch (name) {
++      case 'enable':
++      case 'disable': {
++        const on = name === 'enable' ? '1' : '0';
++        if (a[0] === E.BLEND) invalidate('blendi:');
++        return set(`cap:${a[0]}`, on);
++      }
++      case 'enableiOES':
++      case 'disableiOES':
++        state.delete(`cap:${a[0]}`);
++        return set(`blendi:${a[1]}`, name === 'enableiOES' ? '1' : '0');
++      case 'colorMask':
++      case 'blendFuncSeparate':
++      case 'blendEquationSeparate':
++      case 'blendFunc':
++      case 'blendEquation':
++        invalidate(`${name}i:`);
++        return set(name, val(a));
++      case 'colorMaskiOES':
++      case 'blendFuncSeparateiOES':
++      case 'blendEquationSeparateiOES': {
++        const base = name.slice(0, -4);
++        state.delete(base);
++        return set(`${base}i:${a[0]}`, val(a, 1));
++      }
++      case 'viewport':
++      case 'scissor':
++      case 'depthRange':
++      case 'frontFace':
++      case 'cullFace':
++      case 'polygonOffset':
++      case 'blendColor':
++      case 'depthFunc':
++      case 'depthMask':
++      case 'sampleCoverage':
++      case 'clearColor':
++      case 'clearDepth':
++      case 'clearStencil':
++      case 'lineWidth':
++      case 'clipControlEXT':
++        return set(name, val(a));
++      case 'stencilMask':
++        return [set('stencilMaskSeparate:1028', val(a)), set('stencilMaskSeparate:1029', val(a))].every((x) => x);
++      case 'stencilFuncSeparate':
++      case 'stencilOpSeparate':
++      case 'stencilMaskSeparate': {
++        const faces = a[0] === E.FRONT_AND_BACK ? [E.FRONT, E.BACK] : [a[0]];
++        return faces.map((f) => set(`${name}:${f}`, val(a, 1))).every((x) => x);
++      }
++      case 'pixelStorei':
++        return set(`ps:${a[0]}`, val(a, 1));
++      case 'useProgram':
++        program = a[0];
++        return set('program', `${id(a[0])}`);
++      case 'activeTexture':
++        unit = a[0] as number;
++        return set('unit', `${unit}`);
++      case 'bindTexture':
++        bound.set(`${unit}:${a[0]}`, a[1]);
++        return set(`tex:${unit}:${a[0]}`, `${id(a[1])}`);
++      case 'bindSampler':
++        return set(`smp:${a[0]}`, `${id(a[1])}`);
++      case 'texParameteri':
++      case 'texParameterf':
++        return set(`tp:${id(bound.get(`${unit}:${a[0]}`))}:${a[1]}`, val(a, 2));
++      case 'samplerParameteri':
++      case 'samplerParameterf':
++        return set(`sp:${id(a[0])}:${a[1]}`, val(a, 2));
++      case 'bindBuffer':
++        if (a[0] === E.ARRAY_BUFFER) arrayBuf = a[1];
++        if (a[0] === E.ELEMENT_ARRAY_BUFFER) return set(`eab:${id(vao)}`, `${id(a[1])}`);
++        return set(`buf:${a[0]}`, `${id(a[1])}`);
++      case 'bindBufferBase':
++      case 'bindBufferRange':
++        state.delete(`buf:${a[0]}`);
++        return set(`bb:${a[0]}:${a[1]}`, `${id(a[2])};${name === 'bindBufferRange' ? val(a, 3) : 'all'}`);
++      case 'bindVertexArray':
++        vao = a[0] ?? 0;
++        return set('vao', `${id(a[0])}`);
++      case 'enableVertexAttribArray':
++      case 'disableVertexAttribArray':
++        return set(`va:${id(vao)}:${a[0]}:en`, name === 'enableVertexAttribArray' ? '1' : '0');
++      case 'vertexAttribPointer':
++      case 'vertexAttribIPointer':
++        return set(`va:${id(vao)}:${a[0]}:ptr`, `${name};${id(arrayBuf)};${val(a, 1)}`);
++      case 'vertexAttribDivisor':
++        return set(`va:${id(vao)}:${a[0]}:div`, val(a, 1));
++      case 'vertexAttrib4f':
++      case 'vertexAttribI4i':
++      case 'vertexAttribI4ui':
++        return set(`vac:${a[0]}`, `${name};${val(a, 1)}`);
++      case 'bindFramebuffer': {
++        const t = a[0];
++        if (t === E.FRAMEBUFFER || t === E.DRAW_FRAMEBUFFER) drawFb = a[1] ?? 0;
++        if (t === E.FRAMEBUFFER || t === E.READ_FRAMEBUFFER) readFb = a[1] ?? 0;
++        if (t === E.FRAMEBUFFER) return [set('fb:draw', `${id(a[1])}`), set('fb:read', `${id(a[1])}`)].every((x) => x);
++        return set(t === E.DRAW_FRAMEBUFFER ? 'fb:draw' : 'fb:read', `${id(a[1])}`);
++      }
++      case 'framebufferTexture2D':
++      case 'framebufferTextureLayer':
++      case 'framebufferRenderbuffer': {
++        const fb = a[0] === E.READ_FRAMEBUFFER ? readFb : drawFb;
++        return set(`fba:${id(fb)}:${a[1]}`, `${name};${val(a, 2)}`);
++      }
++      case 'drawBuffers':
++        return set(`db:${id(drawFb)}`, val(a));
++      case 'readBuffer':
++        return set(`rb:${id(readFb)}`, val(a));
++      case 'bindRenderbuffer':
++        return set('rbo', `${id(a[1])}`);
++    }
++    if (name.startsWith('uniform') && !name.startsWith('uniformBlock')) {
++      const v = name.startsWith('uniformMatrix') ? val(a, 1) : val(a, 1);
++      return set(`u:${id(program)}:${id(a[0])}`, `${name};${v}`);
++    }
++    return undefined;
++  };
++  const tally = (name: string, same: boolean | undefined) => {
++    const t = counts[inPhase];
++    const c = (t[name] ??= [0, 0]);
++    c[0]++;
++    if (same) c[1]++;
++  };
++  const wrapped = new Map<PropertyKey, unknown>();
++  const wrapExt = (ext: object) =>
++    new Proxy(ext, {
++      get(target, p) {
++        const f = Reflect.get(target, p);
++        if (typeof f !== 'function') return f;
++        const name = String(p);
++        return (...args: unknown[]) => {
++          tally(name, judge(name, args));
++          return f.apply(target, args);
++        };
++      },
++    });
++  const extCache = new Map<string, unknown>();
++  const proxy = new Proxy(gl, {
++    get(target, p) {
++      const f = Reflect.get(target, p);
++      if (typeof f !== 'function') return f;
++      let w = wrapped.get(p);
++      if (!w) {
++        const name = String(p);
++        if (name === 'getExtension')
++          w = (n: string) => {
++            if (extCache.has(n)) return extCache.get(n);
++            const e = f.call(target, n);
++            const x = e && (n === 'OES_draw_buffers_indexed' || n === 'EXT_clip_control') ? wrapExt(e) : e;
++            extCache.set(n, x);
++            return x;
++          };
++        else
++          w = (...args: unknown[]) => {
++            tally(name, judge(name, args));
++            return f.apply(target, args);
++          };
++        wrapped.set(p, w);
++      }
++      return w;
++    },
++  });
++  return {
++    gl: proxy,
++    take: () => {
++      const c = counts;
++      counts = { 0: {}, 1: {}, 2: {}, 3: {} };
++      return c;
++    },
++    phase: (p) => {
++      inPhase = p;
++    },
++  };
++}
