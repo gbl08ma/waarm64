@@ -1395,19 +1395,20 @@ async function patchMeta(name: string, f: (was: Meta) => Meta) {
 }
 
 /**
- * Marks overlay `name` as a fill cut off in it (`filling`), under its lock taken only if free: its next opening reads it
- * as empty and moves its generation on (`cutFill`), as after a fill the tab closed in. For a restore whose fill ended but
- * that never loaded (web/app/snapshot-undo.ts): what the overlay held was replaced, and the snapshot's blocks it holds
- * now are no run's. One never written (generation 0) holds nothing and is left as it is. False where it's held (in
- * use) or there are no Web Locks. From a page or a worker.
+ * Marks overlay `name` as a fill cut off in it (`filling`) unless it is still at generation `from`, under its lock taken
+ * only if free: its next opening reads it as empty and moves its generation on (`cutFill`), as after a fill the tab
+ * closed in. For a restore that wrote into it and never loaded (web/app/snapshot-undo.ts), `from` the generation its
+ * commit found: a fill moves it on (web/snapshot.ts), so one still there was never opened by the fill and holds what it
+ * held; one moved on had what it held replaced, and the snapshot's blocks it holds now are no run's. False where it's
+ * held (in use) or there are no Web Locks. From a page or a worker.
  */
-export async function markCutFill(name: string) {
+export async function markCutFill(name: string, from: number) {
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a probe: no Web Locks in some contexts
   if (typeof navigator === 'undefined' || !navigator.locks) return false;
   return navigator.locks.request(overlayLock(name), { ifAvailable: true }, async (lock) => {
     if (!lock) return false;
     const m = await overlayMeta(name);
-    if (m.generation !== 0 && !m.filling) await patchMeta(name, (was) => ({ ...was, filling: true }));
+    if (m.generation !== from && !m.filling) await patchMeta(name, (was) => ({ ...was, filling: true }));
     return true;
   });
 }

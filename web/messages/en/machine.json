@@ -215,13 +215,13 @@
     "message": "Couldn't start the machine",
     "note": "Error headline in the message bar (under the toolbar) when something the page prepares before a machine starts (its shared folders, its keyboard layout) failed (Retry follows); the error is the detail under it."
   },
-  "runner.runsElsewhere": {
+  "machine-hold.runsElsewhere": {
     "message": "Couldn't start <name>{{name}}</name>",
-    "note": "Error in the message bar (under the toolbar) when the machine to start already runs in another tab or window (Retry follows): the headline; what to do is the cause under it (machine:main.runsElsewhere.cause); {{name}} is the machine's name."
+    "note": "Error in the message bar (under the toolbar) when the machine to start already runs in another tab or window (Retry follows): the headline; what to do is the cause under it (machine:machine-hold.runsElsewhere.cause); {{name}} is the machine's name."
   },
-  "runner.runsElsewhere.cause": {
+  "machine-hold.runsElsewhere.cause": {
     "message": "It's running in another tab of this web app. Power it off there or close that tab, then <ui>Retry</ui>.",
-    "note": "Error details: the cause under the headline machine:main.runsElsewhere, on the line under it in the same place; what to do. <ui>Retry</ui> is the message bar's button (machine:problems.retry)."
+    "note": "Error details: the cause under the headline machine:machine-hold.runsElsewhere, on the line under it in the same place; what to do. <ui>Retry</ui> is the message bar's button (machine:problems.retry)."
   },
   "power-actions.cantOpen": {
     "message": "Couldn't open the machine",
@@ -534,6 +534,10 @@
   "worker-errors.diskMerging.cause": {
     "message": "An overlay is being merged into one of the machine's disks. Wait for the merge to finish, then <ui>Retry</ui>.",
     "note": "Error details: the cause under the headline machine:worker-errors.diskInUse, on the line under it in the same place, when the start found a merge (Merge into the disk, in this tab or another) under way into one of the machine's stored disks: the start is refused rather than open an overlay the merge is deleting. <ui>Retry</ui> is the message bar's button (machine:problems.retry)."
+  },
+  "machine-hold.diskChanging.cause": {
+    "message": "One of the machine's disks is being changed in this tab or another: an overlay deleted, a disk resized or changes imported. Wait for that to finish, then <ui>Retry</ui>.",
+    "note": "Error details: the cause under the headline machine:worker-errors.diskInUse, on the line under it in the same place, when the start found its machine held off by a change to its disks on the Home page or in another tab (Delete overlay, a resize, Import changes), rather than running elsewhere: the start is refused rather than open overlays that change meanwhile. <ui>Retry</ui> is the message bar's button (machine:problems.retry)."
   },
   "worker-errors.diskMismatch": {
     "message": "Couldn't start <name>{{machine}}</name>",

@@ -20,9 +20,8 @@ import { isId, type DiskIdentity, type DiskRecord, type MachineRecord, type Shap
  * `overlays/<id>/` (`data`, `map`, `meta`). `generation` is the meta file's, as the page last
  * read it (the device worker bumps the file's before a session's first write). `fork`: the
  * snapshot whose blocks it was made from, and its generation then, so a second restore of that
- * snapshot reuses it while it hasn't moved (§5.2); `before`, for a new fork, what its attachment had before the restore
- * attached it (its overlay, or the disk written in place), to go back to where the restore's fill was cut off
- * (web/app/snapshot-undo.ts `undoCutRestores`).
+ * snapshot reuses it while it hasn't moved (§5.2). What a restore that hasn't loaded yet did to it is in its machine's
+ * record (`MachineRecord.restoring`, docs/machines.md §5.2 "A restore's records"), not here.
  */
 export type OverlayRecord = {
   id: string;
@@ -36,16 +35,9 @@ export type OverlayRecord = {
   modified: number;
   /**
    * A restore's fork of snapshot `snapshot` (generation `generation` once filled: a later restore of it attaches it
-   * again while it hasn't moved). `before`: what the attachment had before the restore, while it hasn't loaded (to go
-   * back to: web/app/snapshot-undo.ts); `kept`: the fork was attached again, not made, and stays when that is undone.
+   * again while it hasn't moved and no restore that hasn't loaded names it).
    */
-  fork?: { snapshot: string; generation: number; before?: { overlay?: string; inPlace?: boolean; kept?: true } };
-  /**
-   * A restore writes it and hasn't loaded yet (docs/machines.md §5.2): set at the restore's commit (web/app/snapshots.ts)
-   * with the machine's lock held, cleared once the worker says the snapshot loaded (`loaded`), with `fork.before`. One
-   * found set while its machine is free is a restore that never ran: undone (web/app/snapshot-undo.ts).
-   */
-  restoring?: true;
+  fork?: { snapshot: string; generation: number };
   /**
    * Its own size, bytes (machines.md §4.5: a grown overlay; its meta file's, which the device worker reads): the guest
    * sees the larger of it and its disk's. Absent: none of its own.

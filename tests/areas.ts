@@ -111,7 +111,7 @@ export const AREAS: Record<string, Area> = {
     end: ['ci-debian.sh'],
   },
   snapshots: {
-    src: ['core/src/snapshot.rs', 'core/src/vm/state.rs', 'web/snapshot*.ts', 'web/app/snapshot*.ts', 'web/app/Snapshots.svelte', 'web/app/LoadSnapshotMenu.svelte', 'web/app/worker-snapshot.ts', 'web/app/areas/snapshot-*.ts', 'tests/snapshot-*.ts', 'tools/snapshot-template.ts'],
+    src: ['core/src/snapshot.rs', 'core/src/vm/state.rs', 'web/snapshot*.ts', 'web/app/snapshot*.ts', 'web/app/Snapshots.svelte', 'web/app/LoadSnapshotMenu.svelte', 'web/app/worker-snapshot.ts', 'web/app/areas/snapshot-*.ts', 'web/app/restore-*.ts', 'web/app/run/restore-loaded.ts', 'tests/snapshot-*.ts', 'tests/restore-records.test.ts', 'tools/snapshot-template.ts'],
     heavy: ['tests/snapshot.test.ts', 'tests/page-snapshot.test.ts', 'tests/page-restore.test.ts'],
     push: ['ci-machines.sh', 'ci-debian.sh'],
   },

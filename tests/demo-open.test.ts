@@ -94,12 +94,19 @@ test("a start's check says only that a demo's files are gone; the store's Open m
 test("a template's first start whose restore never loaded (it booted instead, or was cut off): the overlay it wrote into is no fork of the template at the next load, and reads as empty", async () => {
   const s = fresh();
   const { m, overlay } = await demoMachine(s);
-  await s.put('overlays', { ...(await s.get('overlays', overlay))!, restoring: true }); // the first restore's commit
+  // The first restore's commit, into the machine's fresh overlay (no fork of the template until it loaded).
+  const { fork: _, ...unforked } = (await s.get('overlays', overlay))!;
+  await s.put('overlays', unforked);
+  const committed: MachineRecord = { ...m, restoring: [{ attachment: m.attachments[0].id, how: 'into', overlay, generation: 0, fork: { snapshot: 'template', name: 'Template' } }] };
+  await s.put('machines', committed);
   await setGeneration(overlay, 1); // its fill done, its RAM never loaded
   await navigator.locks.request(`waarm64-overlay:${overlayDir(overlay)}`, async () => {}); // let go
-  assert.equal(await undoCutRestores(s, m), m, 'the machine keeps the overlay');
+  const after = await undoCutRestores(s, committed);
+  assert.equal(after.attachments[0].overlay, overlay, 'the machine keeps the overlay');
+  assert.equal(after.restoring, undefined, 'its restore undone');
   const o = (await s.get('overlays', overlay))!;
-  assert.deepEqual([o.fork, o.restoring], [undefined, undefined], 'no fork of the snapshot');
+  assert.equal(o.fork, undefined, 'no fork of the snapshot');
+  assert.equal(await changesOf(s, after), 'disk', 'started before: not the demo as it was');
   assert.equal((await overlayMeta(overlayDir(overlay))).filling, true, 'marked as a fill cut off: its next opening reads it as empty');
   assert.equal((await s.get('machines', m.id))!.attachments[0].overlay, overlay);
 });

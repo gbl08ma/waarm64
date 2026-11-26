@@ -321,8 +321,10 @@ shape, §5.1, and carried by definitions) makes it the guest's swap with nothing
   let a start or a restore under way (another tab's) open an overlay the merge deleted, made anew with no record naming
   it. The start reads its records again once it holds the lock (`Runner`'s `#openDisks`): read before, they may name
   what a merge or a delete took away (tests/merge.test.ts, tests/page-restore.test.ts). Delete overlay holds off the
-  same way the machines that have the overlay chosen, and for a restore's fork every machine that attaches its disk (a
-  restore attaches an earlier fork again: `deleteOverlayAsked`). The confirmation names
+  same way the machines that have the overlay chosen or whose restore that never loaded names it, and for a restore's
+  fork every machine that attaches its disk (a restore attaches an earlier fork again: `deleteOverlayAsked`). A start
+  held off by Delete overlay, a resize or Import changes says that its disks are being changed, not that it runs
+  elsewhere (`holdMachines` holds a second lock beside the machine's: `heldOff`). The confirmation names
   the other overlays that will be deleted and the snapshots it orphans. Then: the other overlays are deleted, the
   disk's generation is bumped and its `meta` names the overlay being merged, the overlay's blocks are written into
   the disk (its zero blocks as zeros), the overlay is deleted, the marker removed (`mergeOverlay`), and only then the
@@ -336,9 +338,11 @@ shape, §5.1, and carried by definitions) makes it the guest's swap with nothing
   finds its machine held by the merge (`Runner.own` says the merge, not another tab: `mergingInto`), and the worker
   holds each of its stored disks' merge lock, shared and only if free, until its disks are open
   (web/stored.ts `holdAgainstMerges`: its own check), so a merge asked for meanwhile finds the machine's lock held or
-  its overlays in use (tests/stored.test.ts). An overlay a restore was cut
-  off in (still marked, or a new fork never filled) isn't merged ([A snapshot's restore into the overlay {{name}}
-  didn't finish, so it holds nothing to merge. Nothing was deleted.](ui:disks:merge.cutOff)): it reads as empty, and the
+  its overlays in use (tests/stored.test.ts). The merge first undoes the
+  held machines' restores that never loaded (§5.2 "A restore's records"), as their locks' owner. An overlay a restore's
+  fill was cut off in (still marked), or one that a restore that never loaded of a machine that doesn't attach the disk
+  any more still names, isn't merged ([A snapshot's restore into the overlay {{name}} didn't finish, so it holds
+  nothing to merge. Nothing was deleted.](ui:disks:merge.cutOff)): it reads as empty, or is that restore's, and the
   merge would only delete the disk's other overlays (tests/merge.test.ts). A merge of
   another overlay of the disk meanwhile is refused before it deletes anything ([A merge of the overlay {{name}} into
   this disk didn't finish, and part of it is in the disk already. Use Merge into the disk on {{name}} again to finish
@@ -552,33 +556,22 @@ The file's format, what the core saves and the page's toolbar and header fields:
   disks the confirmation named). The worker refuses a **keep** whose overlay isn't at the generation the plan names
   ([A disk this snapshot was to keep as it is was written to after the restore was planned, so the snapshot no longer fits it. Nothing was changed. Restore the snapshot again.](ui:snapshots:snapshot.keptMoved)), so the snapshot's RAM never lands on a disk that moved on.
 - **A fork into a fresh overlay:** on a machine's first restore (a template's, §6.1), where the attached overlay
-  never took a write (its files' generation 0, at the snapshot's size: the overlays the page made for the machine),
-  the fork's blocks go into it (named after the snapshot, marked as its fork) instead of a new overlay beside it, and
+  never took a write (its files' generation 0, or read as empty: a first restore undone; at the snapshot's size: the
+  overlays the page made for the machine), the fork's blocks go into it (named after the snapshot and marked as its
+  fork once it loaded) instead of a new overlay beside it, and
   nothing is asked: it holds nothing to lose (`pristine`, `planRestore`'s `fresh`; tests/template.test.ts). A restore
   the user asks for leaves an overlay they made as it is.
 - **Repeated restores don't pile up forks:** a restore that would fork attaches an earlier fork of the same snapshot
   whose generation hasn't moved since (still 1), at the snapshot's size, instead (**reuse**); never one whose fill
-  was cut off (below).
+  was cut off, nor one a restore that hasn't loaded names (below).
 - **A restore cut off or refused part way** (a closed tab, the storage full, a damaged file, a disk that didn't open
-  after the fill): the page records the fork and attaches it before the worker opens it, which it does only in the
-  disk phase, after the check pass and the RAM's; the fill marks its overlay (devices.md "blk", "Crash and refusal")
-  and anything that opens it before the mark is cleared takes it as empty. The commit marks every overlay the restore
-  writes or attaches `restoring` (web/app/store.ts `OverlayRecord`), and a new or attached-again fork records what its
-  attachment had (`fork.before`, `kept` for an earlier fork attached again); the page clears both once the worker says
-  the snapshot loaded (`loaded`, posted before the vCPUs run: web/app/snapshot-undo.ts `restoreLoaded`). When the machine
-  is next loaded, a restore that never loaded is undone (`undoCutRestores`, `cutFork`: marked `restoring`, or from
-  before the mark a fork never opened or still marked; not open anywhere), whether it was cut off before the fill or
-  refused after it: the attachment back on its earlier overlay, or in place, a new fork deleted (an earlier one kept);
-  an overlay the restore wrote into (a replace, a template's fresh overlay: no `before`) stays attached, marked as a
-  cut-off fill (`markCutFill`: read as empty at its next opening, its generation moved on) and no fork of the
-  snapshot. So the machine starts on its disks as they were, and a replace, a template's fresh overlay and a transient
-  machine's overlay start from the disk's image. Nothing is undone while the machine's lock is held: the restore takes
-  it before its commit and its start keeps it to the run's end (`Runner.own`), so a restore under way, here or in
-  another tab, is left alone (and a page reading the records again waits for its own last run's lock to go:
-  `MachineLock.settled`); a start that boots undoes one as the lock's owner (`#openDisks`), and the undo reads the
-  record again under the lock, so another tab's edit meanwhile stays. A fork's `before` holds only for its own
-  restore: a later restore that replaces its blocks drops it at its commit, so that restore cut off leaves the machine
-  on the fork, read as empty. The worker's message says which: a refusal before any disk was written ([The machine
+  after the fill): the page commits the restore (its forks made and attached) before the worker opens any overlay,
+  which it does only in the disk phase, after the check pass and the RAM's; the fill marks its overlay (devices.md
+  "blk", "Crash and refusal") and anything that opens it before the mark is cleared takes it as empty. Until the worker
+  says the snapshot loaded, the restore is one that never loaded, and the machine's next load undoes it, whether it was
+  cut off before the fill or refused after it: so the machine starts on its disks as they were, except that an
+  overlay a replace or a template's first restore wrote into reads as empty (what it held was replaced). How, below
+  ("A restore's records"). The worker's message says which: a refusal before any disk was written ([The machine
   isn't running, and its disks are as they were. Start boots {{machine}} normally, and Load snapshot… tries another
   file.](ui:snapshots:worker-errors.notLoaded.cause)), one once the disks were being written that deleted none of their
   own changes (only new forks took part of the snapshot: [The machine didn't start, and its disks hold none of the
@@ -586,10 +579,62 @@ The file's format, what the core saves and the page's toolbar and header fields:
   did ([The machine didn't start. The changes the restore was replacing were deleted, so the disks that held them start
   from their images. Start boots {{machine}} normally.](ui:snapshots:worker-errors.notRestored.emptied); the plan's
   `fork` marks a new fork, and the fill's refusal carries `emptied`). Retry after a restore's failure (its commit's,
-  or its start's before the snapshot loaded: the disk in use, a file disk's permission) restores the snapshot again
-  (`Runner.again`), on the records as the undo leaves them; it isn't a boot. The disk phase takes every target
-  overlay's lock before it empties any: one open elsewhere refuses the restore with all the disks as they were.
-  tests/template.test.ts, tests/snapshot.test.ts, tests/page-restore.test.ts.
+  its start's before the snapshot loaded: the disk in use, a file disk's permission; or the record of its load
+  refused) restores the snapshot again (`Runner.again`), on the records as the undo leaves them; it isn't a boot.
+  The disk phase takes every target overlay's lock before it empties any: one open elsewhere refuses the restore with
+  all the disks as they were. A kept overlay grown since the plan (a resize in another tab: its own size, or the disk's
+  record, past the size the snapshot saw) is refused as one written since (`snapshot.keptMoved`).
+- **A restore's records** (web/app/snapshots.ts `commit`, web/app/snapshot-undo.ts; the rules' table is
+  tests/restore-records.test.ts). One record holds a restore that hasn't loaded: its machine's, in `restoring`
+  (web/app/restore-step.ts `RestoreStep`), one step per attachment it changed. No overlay record carries a mark of its
+  own, so only that machine's load, start or `loaded` acts on it, and another machine that has one of its overlays
+  chosen never does.
+  - **The steps:** `fork`, a new overlay made and attached (with what the attachment had: `before`, its overlay or
+    written in place); `reuse`, an earlier fork of the snapshot attached again (with `before`); `into`, the attached
+    overlay written into (a replace, or a template's fresh overlay), with the generation its files had at the commit.
+  - **The commit** (under the machine's lock, which the restore takes before it and its start keeps to the run's end:
+    `Runner.own`) writes the machine's record once, its attachments switched and `restoring` set: that write is the
+    commit. A new fork's record is made after it, under the id the step names: cut off between, the next load finds
+    the step and goes back, with no fork to delete. Nothing else is written: a reused fork's and an overlay written
+    into's records stay as they are.
+  - **`loaded`** (the worker's, before the vCPUs run: web/app/run/restore-loaded.ts) clears `restoring` and
+    `restoreFirst` in one write: from then on everything the restore attached is the machine's. Refused (the storage
+    full), the run is stopped and the page says so ([The snapshot loaded, but the browser's storage refused to record that the machine's disks are now the snapshot's. The machine was stopped, and its restore is undone as one that didn't finish. Retry restores the snapshot again.](ui:snapshots:restore-loaded.notRecorded.cause)): the restore is
+    still one that never loaded, as a whole, and its Retry restores it again. After the write, a template's fresh
+    overlay is named after the snapshot and marked as its fork (`fork`, its generation one past the commit's), which
+    only spares a later restore a fork if it fails.
+  - **The undo** (`undoCutRestores`, at the machine's next load or start, under its lock taken only if free, so a
+    restore under way here or in another tab is left alone; a page reading the records again waits for its own last
+    run's lock to go: `MachineLock.settled`; a start that boots undoes as the lock's owner, `#openDisks`; the record
+    read again under the lock, so another tab's edit meanwhile stays): `fork`, the attachment back on `before` (unless
+    switched to another overlay since; also when the fork was deleted meanwhile, by Delete overlay or a merge), and the
+    fork deleted after the record is written (cut off between, or chosen meanwhile by a machine that runs: it stays,
+    unattached, an overlay like another, whose fill mark or generation tells whether it holds the snapshot); `reuse`,
+    the attachment back on `before`, the fork kept as it was (a later restore attaches it again); `into`, left attached
+    and as it was where its generation is still the commit's (the fill never opened it: a refusal before the disk
+    phase), else marked as a cut-off fill (`markCutFill`: read as empty at its next opening, its generation moved on),
+    before the record says it's done. An earlier overlay deleted since: none (the next start makes an empty one). A
+    step whose overlay is open elsewhere (another tab's job or machine: a fork to delete, an overlay to mark) stays, as
+    it is, for the next load; until then the machine neither boots nor restores again ([A restore of this machine that
+    didn't finish is still to be undone, and one of the disks it wrote to is open in another tab or window of this web
+    app.](ui:snapshots:snapshot-undo.pending)).
+  - **Who else reads it:** an earlier fork that any machine's `restoring` names is never attached again
+    (`earlierFork`); Delete overlay holds off the machines whose `restoring` names the overlay, as a fork or as
+    `before` (their undo would name it as it's deleted); a merge, which holds off every machine that attaches its disk,
+    undoes their restores first, as their locks' owner, and refuses an overlay that a machine not among them still
+    names (`disks:merge.cutOff`). Nothing else writes it: a settings save keeps the record's attachments, `restoring`
+    and `restoreFirst` as the store has them, whatever its draft read (web/app/machines.ts `updateMachine`).
+  - **Records from before** (loops 77–80, never deployed): an overlay's `restoring: true` and `fork.before` are read as
+    nothing; such a cut-off restore stays as it was left.
+  - **Why one record** (PERF loop 82): loop 80 kept a mark on each overlay a restore wrote (`restoring`, with
+    `fork.before`), written one record at a time before the machine's and cleared one at a time after `loaded`. Its
+    review found that a mark no record owned was acted on by whichever machine attached the overlay (another machine's
+    load moved that machine onto the first one's earlier overlay), that the clearing missed what it didn't write (a
+    reused fork stayed marked, so a restore that loaded was undone at the next load), that a commit or a clearing cut
+    off part way left marks no undo reached or undid half a restore, and that a replace's mark couldn't tell a fill
+    that ran from one that never did (a refused restore emptied the user's overlay). The machine's record is written
+    once at the commit and once at `loaded`, and the undo of an overlay written into compares its generation with the
+    commit's.
 - **On the records as they are:** the page reads the machine's records again before it plans a restore of a machine
   that is off, and again once it has stopped (the Home page or another tab may have changed them while the
   questions were open: the shape is checked again then); `commit` plans on the record and disks the store has then and
@@ -647,14 +692,15 @@ identities and serials), so it matches; the pins, by slot, fork onto the machine
 ones; a fresh one: that one, §5.2). It runs within `exclusively` (a Start meanwhile starts nothing beside it). The
 mark stays until the snapshot loaded (the worker's `loaded`: `restoreLoaded`), so a first start cut off or refused
 before that restores the snapshot again at the next start, its restore undone in between (§5.2;
-tests/page-template-first.test.ts); a snapshot that can't be restored (another
+tests/page-template-first.test.ts); a commit that fails (the storage full) is said with Retry, which restores it
+again, the mark kept; a snapshot that can't be restored (another
 shape: said) boots the machine instead, the mark cleared, and so does one that can't load once the start is under way (`SnapshotRestore`'s boot instead,
 said as [{{machine}} started from power on: its demo's saved state couldn't be restored in this browser.](ui:snapshots:snapshot-restore.firstBooted)): a 3D or Vulkan template whose 3D fails
 to start in this browser (the GPU worker's `failed`: the machine runs 2D, another shape, and the snapshot never reaches
 the worker), or the worker refusing it (a `snapshot` problem, which a first start doesn't leave to the user's Start).
 Either way what its restore wrote is undone at the boot's start, as a restore that never loaded (§5.2): the fresh
-overlay loses its fork mark and reads as empty, a new fork goes, so a later restore of the template forks anew rather
-than taking a booted disk back as its blocks, and "started before" doesn't find the demo unchanged. Afterwards it's an ordinary machine: its overlay, Suspend, and the template
+overlay, never marked as the template's fork (that comes only with `loaded`), reads as empty once the fill wrote it,
+a new fork goes, so a later restore of the template forks anew rather than taking a booted disk back as its blocks, and "started before" doesn't find the demo unchanged. Afterwards it's an ordinary machine: its overlay, Suspend, and the template
 kept as a snapshot to go back to. The page's hook `window.__waarm64FromTemplate(definition, snapshot)` (`?hooks`) is
 bench/demo's click; tests/template.test.ts the identity and the plan in Node.
 
@@ -740,7 +786,8 @@ budget, the status bar. A disk's map (its "visualize" link in the Disks pane and
 
 - `web/app/store.ts` (records, the sweep, the `BroadcastChannel`), `web/app/shape.ts` (the slots, the shape and its
   hash; `shape-diff.ts`: what differs, in words), `web/app/machines.ts`, `web/app/disks.ts`, `web/app/merge.ts` (Merge into the disk), `web/app/snapshots.ts`
-  (the shape now, the restore's plan, `unrestorable`), `web/app/snapshot-lost.ts` (which snapshots can never be restored: `lost`, the disks' generations, `basesOf`), `web/app/machine-like.ts` (a machine like a snapshot), `web/app/switch-asked.ts`
+  (the shape now, the restore's plan and its commit, `unrestorable`), `web/app/snapshot-undo.ts` and `restore-step.ts` (a
+  restore's records, its undo and `loaded`: §5.2 "A restore's records"), `web/app/snapshot-lost.ts` (which snapshots can never be restored: `lost`, the disks' generations, `basesOf`), `web/app/machine-like.ts` (a machine like a snapshot), `web/app/switch-asked.ts`
   (a switch to an overlay of another size asked), `web/app/definitions.ts` (`definition-check.ts`: its checks), `web/app/template.ts` (a machine from a template, §6.1; from a store's template, §6.3), `web/app/demo-store.ts` (stores, §6.2), `web/app/NewMachine.svelte` (New machine's dialog, §6.3), `web/app/urlcheck.ts`, `web/app/disk-worker.ts` (a stored
   disk's estimate and import); the Svelte components (`MachinesPage.svelte` and its panes and tabs: [frontend.md](frontend.md) "The Home page"; `Disks.svelte`, `AddDisk.svelte`,
   `DisksPane.svelte`, `Overlays.svelte`, `AttachDisk.svelte`, `ResizeDisk.svelte`, `ExportButton.svelte` (the Export wizard: `ExportWizard.svelte`, `ExportSteps.svelte`), `Snapshots.svelte`).
@@ -761,7 +808,7 @@ budget, the status bar. A disk's map (its "visualize" link in the Disks pane and
 
 docs/testing.md's "Machines as the unit" row: the store's ordering and sweep, the shape's hash, the ramdisk, stored
 disks (import, export under `qemu-img compare`, merge and its resume), a blank disk's overlay merged (tests/merge.test.ts, the dialog tests/page-unrestorable.test.ts), snapshots that can never be restored (tests/unrestorable.test.ts, the Snapshots tab tests/page-unrestorable.test.ts), growing a disk (tests/resize.test.ts; the page's Resize dialog from each place, tests/page-resize.test.ts), the generation and its epoch, the restore's
-plan, the Home page and the URL check, definitions across fresh profiles; on Debian (`scripts/ci-machines.sh`)
+plan, a restore's records case by case (tests/restore-records.test.ts; the page's side in tests/page-restore.test.ts and tests/page-template-first.test.ts), the Home page and the URL check, definitions across fresh profiles; on Debian (`scripts/ci-machines.sh`)
 several disks, a stored Debian, kept snapshots, forks, Suspend on pins, orphaning.
 
 **Profiles:** an off-the-record Playwright context keeps OPFS in memory, where sync handles' writes are refused at

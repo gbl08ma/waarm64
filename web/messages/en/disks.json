@@ -477,7 +477,7 @@
   },
   "merge.cutOff": {
     "message": "A snapshot's restore into the overlay <name>{{name}}</name> didn't finish, so it holds nothing to merge. Nothing was deleted.",
-    "note": "Detail of an error on the Home page (Disks), under Overlays.failed.merge, when Merge into the disk of an overlay is refused because a snapshot's restore into it was cut off (the tab closed, the file refused, the storage full): it reads as empty, and the merge would only delete the disk's other overlays. {{name}} is the overlay's name. A new overlay the restore made goes away, and its machine goes back on the overlay it had, when that machine is next loaded."
+    "note": "Detail of an error on the Home page (Disks), under Overlays.failed.merge, when Merge into the disk of an overlay is refused because a snapshot's restore into it was cut off (the tab closed, the file refused, the storage full) and it reads as empty, or because a restore that never loaded, of a machine that no longer attaches the disk, still names it: the merge would only delete the disk's other overlays. {{name}} is the overlay's name. The merge first undoes the restores that never loaded of the machines that attach the disk (a new overlay such a restore made goes away, its machine back on the overlay it had)."
   },
   "merge.changed": {
     "message": "The disk's overlays changed since you were asked (in another tab, or by a machine). Look again and merge it again.",

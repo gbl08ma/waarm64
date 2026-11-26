@@ -9,7 +9,7 @@ import type { MachineConfig } from '../protocol.ts';
 import type { Run } from './run.ts';
 import { asRun, effectiveDisplay, resolveMachine, type RunDisplay } from './config.ts';
 import { currentShape } from '../snapshots.ts';
-import { undoCutRestores } from '../snapshot-undo.ts';
+import { pendingRestore, undoCutRestores } from '../snapshot-undo.ts';
 import { basesOf } from '../snapshot-lost.ts';
 import { settings } from '../settings.ts';
 import { DEFAULT_SHARES_PATH } from '../shares-mount.ts';
@@ -41,13 +41,14 @@ const hasWebgl2 = () => {
 
 /**
  * A stored machine and its disks' records; refused (an error the page shows) when one of them is missing. A restore that
- * never ran is undone first (`undoCutRestores`; `owned`: the caller holds the machine's lock): the machine opens on the
- * disks it had.
+ * never ran is undone first (`undoCutRestores`): the machine opens on the disks it had. `owned`: the caller holds the
+ * machine's lock, a start that boots, refused while the undo can't be done yet (`pendingRestore`).
  */
 export async function loadStored(store: Store, id: string, o: { owned?: boolean } = {}): Promise<Stored> {
   const found = await store.get('machines', id);
   if (!found) throw new MsgError('machine:page-machine.noMachine', { id });
   const record = await undoCutRestores(store, found, o);
+  if (o.owned) pendingRestore(record);
   // eslint-disable-next-line svelte/prefer-svelte-reactivity -- filled here, then held raw by `Stored`
   const disks = new Map<string, DiskRecord>();
   for (const a of record.attachments) {

@@ -106,6 +106,7 @@ export async function duplicateMachine(store: Store, id: string) {
     network: undefined,
     ...(m.usbDevices ? { usbDevices: m.usbDevices.map((u) => ({ ...u, id: newId() })) } : {}),
     restoreFirst: undefined, // the template kept is the machine's own snapshot, which a copy hasn't
+    restoring: undefined, // a restore that hasn't loaded is the original's to undo
     // Not the demo's own: its card's "started before" would open a copy that starts cold, off the demo network (copies drop
     // connections). A copy is the user's machine, made from theirs.
     fromDemo: undefined,
@@ -193,6 +194,11 @@ export async function updateMachine(store: Store, m: MachineRecord) {
   if (shape(was) !== shape(m)) await needsOff(m.id, 'shape');
   // The remembered USB devices are the USB tab's (web/app/usb-ports.ts), edited while the machine runs: a settings draft doesn't carry them.
   m.usbDevices = was.usbDevices;
+  // Nor its disks: the attachments, a restore's to undo and a template's first start are the Disks tab's, the
+  // restore's and the undo's (docs/machines.md §5.2 "A restore's records"), written while a draft was open.
+  m.attachments = was.attachments;
+  m.restoring = was.restoring;
+  m.restoreFirst = was.restoreFirst;
   // The attached folders are the Shared folders tab's: the same (web/app/folders.ts).
   if (was.folders) m.folders = was.folders;
   else delete m.folders;

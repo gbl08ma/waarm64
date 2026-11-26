@@ -21,6 +21,7 @@ import { serialOf, shapeHash, shapeOf, slots, type DiskRecord, type MachineRecor
 import { attachmentTarget, clearGrowMark, growFailed, growMark, growsOf, keepSize, MAX_RESIZE, resize, resizeCosts, sizeOrphans } from '../web/app/resize.ts';
 import { createOverlay, newEmptyOverlay, refreshOverlay } from '../web/app/disks.ts';
 import { exportDefinition, importDefinition, parseDefinition } from '../web/app/definitions.ts';
+import { restoreLoaded } from '../web/app/snapshot-undo.ts';
 import { planRestore } from '../web/app/snapshots.ts';
 import { machineLike } from '../web/app/machine-like.ts';
 import { overlayDir, Store, type OverlayRecord, type SnapshotRecord } from '../web/app/store.ts';
@@ -447,6 +448,7 @@ test("finding 6: a restore's fork of a snapshot taken after a resize its guest h
   const fork = async (size: number) => {
     const plan = await planRestore(store, (await store.get('machines', w.A.id))!, await disksOf(store), { name: 'snap', key: `k${size}`, pins: pins(size) }, { display: '2d', devices: [] });
     await plan.commit(false);
+    await restoreLoaded(store, w.A.id); // it loaded: the next restore isn't stacked on one to undo
     const m = (await store.get('machines', w.A.id))!;
     return (await store.get('overlays', m.attachments[0].overlay!))!;
   };

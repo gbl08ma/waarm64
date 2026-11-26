@@ -126,23 +126,21 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried and lost: polled code without `acc`").
 
-## State (2026-11-26, after loop 81)
+## State (2026-11-26, after loop 82)
 
 **The rule since 2026-11-24 (the user): spend as little time in benchmarks and CI as the answers allow
 ("Batching", above).** Loop 75's notes still hold: `bench/boot/results/perf75/diag.patch` applies to 3a08fdf3; loop
 67's warm-up is not landed (local branches `perf67-warmup`, `perf-smp-warm`, unpushed); `../waarm64-base` is detached
-at 5d8f29ef. Loop 79 kept virgl's caches of what only the renderer sets (bench/gpu/REPORT.md "PERF loop 79"); loop 81
-fixed their out-of-context review (bench/gpu/REPORT.md "PERF loop 81": a draw's depth or stencil target no longer
-detached and attached again at each draw, the screen binding through the renderer, uniforms compared by bits, no
-allocation a draw, a forget's programs deleted; gears' GPU process −72%; passed `scripts/ci.sh`, `ci-graphics.sh`, `ci-deqp.sh`). On the Mac, `pages.waarm64snap` restores with 3D off on the real
-renderer (its caps are SwiftShader's): GPU A/Bs there boot. **Next: row 17**, then **loop 83** fixes the out-of-context
-review of loop 80 (`origin/review/restore-marks`). `target/snapbench/pages.waarm64snap`
+at 5d8f29ef. Loop 82 fixed the out-of-context review of loop 80 (bench/io/REPORT.md "PERF loop 82"): a restore that
+hasn't loaded is now one record, its machine's `restoring`, written once at the commit and cleared once at `loaded`
+(machines.md §5.2 "A restore's records"). On the Mac, `pages.waarm64snap` restores with 3D off on the real renderer
+(its caps are SwiftShader's): GPU A/Bs there boot. **Next: loop 83 = row 17.** `target/snapbench/pages.waarm64snap`
 loads into the current state layout; `target/archarm/desktop.qcow2` is ab-mac.sh's default disk. The ABI is 74.
 
 What every loop kept, dropped and found is in its REPORT entry (bench/boot/REPORT.md "PERF loop 36" to "PERF loop
 66" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
-36, 42, 47, 50, 55, 58, 71, 73, 74, 76, 77, 78 and 79) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43, 48, 56, 60, 72, 75,
-77, 78, 80 and 81 (50's: comments only), 73's in its own commit while paused; 80's is reviewed, to be fixed after row 17. Built but off by default (measured slower): I8MM, FCMA,
+36, 42, 47, 50, 55, 58, 71, 73, 74, 76, 77, 78, 79 and 80) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43, 48, 56, 60, 72,
+75, 77, 78, 80, 81 and 82 (50's: comments only), 73's in its own commit while paused. Built but off by default (measured slower): I8MM, FCMA,
 FP16, FHM, BF16. The ABI is 74.
 
 ## Still open (the queue: the first is next; by expected gain, highest first)

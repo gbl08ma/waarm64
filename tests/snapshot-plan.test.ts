@@ -10,7 +10,7 @@ import { pathToFileURL } from 'node:url';
 import { test } from 'node:test';
 import type { DeviceSpec } from '../web/devices.ts';
 import { lzCodec } from '../web/lz.ts';
-import { openOverlay, overlay, overlayMeta } from '../web/overlay.ts';
+import { openOverlay, overlay, overlayMeta, writeOwnSize } from '../web/overlay.ts';
 import { swapHeader } from '../web/ramdisk.ts';
 import { readSnapshot, writeSnapshot } from '../web/snapshot.ts';
 import { SNAPSHOT_VERSION, SnapshotError } from '../web/snapshot-file.ts';
@@ -81,6 +81,21 @@ test('a snapshot pins generations and carries the ramdisk; a restore keeps, fork
   // A keep planned at another generation (the guest wrote after the page planned) is refused before anything moves.
   await assert.rejects(
     readSnapshot(file, codec, codec.snapshotVersion, { devices: keep, plan: [{ slot: 0, action: 'keep', generation: 1 }] }),
+    (e: unknown) => e instanceof SnapshotError && e.msg.key === 'snapshots:snapshot.keptMoved',
+  );
+  // Review restore-marks 10: one grown since (a resize in another tab between the commit and the worker: its own size
+  // past the size the snapshot saw, its generation unmoved) is another disk to the guest: refused too.
+  await writeOwnSize(name, 2 * SIZE);
+  await assert.rejects(
+    readSnapshot(file, codec, codec.snapshotVersion, { devices: keep, plan: [{ slot: 0, action: 'keep', generation: 2 }] }),
+    (e: unknown) => e instanceof SnapshotError && e.msg.key === 'snapshots:snapshot.keptMoved',
+  );
+  await writeOwnSize(name, 0);
+  const grownSpec = devices();
+  (grownSpec[0] as { size?: number }).size = 2 * SIZE; // the disk's record grown (a stored disk written in place)
+  (grownSpec[1] as { ramInit?: unknown }).ramInit = undefined;
+  await assert.rejects(
+    readSnapshot(file, codec, codec.snapshotVersion, { devices: grownSpec, plan: [{ slot: 0, action: 'keep', generation: 2 }] }),
     (e: unknown) => e instanceof SnapshotError && e.msg.key === 'snapshots:snapshot.keptMoved',
   );
   const r1 = await readSnapshot(file, codec, codec.snapshotVersion, { devices: keep, plan: [{ slot: 0, action: 'keep', generation: 2 }] });

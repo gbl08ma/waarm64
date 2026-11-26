@@ -1309,6 +1309,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   would delete it and the overlay would open at its disk's size. What a cut-off import or Import changes leaves is
   removed already, safely, by `Store.dropCutFills` (machines.md §2); the sweep is for the rest (a snapshot's import,
   a deletion cut off between its record and its files).
+- **A replace's undo can't tell another machine's writes from its fill's** (PERF loop 82, review restore-marks 2): the
+  undo of a restore that wrote into an overlay and never loaded (machines.md §5.2 "A restore's records") reads the
+  overlay as empty when its generation moved past the commit's, which the fill does; another machine that has the
+  same overlay chosen and ran on it between the commit and the worker's disk phase (two tabs, the replace's machine
+  starting) moves it too, and its writes are then read as empty though the fill never ran (the restore refused before
+  its disk phase, or its locks refused it as in use). Not seen; the window is a start's. Fix: the fill writes a token
+  of its restore into the overlay's `meta` (the commit's id, beside `filling`) and the undo compares that, a `meta`
+  format change.
 - **A restore's replace fills in place** (review disk-writes 1, 2): a restore that replaces an overlay (the user's
   answer, a template's fresh overlay, a transient machine's at its fixed name) and Import changes onto the page's own
   disk empty the overlay first and fill it under the fill mark (devices.md "blk"), so one cut off or refused part way

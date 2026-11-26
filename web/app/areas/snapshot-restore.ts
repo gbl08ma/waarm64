@@ -81,7 +81,7 @@ export class SnapshotRestore {
     this.#c = c;
     c.power.restoreFirst = (id) => this.first(id); // a machine from a template's first start
     c.runner.firstFailed = (restart) => this.#bootInstead(restart);
-    c.runner.loaded = (r) => restoreLoadedOn(c.machine, c.runner, r);
+    c.runner.loaded = (r) => restoreLoadedOn(c, r);
   }
 
   /** What a snapshot's disk is called, for messages. */
@@ -253,12 +253,13 @@ export class SnapshotRestore {
     try {
       disks = plan && (await plan.commit(false));
     } catch (e) {
-      this.#c.messages.notify(
-        new MsgError('snapshots:snapshot-restore.restore.failed', { name: rec.name }, { cause: e }),
-        'error',
-      );
+      // Not a boot: the mark stays, and Retry restores it again (what the commit wrote is undone at that reading).
+      runner.lock.drop();
+      runner.again = () => this.#c.power.exclusively(() => this.first(id)).then(() => undefined);
+      const error = new MsgError('snapshots:snapshot-restore.restore.failed', { name: rec.name }, { cause: e });
+      return this.#c.messages.setState('failed', error, [runner.d.later.problems().retry]);
     }
-    // A boot instead: what the commit wrote before it failed is undone at the boot's start (it owns the machine).
+    // A boot instead (another shape, refused: said by `#plan`).
     if (!disks) await this.#clearFirst();
     if (!(await this.#c.power.reloadStored())) return runner.lock.drop();
     terminal.term.reset();

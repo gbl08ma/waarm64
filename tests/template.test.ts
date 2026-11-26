@@ -88,7 +88,8 @@ test("a template's restore onto a new machine with no overlay yet forks: a new o
   const m = (await b.get('machines', machine.id))!;
   const o = (await b.get('overlays', m.attachments[0].overlay!))!;
   assert.deepEqual(steps, [{ slot: pins[0].slot, action: 'write', overlay: overlayDir(o.id), identity: canonical(o.identity), size: 256 * MiB, whole: false, fork: true }]);
-  assert.deepEqual([o.name, o.fork], ['Alpine', { snapshot: 'k1', generation: 1, before: {} }], 'what the attachment had: no overlay');
+  assert.deepEqual([o.name, o.fork], ['Alpine', { snapshot: 'k1', generation: 1 }]);
+  assert.deepEqual(m.restoring, [{ attachment: m.attachments[0].id, how: 'fork', overlay: o.id, before: {} }], 'what the attachment had: no overlay');
   assert.equal((await b.all('overlays')).length, 1);
 });
 
@@ -111,6 +112,9 @@ test("a machine's first restore onto a fresh overlay (never written) fills that 
   const m = (await b.get('machines', machine.id))!;
   assert.equal(m.attachments[0].overlay, empty.id, 'the fresh overlay is the fork');
   assert.deepEqual(steps.map((s) => s.action === 'write' && s.overlay), [overlayDir(empty.id)]);
+  assert.deepEqual(m.restoring, [{ attachment: m.attachments[0].id, how: 'into', overlay: empty.id, generation: 0, fork: { snapshot: 'k2', name: 'Alpine' } }]);
+  await restoreLoaded(b, m.id); // it loaded: named after the snapshot, its fork
+  m.restoring = undefined; // as the record is now
   const o = (await b.get('overlays', empty.id))!;
   assert.deepEqual([o.name, o.fork], ['Alpine', { snapshot: 'k2', generation: 1 }]);
   assert.equal((await b.all('overlays')).length, 1, 'no other overlay');
@@ -146,7 +150,8 @@ test("a fork whose restore was cut off before its fill was done is never reused;
   const m = (await b.get('machines', machine.id))!;
   const fork = m.attachments[0].overlay!;
   assert.notEqual(fork, mine.id);
-  assert.deepEqual((await b.get('overlays', fork))!.fork, { snapshot: 'k4', generation: 1, before: { overlay: mine.id } });
+  assert.deepEqual((await b.get('overlays', fork))!.fork, { snapshot: 'k4', generation: 1 });
+  assert.deepEqual(m.restoring?.map((s) => s.how !== 'into' && s.before), [{ overlay: mine.id }]);
   // The worker's fill cut off: the fork marked at generation 1, part of the blocks in (web/snapshot.ts).
   const f = await openOverlay(overlayDir(fork), canonical(disk.identity));
   assert.ok(writeMeta(f.meta, { generation: 1, merging: '', size: 0, filling: true }));
@@ -166,13 +171,13 @@ test("a fork whose restore was cut off before its fill was done is never reused;
   assert.equal((await overlayMeta(overlayDir(fork))).generation, 0, 'and its files');
   assert.equal(await undoCutRestores(b, back), back, 'nothing more to undo');
   // A fork whose fill ended (its mark cleared) and whose restore loaded (the worker's `loaded`) stays, and is reused.
-  const steps = await again.commit(false);
+  await again.commit(false);
   const m2 = (await b.get('machines', m.id))!;
   const g = await openOverlay(overlayDir(m2.attachments[0].overlay!), canonical(disk.identity));
   assert.ok(writeMeta(g.meta, { ...readMeta(g.meta), generation: 1 }));
   g.close();
   await letGo(m2.attachments[0].overlay!);
-  await restoreLoaded(b, m2.id, steps);
+  await restoreLoaded(b, m2.id);
   assert.equal(await undoCutRestores(b, m2), m2);
   const third = await planRestore(b, m2, await disksOf(b), { name: 'Alpine', key: 'k4', pins }, { display: '2d' });
   assert.deepEqual(third.forks.map((x) => x.reused), [true]);
@@ -225,6 +230,7 @@ test("a replace into an earlier fork, cut off, leaves the machine on that fork (
     f.close();
   }
   await letGo(fork);
+  await restoreLoaded(b, m.id); // and it loaded
   // Another snapshot restored over it, the user answering replace: a write into the fork.
   const second = await planRestore(b, m, await disksOf(b), { name: 'Other', key: 'k8', pins }, { display: '2d' });
   assert.deepEqual(second.forks.map((x) => x.replaceable?.overlay), [fork]);
@@ -329,7 +335,7 @@ test("a template's first restore cut off before its fill: the next load takes th
   const loaded = await undoCutRestores(b, rec); // the next start reads the records
   assert.equal(loaded.attachments[0].overlay, empty.id, 'the fresh overlay stays attached');
   const unmarked = (await b.get('overlays', empty.id))!;
-  assert.deepEqual([unmarked.fork, unmarked.restoring], [undefined, undefined], 'no fork of the snapshot: its restore never loaded');
+  assert.deepEqual([unmarked.fork, loaded.restoring], [undefined, undefined], 'no fork of the snapshot: its restore never loaded');
   // That start boots on it: its first write moves its generation 0 -> 1, the fork's.
   const f = await openOverlay(overlayDir(empty.id), undefined);
   assert.ok(writeMeta(f.meta, { ...readMeta(f.meta), generation: 1 }));
@@ -383,13 +389,13 @@ test("a page's machine lock asked for twice at once: both are this page's", asyn
 test('a restore that attached an earlier fork again and never loaded: the machine back on the overlay it had, the earlier fork kept', async () => {
   const { b, machine, pins, disk, mine } = await withMine();
   const first = await planRestore(b, machine, await disksOf(b), { name: 'Alpine', key: 'k11', pins }, { display: '2d' });
-  const steps = await first.commit(false);
+  await first.commit(false);
   const fork = (await b.get('machines', machine.id))!.attachments[0].overlay!;
   const f = await openOverlay(overlayDir(fork), canonical(disk.identity)); // filled
   assert.ok(writeMeta(f.meta, { generation: 1, merging: '', size: 0 }));
   f.close();
   await letGo(fork);
-  await restoreLoaded(b, machine.id, steps); // it loaded: the fork is the machine's
+  await restoreLoaded(b, machine.id); // it loaded: the fork is the machine's
   const m = (await b.get('machines', machine.id))!;
   m.attachments[0].overlay = mine.id; // the user switched back to their overlay
   await b.put('machines', m);
@@ -400,5 +406,5 @@ test('a restore that attached an earlier fork again and never loaded: the machin
   assert.equal(back.attachments[0].overlay, mine.id, 'back on the overlay it had');
   const kept = await b.get('overlays', fork);
   assert.ok(kept, 'the earlier fork kept');
-  assert.deepEqual([kept.restoring, kept.fork], [undefined, { snapshot: 'k11', generation: 1 }], 'as it was: reused by the next restore');
+  assert.deepEqual([back.restoring, kept.fork], [undefined, { snapshot: 'k11', generation: 1 }], 'as it was: reused by the next restore');
 });

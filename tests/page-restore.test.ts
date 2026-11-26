@@ -31,8 +31,9 @@ type Start = { disks: { overlay?: string; size?: number; source: Record<string, 
  * `failing`: the first that many snapshot starts are answered as a start that failed with the disk in use, before the
  * snapshot loaded.
  */
-const standIn = (page: Page, failing = 0) => page.addInitScript((failing) => {
+const standIn = (page: Page, failing = 0, unrecorded = 0) => page.addInitScript(([failing, unrecorded]) => {
   let fails = failing;
+  let refusals = unrecorded;
   const Real = window.Worker;
   const starts: unknown[] = [];
   (window as unknown as { __starts: unknown[] }).__starts = starts;
@@ -50,13 +51,54 @@ const standIn = (page: Page, failing = 0) => page.addInitScript((failing) => {
         starts.push({ disks: (msg.disks ?? []).map((d) => ({ overlay: d.overlay, size: d.size, source: Object.fromEntries(Object.entries(d.source).filter(([, v]) => typeof v !== 'object')) })), plan: msg.plan, snapshot: !!msg.snapshot });
         if (msg.snapshot && fails-- > 0)
           return answer({ type: 'state', state: 'failed', problem: 'disk-in-use', error: { name: 'Error', text: 'the disk is in use' } });
+        // `unrecorded`: the page's record of the load refused, as the storage full does (`refuseRecords`).
+        if (msg.snapshot) (window as unknown as { __unrecorded: boolean }).__unrecorded = refusals-- > 0;
         if (msg.snapshot) answer({ type: 'loaded', phases: {} });
         answer({ type: 'state', state: 'off' });
       }
       if (msg.type === 'stop') answer({ type: 'stopped' });
     }
   };
-}, failing);
+}, [failing, unrecorded] as const);
+
+/** The store refuses the next write of a machine's record with no restore to undo while the stand-in says so (`unrecorded`). */
+const refuseRecords = (page: Page) => page.evaluate(async () => {
+  const { Store } = await import('/web/app/store.ts' as string);
+  const w = window as unknown as { __unrecorded?: boolean };
+  const put = Store.prototype.put;
+  Store.prototype.put = function (this: unknown, kind: string, value: { restoring?: unknown }) {
+    if (w.__unrecorded && kind === 'machines' && value.restoring === undefined) {
+      w.__unrecorded = false;
+      return Promise.reject(new DOMException('the storage is full', 'QuotaExceededError'));
+    }
+    return put.call(this, kind, value);
+  };
+});
+
+/** A stored machine with a blank disk and one overlay of it chosen, made through the page's modules; its ids. */
+const blankMachine = (page: Page, name: string) => page.evaluate(async (name) => {
+  const { Store } = await import('/web/app/store.ts' as string);
+  const { attach, createDisk, createMachine } = await import('/web/app/machines.ts' as string);
+  const { createOverlay, switchOverlay } = await import('/web/app/disks.ts' as string);
+  const store = await Store.open();
+  const m = await createMachine(store, { name });
+  const d = await createDisk(store, { kind: 'blank', size: 1 << 20, name: 'Scratch' }); // i18n-ignore: a name the test gives
+  const a = await attach(store, m, d);
+  const o = await createOverlay(store, d, 'First');
+  await switchOverlay(store, m, a.id, o.id);
+  store.close();
+  return { m: m.id as string, a: a.id as string, o: o.id as string };
+}, name);
+
+/** Machine `id`'s record as the store has it: its first attachment's overlay, its restore to undo, the overlays there are. */
+const recordOf = (page: Page, id: string) => page.evaluate(async (id) => {
+  const { Store } = await import('/web/app/store.ts' as string);
+  const store = await Store.open();
+  const r = await store.get('machines', id);
+  const overlays = await store.all('overlays');
+  store.close();
+  return { overlay: r.attachments[0].overlay as string, restoring: !!r.restoring, overlays: (overlays as { id: string }[]).map((o) => o.id).sort() };
+}, id);
 
 const starts = (page: Page) => page.evaluate(() => (window as unknown as { __starts: Start[] }).__starts);
 const stateIs = (page: Page, state: string) => page.waitForFunction((s) => document.body.dataset.state === s, state, { timeout: 30_000, polling: 50 });
@@ -222,11 +264,12 @@ test("Retry after a restore's start failed restores the snapshot again, not a bo
     const r = await store.get('machines', m);
     const overlays = await store.all('overlays');
     store.close();
-    return { overlay: r.attachments[0].overlay as string, overlays: overlays.map((o: { id: string; restoring?: true }) => [o.id, !!o.restoring]) };
+    return { overlay: r.attachments[0].overlay as string, restoring: r.restoring as unknown, overlays: (overlays as { id: string }[]).map((o) => o.id) };
   }, ids.m);
   assert.equal(all[2].disks[0].overlay, `overlays/${rec.overlay}`, 'the second restore starts on the fork it attached');
   assert.notEqual(rec.overlay, ids.o);
-  assert.deepEqual(rec.overlays.sort(), [[ids.o, false], [rec.overlay, false]].sort(), "the first restore's fork undone, the second's the machine's once it loaded");
+  assert.deepEqual(rec.overlays.sort(), [ids.o, rec.overlay].sort(), "the first restore's fork undone");
+  assert.equal(rec.restoring, undefined, "the second's the machine's once it loaded");
   assert.deepEqual(errors, []);
   await context.close();
 });
@@ -357,6 +400,117 @@ test("a start opens its machine's record as it is once it holds the machine's lo
   assert.notEqual(start.disks[0].overlay, `overlays/${ids.o}`, 'not the deleted overlay, made anew');
   assert.equal(start.disks[0].overlay, `overlays/${rec}`, 'the new overlay its record names');
   assert.ok('stored' in start.disks[0].source, `over the disk as it is now, stored: ${JSON.stringify(start.disks[0].source)}`);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+// Review restore-marks 4: a `loaded` whose record couldn't be written (the storage full) was only logged; the machine ran
+// on, and its next load undid the restore it ran on, deleting the fork with what the guest wrote.
+test("a restore that loaded but couldn't be recorded stops the machine, says so, and its Retry restores the snapshot again", async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await standIn(page, 0, 1);
+  await answerAsks(page);
+  await page.goto(`${base}/web/app/?autostart=1`);
+  const ids = await blankMachine(page, 'Unrecorded');
+  await page.goto(`${base}/web/app/?autostart=1&m=${ids.m}`);
+  await stateIs(page, 'off');
+  await refuseRecords(page);
+  const sid = await keepSnapshot(page, ids.m, { overlay: `overlays/${ids.o}`, generation: 7, blocks: 0 });
+  await page.evaluate(async (sid) => {
+    const { page: p } = await import('/web/app/page.ts' as string);
+    await p.restoreKept(sid);
+  }, sid);
+  await barSays(page, words('snapshots:restore-loaded.notRecorded'), words('snapshots:restore-loaded.notRecorded.cause'));
+  await stateIs(page, 'failed');
+  const unrecorded = await recordOf(page, ids.m);
+  assert.ok(unrecorded.restoring, 'still a restore that never loaded');
+  await page.locator('#message-actions button', { hasText: t('machine:problems.retry') }).click();
+  await page.waitForFunction(() => (window as unknown as { __starts: unknown[] }).__starts.length === 3, null, { timeout: 30_000, polling: 50 });
+  await stateIs(page, 'off');
+  assert.deepEqual((await starts(page)).map((x) => x.snapshot), [false, true, true], 'the boot at the page load, the restore, the restore again');
+  const rec = await recordOf(page, ids.m);
+  assert.equal(rec.restoring, false, 'recorded once it loaded');
+  assert.ok(!rec.overlays.includes(unrecorded.overlay), "the unrecorded restore's fork undone");
+  assert.deepEqual(rec.overlays, [ids.o, rec.overlay].sort());
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+// Review restore-marks 5: `Runner.again` outlived the failure it was set for: after a failed restore, Import changes on
+// the page's machine stopped it, failed, and its Retry ran the old restore.
+test("Retry after a failed restore is no restore once something else stopped the machine (Import changes, refused)", async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const other = await context.newPage(); // another tab, same browser profile
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await standIn(page, 1);
+  await answerAsks(page);
+  await page.goto(`${base}/web/app/?autostart=1`);
+  await other.goto(`${base}/web/app/`);
+  const ids = await blankMachine(page, 'Retried');
+  await page.goto(`${base}/web/app/?autostart=1&m=${ids.m}`);
+  await stateIs(page, 'off');
+  const sid = await keepSnapshot(page, ids.m, { overlay: `overlays/${ids.o}`, generation: 7, blocks: 0 });
+  await page.evaluate(async (sid) => {
+    const { page: p } = await import('/web/app/page.ts' as string);
+    await p.restoreKept(sid);
+  }, sid);
+  await stateIs(page, 'failed'); // the restore's start failed: its Retry would restore again
+  // The machine starts in the other tab meanwhile: Import changes here stops it and finds it held.
+  await other.evaluate((id) => new Promise<void>((held) => {
+    void navigator.locks.request(`waarm64-machine:${id}`, () => (held(), new Promise<void>((r) => { (window as unknown as { release: () => void }).release = r; })));
+  }), ids.m);
+  await page.evaluate(async (ids) => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const disks = await import('/web/app/disks.ts' as string);
+    const { runExport } = await import('/web/app/export.ts' as string);
+    const { page: p } = await import('/web/app/page.ts' as string);
+    const store = await Store.open();
+    const m = await store.get('machines', ids.m);
+    const d = await store.get('disks', m.attachments[0].disk);
+    const r = await runExport({ mode: 'changes', compress: false, disk: await disks.diskRef(d, ids.o), baseName: d.name }, () => {});
+    store.close();
+    await p.importChanges(new File([r.blob], 'changes.qcow2'), { machine: m, attachment: ids.a });
+  }, ids);
+  await barSays(page, words('machine:machine-hold.runsElsewhere', { name: 'Retried' }));
+  await other.evaluate(() => (window as unknown as { release: () => void }).release());
+  await page.locator('#message-actions button', { hasText: t('machine:problems.retry') }).click();
+  await page.waitForFunction(() => (window as unknown as { __starts: unknown[] }).__starts.length === 3, null, { timeout: 30_000, polling: 50 });
+  assert.deepEqual((await starts(page)).map((x) => x.snapshot), [false, true, false], "Retry starts the machine: the restore's failure is behind it");
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+// Review restore-marks 9: a start that found its machine held off by Delete overlay, a resize or Import changes said it
+// runs in another tab.
+test('a start that finds its machine held off by a change to its disks says that, not that it runs in another tab', async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await standIn(page);
+  await page.goto(`${base}/web/app/?autostart=1`);
+  const ids = await blankMachine(page, 'Held');
+  await page.goto(`${base}/web/app/?autostart=1&m=${ids.m}`);
+  await stateIs(page, 'off');
+  await page.evaluate(async (id) => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const { holdMachines } = await import('/web/app/machine-hold.ts' as string);
+    const store = await Store.open();
+    const held = await holdMachines([await store.get('machines', id)]);
+    store.close();
+    (window as unknown as { release: () => void }).release = held.release;
+    const { page: p } = await import('/web/app/page.ts' as string);
+    await p.restart();
+  }, ids.m);
+  await barSays(page, words('machine:worker-errors.diskInUse', { machine: 'Held' }), words('machine:machine-hold.diskChanging.cause'));
+  await page.evaluate(() => (window as unknown as { release: () => void }).release());
+  await page.locator('#message-actions button', { hasText: t('machine:problems.retry') }).click();
+  await page.waitForFunction(() => (window as unknown as { __starts: unknown[] }).__starts.length === 2, null, { timeout: 30_000, polling: 50 });
   assert.deepEqual(errors, []);
   await context.close();
 });

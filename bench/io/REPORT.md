@@ -474,3 +474,70 @@ offline. `#openDisks` now points the run's `inspect` at the record it read.
 **CI:** `scripts/ci.sh` failed once (tests/page-disks.test.ts, above), then OK (714 s); `scripts/ci-machines.sh`
 failed once (the surface, above), then OK (229 s); `scripts/ci-debian.sh` OK (320 s); `scripts/ci.sh` on the final
 tree OK (724 s).
+
+## PERF loop 82 (2026-11-26): the out-of-context review of a restore's marks, fixed
+
+The review of the `restoring` marks, the undo of a restore that never loaded, `holdMachines`, `Runner.again` and a
+template's first restore (branch `review/restore-marks` at 016dac6d, `review/restore-marks.md`; static, at 650d988d)
+ranked ten findings. Each was checked against the code at c845cf10 (loop 81 touched none of it); each defect got its
+test at the cheapest layer, run first against that code (each failed there: the Node tests on the base sources, the
+page tests with `web/app`, `web/snapshot.ts` and `web/overlay.ts` stashed), then fixed. Nothing was measured: no
+change touches a path the guest's I/O takes (the page writes one record at a restore's commit and one at its load
+instead of one per overlay; the worker's keep check compares two sizes it has). No stored format changes beyond the
+records (a machine's `restoring`; an overlay's `restoring` and `fork.before` are gone); step counts don't move.
+
+**The rules changed, not only their code.** This area's third review found new defects in the second round's rules,
+and four of the ten (1, 3, 4, 7) came from one shape of them: loop 80 kept a mark on each overlay a restore wrote,
+written one record at a time before the machine's and cleared one at a time after `loaded`, so a mark had no owner
+(any machine that attached the overlay acted on it), the clearing missed what it didn't write (a reused fork), and a
+commit or a clearing cut off part way left marks that no undo reached or undid half a restore. Now one record holds a
+restore that hasn't loaded: its machine's `restoring` (web/app/restore-step.ts `RestoreStep`: `fork`, `reuse` or
+`into` per attachment, with what the attachment had, or the generation the overlay had at the commit). The commit is
+the one write of the machine's record (new forks' records after it, under ids the steps name), `loaded` is the one
+write that clears it, and only that machine's load, start or `loaded` reads it. Finding 2 is the other rule changed:
+the undo of an overlay written into compares its generation with the commit's (the fill always moves it on) instead of
+emptying it whatever the worker reached. The rules, each mark's meaning, who writes and clears it, the undo per case
+and the locks held are written down in docs/machines.md §5.2 "A restore's records"; tests/restore-records.test.ts
+drives them as a table (each way a restore writes a disk, by how far the worker got, and what the next load finds).
+The earlier tests that pinned the old records (tests/template.test.ts, tests/demo-open.test.ts, tests/merge.test.ts,
+tests/page-restore.test.ts, tests/page-template-first.test.ts) now check the machine's record. Records from loops
+77–80 (never deployed) read as no mark.
+
+| # | the review's finding | outcome | test (failing first) | fix |
+|---|---|---|---|---|
+| 1 | High: a restore that reattached an earlier fork keeps its marks after it loaded; the next load puts the machine back on the overlay it had | **defect** (confirmed) | tests/restore-records.test.ts "the rules' table: a reuse the worker loaded" (failed: back on Mine) | `loaded` clears the machine's `restoring` as a whole (`restoreLoaded`, one write) |
+| 2 | High: a replace that never wrote anything still erases the overlay it was to replace, while the page says the disks are as they were | **defect** (confirmed) | "the rules' table: a replace the worker never reached" (failed: read as empty) | the `into` step keeps the overlay's generation at the commit; the undo marks it as a cut-off fill only where the generation moved on (`markCutFill(name, from)`) |
+| 3 | High–Medium: the undo acts on marks that another machine's restore wrote | **defect** (confirmed, both cases) | "another machine's restore that attaches an overlay this machine has chosen…" (failed: Two moved onto One's overlay) and "another machine's replace into an overlay this machine has chosen…" (failed: Two's load emptied it) | the steps live in the restoring machine's record, read only by its own load; `earlierFork` skips any overlay a pending restore names, any machine's |
+| 4 | Medium: a `loaded` whose marks couldn't be cleared is only logged; the next load deletes the fork the guest ran on | **defect** (by reading; the page test shows it) | tests/page-restore.test.ts "a restore that loaded but couldn't be recorded…" (the store refuses the write: failed, nothing said, the machine ran on) | one write, all or nothing; refused, the run stops and the page says so (`snapshots:restore-loaded.notRecorded`), Retry restores again |
+| 5 | Medium–Low: `Runner.again` outlives the failure it was set for | **defect** (by reading; the page test shows it) | tests/page-restore.test.ts "Retry after a failed restore is no restore once something else stopped the machine…" (Import changes refused as running elsewhere: failed, its Retry restored) | every `Runner.stop` clears `again` (a switch, a power off and Import changes all stop first); the restore sets it after its own stop |
+| 6 | Low–Medium: a template's first restore that ran its fill but never loaded leaves a second overlay at the next start | **defect** (confirmed by the reviewer's test; the table's case failed first on the overlay's name, which the commit no longer changes) | "the rules' table: a fresh the worker filled and never loaded" (the next first restore into the same overlay, none beside it) | `pristine` takes an overlay read as empty (a cut-off fill) as never written; the fresh overlay is named after the snapshot and marked as its fork only once it loaded |
+| 7 | Low–Medium: a commit cut off or failing part way leaves marked forks no undo reaches; a template's first start turns that failure into a permanent boot | **two defects** (confirmed) | "a commit cut off part way leaves nothing that the next load does not undo" (the machine's write refused: failed, the fork left); tests/page-template-first.test.ts "a template's first start whose commit fails keeps the mark…" (failed: booted, the mark cleared) | the machine's record is the commit, the forks' records after it; `first()`'s commit failure says so with Retry (the restore again), the mark kept |
+| 8 | Low (suspicious): Delete overlay doesn't hold the machine whose cut-off restore would go back to that overlay | **defect** (by reading; the Node test shows the hold missing) | "Delete overlay holds off a machine whose restore that never loaded goes back onto the overlay" (failed: deleted while it was held) | `deleteOverlayAsked` holds the machines whose `restoring` names the overlay (`restoreNames`); a fork deleted meanwhile still sends its attachment back (also "a fork whose restore never loaded, deleted meanwhile…") |
+| 9 | Low: a start held off by Delete overlay, a resize or Import changes says the machine runs in another tab | **defect** (confirmed in Chromium) | tests/page-restore.test.ts "a start that finds its machine held off by a change to its disks says that…" (failed: "running in another tab") | `holdMachines` holds a second lock beside each machine's (`heldOff`); the start says `machine:machine-hold.diskChanging.cause` (`whyHeld`; the run-elsewhere keys moved with it to `machine-hold.*`) |
+| 10 | Low (suspicious): an overlay's resize between another tab's restore commit and its worker's opening | **defect** (by reading: the keep check compared generations only, and a resize doesn't move one) | tests/snapshot-plan.test.ts "a snapshot pins generations…" (a kept overlay grown by `writeOwnSize`, and a disk's record grown: failed, the keep passed) | the worker refuses a keep whose disk is larger than the snapshot saw (the overlay's own size or the start's size, `snapshot.keptMoved`) |
+
+**Also changed by the rules:** a merge, which holds every machine that attaches its disk, undoes their restores that
+never loaded first, as their locks' owner, and refuses (`merge.cutOff`) an overlay a pending restore of a machine it
+doesn't hold still names; an undo whose overlay is open elsewhere leaves that step as it is, and until it's done the
+machine neither boots nor restores again (`snapshots:snapshot-undo.pending`; before, a boot could start on a fork the
+next load would delete). Found while checking the rules, beyond the review: a settings save (`updateMachine`) wrote
+its draft's whole record, so a draft read before a restore's commit put the attachments back and dropped the restore
+to undo (and, at the old marks, reverted the commit's switch the same way); it now keeps the record's attachments,
+`restoring` and `restoreFirst` (tests/restore-records.test.ts "a machine's settings saved from a draft…", failing
+first). Left in the backlog: a replace's undo can't tell another machine's writes to a shared overlay, between the
+commit and the disk phase, from the fill's.
+
+**Planted bugs, each caught by its test:** `loaded` keeping the reuse steps; `markCutFill` ignoring the commit's
+generation; `earlierFork` reusing a fork a pending restore names; the forks' records written before the machine's;
+`pristine` without the cut-off case; Delete overlay not holding the restore's machine; `pendingRestore` a no-op; an
+open fork's step not left; the merge not undoing the held machines' restores; a fork deleted meanwhile not sending its
+attachment back; the fresh overlay not marked as the fork at `loaded`; a replace's step not recorded; the worker's
+keep without the size check; an unrecorded load only logged; a stop keeping `again`; the first start's commit
+failure booting; the start's words without `heldOff`; a settings save dropping `restoring`.
+
+**A test that pinned the old state:** tests/resize.test.ts "finding 6" committed two restores in a row without either
+loading; the second is now refused while the first is still to be undone (`snapshot-undo.pending`), so the test has
+its first restore load, as the page does (`scripts/ci.sh`'s first run failed there).
+
+**CI:** `scripts/ci.sh` failed once (tests/resize.test.ts, above), then OK (710 s); `scripts/ci-machines.sh` OK
+(338 s); `scripts/ci-debian.sh` OK (233 s).

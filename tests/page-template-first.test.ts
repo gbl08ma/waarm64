@@ -186,7 +186,7 @@ test("a template's first start cut off before its snapshot loaded restores it ag
     const { Store } = await import('/web/app/store.ts' as string);
     const store = await Store.open();
     const m = await store.get('machines', id);
-    return { restoreFirst: m.restoreFirst as string | undefined, overlay: await store.get('overlays', m.attachments[0].overlay) };
+    return { restoreFirst: m.restoreFirst as string | undefined, restoring: m.restoring as unknown, overlay: await store.get('overlays', m.attachments[0].overlay) };
   }, id);
   await startsAre(1);
   await page.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 30_000, polling: 50 });
@@ -202,7 +202,7 @@ test("a template's first start cut off before its snapshot loaded restores it ag
   await page.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 30_000, polling: 50 });
   const after = await record();
   assert.equal(after.restoreFirst, undefined, 'loaded: the mark cleared');
-  assert.equal(after.overlay.restoring, undefined, 'and its overlay the machine\'s');
+  assert.equal(after.restoring, undefined, "and its overlay the machine's");
   assert.deepEqual(errors, []);
   await visitor.close();
 });
@@ -253,6 +253,60 @@ test("a Start while a template's first start is under way at the page's load sta
   await page.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 30_000, polling: 50 });
   const starts = await page.evaluate(() => (window as unknown as { __starts: Start[] }).__starts);
   assert.deepEqual(starts.map((s) => s.snapshot), [true], 'one start, the restore');
+  assert.deepEqual(errors, []);
+  await visitor.close();
+});
+
+// Review restore-marks 7: a template's first restore whose commit failed (the storage full) cleared the mark and booted:
+// the machine never tried its template again, and nothing said it booted instead.
+test("a template's first start whose commit fails keeps the mark and says so; its Retry restores the template", async () => {
+  const made = await make(browser, base);
+  const visitor = await browser.newContext();
+  const page = await visitor.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  page.on('dialog', (d) => { errors.push(`asked: ${d.message()}`); void d.dismiss(); });
+  await standIn(page);
+  const PIECE = createHash('sha256').update(new Uint8Array(made.snapshot)).digest('hex');
+  await page.route('**/site/**', (r) => {
+    const path = new URL(r.request().url()).pathname;
+    if (path.endsWith('/definition.json')) return r.fulfill({ json: { ...made.def, disks: made.def.disks.map((x: object) => ({ ...x, url: 'manifest.json' })) } });
+    const piece = new Uint8Array(made.snapshot);
+    if (path.endsWith('/snapshot.json'))
+      return r.fulfill({ json: { format: 'waarm64-chunked-1', size: piece.length, piece: 2 << 20, pieces: '../pieces/{hash}.bin', hashes: [PIECE], id: createHash('sha256').update(PIECE).digest('hex') } });
+    return r.fulfill({ body: Buffer.from(piece) });
+  });
+  await page.goto(`${base}/web/app/?autostart=1&hooks`);
+  await page.waitForFunction(() => document.body.dataset.state === 'idle', null, { timeout: 30_000, polling: 50 });
+  // The restore's commit refused once by the store (its write of the machine's record, from the restore's plan).
+  await page.evaluate(async () => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const put = Store.prototype.put;
+    let armed = true;
+    Store.prototype.put = function (this: unknown, kind: string, value: unknown) {
+      if (armed && kind === 'machines' && /\/web\/app\/snapshots\.ts/.test(new Error().stack ?? '')) {
+        armed = false;
+        return Promise.reject(new DOMException('the storage is full', 'QuotaExceededError'));
+      }
+      return put.call(this, kind, value);
+    };
+  });
+  const id = await page.evaluate(() => window.__waarm64FromTemplate!('/site/alpine/definition.json', 'snapshot.json'));
+  await page.waitForFunction(() => document.body.dataset.state === 'failed', null, { timeout: 30_000, polling: 50 });
+  const record = () => page.evaluate(async (id) => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const store = await Store.open();
+    const m = await store.get('machines', id);
+    return { restoreFirst: m.restoreFirst as string | undefined };
+  }, id);
+  assert.equal(await page.evaluate(() => (window as unknown as { __starts: unknown[] }).__starts.length), 0, 'no boot instead');
+  assert.ok((await record()).restoreFirst, 'the mark stays');
+  await page.locator('#message-actions button', { hasText: t('machine:problems.retry') }).click();
+  await page.waitForFunction(() => (window as unknown as { __starts: unknown[] }).__starts.length === 1, null, { timeout: 30_000, polling: 50 });
+  const starts = await page.evaluate(() => (window as unknown as { __starts: Start[] }).__starts);
+  assert.deepEqual(starts.map((x) => x.snapshot), [true], 'Retry restores the template');
+  await page.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 30_000, polling: 50 });
+  assert.equal((await record()).restoreFirst, undefined, 'loaded: the mark cleared');
   assert.deepEqual(errors, []);
   await visitor.close();
 });

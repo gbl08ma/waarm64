@@ -26,7 +26,12 @@ export async function holdMachines(
       navigator.locks
         .request(machineLock(m.id), { ifAvailable: true }, (l) => {
           if (!l) return got(undefined);
-          return new Promise<void>((done) => got(done));
+          // Marked as a change's (`heldOff`): a start that finds the machine's lock held says so, not that it runs.
+          return new Promise<void>((done) => {
+            navigator.locks
+              .request(heldLock(m.id), () => new Promise<void>((free) => got(() => (free(), done()))))
+              .catch(() => got(done));
+          });
         })
         .catch(() => got(undefined));
     });
@@ -50,6 +55,27 @@ export async function mergingInto(disks: Iterable<DiskRecord>) {
   return [...disks].some((d) => held.has(mergeLock(diskDir(d.id))));
 }
 
+/** The lock `holdMachines` holds beside machine `id`'s own, so that a start can tell a change's hold from a run. */
+const heldLock = (id: string) => `waarm64-machine-held:${id}`;
+
+/**
+ * Whether a change to its disks holds machine `id` off now (`holdMachines`: Delete overlay, a resize, Import changes, a
+ * merge): what a start that found its machine's lock held says, rather than that the machine runs in another tab.
+ */
+export async function heldOff(id: string) {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a probe: no Web Locks in some contexts
+  if (typeof navigator === 'undefined' || !navigator.locks) return false;
+  return ((await navigator.locks.query()).held ?? []).some((l) => l.name === heldLock(id));
+}
+
+/** What a start of machine `name` says when a change to its disks holds it off (`heldOff`). */
+export const changeRuns = (name: string) =>
+  new MsgError(
+    'machine:worker-errors.diskInUse',
+    { machine: name },
+    { cause: new MsgError('machine:machine-hold.diskChanging.cause') },
+  );
+
 /** What a start of machine `name` says when a merge into one of its disks holds it off (`mergingInto`). */
 export const mergeRuns = (name: string) =>
   new MsgError(
@@ -57,3 +83,17 @@ export const mergeRuns = (name: string) =>
     { machine: name },
     { cause: new MsgError('machine:worker-errors.diskMerging.cause') },
   );
+
+/**
+ * What a start of machine `m` says when it finds the machine's lock held: a merge into one of `disks` (`mergingInto`) or
+ * another change to them (`heldOff`) holds it off, else it runs in another tab.
+ */
+export async function whyHeld(m: MachineRecord, disks: Iterable<DiskRecord>) {
+  if (await mergingInto(disks)) return mergeRuns(m.name);
+  if (await heldOff(m.id)) return changeRuns(m.name);
+  return new MsgError(
+    'machine:machine-hold.runsElsewhere',
+    { name: m.name },
+    { cause: new MsgError('machine:machine-hold.runsElsewhere.cause') },
+  );
+}

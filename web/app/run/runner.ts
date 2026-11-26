@@ -25,7 +25,7 @@ import type { UsbPorts } from '../usb-live.ts';
 import { checkDisks, isGone } from '../demo-open.ts';
 import { gpuInitKnobs } from './knobs.ts';
 import { MachineLock } from './machine-lock.ts';
-import { mergeRuns, mergingInto } from '../machine-hold.ts';
+import { whyHeld } from '../machine-hold.ts';
 import type { Messages } from './messages.ts';
 import { filesNeedingUser, NeedsUser, refreshRecords, startDisks } from './page-disks.ts';
 import { loadStored, sharesPath, type PageMachine } from './page-machine.svelte.ts';
@@ -87,7 +87,7 @@ export class Runner {
   firstFailed: (restart: boolean) => Promise<void> = () => Promise.resolve();
   /**
    * What Retry does after the last start failed, where it isn't a restart (web/app/run/problems.ts `again`): set by a
-   * snapshot's restore right after its start (the restore again: a restart would boot), cleared by every start.
+   * snapshot's restore right after its start (the restore again: a restart would boot), cleared by every start and stop.
    */
   again: (() => Promise<void>) | undefined;
   constructor(d: RunnerDeps) {
@@ -286,15 +286,8 @@ export class Runner {
       return false;
     }
     if (!live() || !s) return false;
-    // A merge into one of its disks holds the machine off (web/app/merge.ts): said as that.
-    const error = (await mergingInto(s.disks.values()))
-      ? mergeRuns(s.record.name)
-      : new MsgError(
-          'machine:runner.runsElsewhere',
-          { name: s.record.name },
-          { cause: new MsgError('machine:runner.runsElsewhere.cause') },
-        );
-    this.d.messages.setState('failed', error, [this.d.later.problems().retry]);
+    // It runs elsewhere, or a merge into one of its disks or another change to them holds it off (web/app/machine-hold.ts).
+    this.d.messages.setState('failed', await whyHeld(s.record, s.disks.values()), [this.d.later.problems().retry]);
     return false;
   }
 
@@ -372,6 +365,7 @@ export class Runner {
   stop(): Promise<void> {
     const r = this.d.machine.run;
     this.d.machine.run = undefined;
+    this.again = undefined;
     if (!r) return this.#stopping;
     return (this.#stopping = this.#stopRun(r));
   }

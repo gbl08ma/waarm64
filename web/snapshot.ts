@@ -359,10 +359,12 @@ export async function readSnapshot(
       const plan = opts.plan?.find((p) => p.slot === d.slot);
       // A kept overlay must still be at the generation the page planned with: one written since (the guest ran on
       // between the plan and the stop) would put the snapshot's RAM over a disk that moved on.
-      // One a fill was cut off in (marked) holds none of what it was planned at either.
+      // One a fill was cut off in (marked) holds none of what it was planned at either, and one grown since (a resize
+      // in another tab: its own size, or the disk's record, past the size the snapshot saw) is another disk to the guest.
       const kept = !opts.resume && plan?.action === 'keep' ? plan : undefined;
       const now = kept && (await overlayMeta(spec.overlay));
-      if (kept && now && (now.generation !== kept.generation || now.filling)) {
+      const grown = !!now && d.size > 0 && Math.max(spec.size ?? 0, now.size) > d.size;
+      if (kept && now && (now.generation !== kept.generation || now.filling || grown)) {
         throw new SnapshotError('snapshots:snapshot.keptMoved', {}, 'other-disk');
       }
       targets.set(

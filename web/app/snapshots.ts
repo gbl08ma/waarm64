@@ -27,6 +27,8 @@ import {
 } from './shape.ts';
 import { overlayDir, type OverlayRecord, type SnapshotRecord, type Store } from './store.ts';
 import { msg, MsgError, type Msg } from '../i18n.ts';
+import type { RestoreStep } from './restore-step.ts';
+import { namedByRestores, pendingRestore } from './snapshot-undo.ts';
 import { basesIn, dependsOn, diskGenerations, inPlaceDisk, lost, RECORDED_FROM, type Lost } from './snapshot-lost.ts';
 
 /** The machine's shape and its hash as it would run now (its disks and overlays by id: an overlay's own size counts, §4.5). */
@@ -103,6 +105,8 @@ type Restoring = {
   bySlot: ReturnType<typeof slots>;
   /** A machine's first restore (a template's, `restoreFirst`): an attached overlay never written takes a fork's blocks. */
   fresh?: boolean;
+  /** The overlays the restores that haven't loaded name, any machine's (`namedByRestores`): set by `survey`. */
+  named?: ReadonlySet<string>;
 };
 /** The generations `lost` judged by (`diskGenerations`), for the steps of the disks written in place. */
 type Generations = ReadonlyMap<string, number>;
@@ -132,16 +136,15 @@ type Step = {
 
 /**
  * An earlier fork of snapshot `key` from disk `d` that hasn't moved since, at the size the snapshot had (`size`: a fork
- * grown since is another disk to the guest): attached again rather than forking once more.
+ * grown since is another disk to the guest): attached again rather than forking once more. Never one a restore that
+ * hasn't loaded names (`named`: its machine's next load may delete it, or it is being written).
  */
-async function earlierFork(store: Store, d: DiskRecord, key: string, size: number) {
+async function earlierFork(store: Store, d: DiskRecord, key: string, size: number, named: ReadonlySet<string>) {
   for (const o of await store.overlaysOf(d.id)) {
-    if (o.fork?.snapshot !== key || Math.max(d.size, o.size ?? 0) !== size) continue;
+    if (o.fork?.snapshot !== key || named.has(o.id) || Math.max(d.size, o.size ?? 0) !== size) continue;
     // One whose fill was cut off (still marked) holds part of the snapshot at the fork's generation: not reused.
     const meta = await overlayMeta(overlayDir(o.id));
-    // One a restore marked and that never loaded (its machine's next load undoes it) isn't the snapshot's either.
-    if (meta.generation === o.fork.generation && !meta.filling && !o.restoring)
-      return { id: o.id, generation: o.fork.generation };
+    if (meta.generation === o.fork.generation && !meta.filling) return { id: o.id, generation: o.fork.generation };
   }
   return undefined;
 }
@@ -185,7 +188,7 @@ async function forkStep(
   step: Pick<Step, 'slot' | 'attachment' | 'disk' | 'size' | 'pinned'>,
   attached?: string,
 ): Promise<Step> {
-  const reuse = await earlierFork(r.store, step.disk, r.snap.key, step.size);
+  const reuse = await earlierFork(r.store, step.disk, r.snap.key, step.size, r.named ?? new Set());
   const current = attached ? await r.store.get('overlays', attached) : undefined;
   if (!reuse && r.fresh && current && (await pristine(current, step)))
     return { ...step, action: 'fork', into: current.id };
@@ -195,15 +198,19 @@ async function forkStep(
 }
 
 /**
- * Whether overlay `o` never took a write (its files' generation 0: the device bumps it before an opening's first
- * change, §3.3) and the guest sees it at the size the snapshot had: a fork into it loses nothing.
+ * Whether overlay `o` holds nothing (its files' generation 0: never written, the device bumps it before an opening's
+ * first change, §3.3; or marked as a cut-off fill: read as empty, a template's first restore undone) and the guest sees
+ * it at the size the snapshot had: a fork into it loses nothing.
  */
 async function pristine(o: OverlayRecord, step: Pick<Step, 'disk' | 'size'>) {
-  return Math.max(step.disk.size, o.size ?? 0) === step.size && (await overlayMeta(overlayDir(o.id))).generation === 0;
+  if (Math.max(step.disk.size, o.size ?? 0) !== step.size) return false;
+  const meta = await overlayMeta(overlayDir(o.id));
+  return meta.generation === 0 || !!meta.filling;
 }
 
 /** What each pinned disk's overlay calls for as the overlays are on disk now, or why the restore is refused (`lost`). */
 async function survey(r: Restoring): Promise<{ steps: Step[]; refused?: Msg }> {
+  r.named = await namedByRestores(r.store);
   const generations = await diskGenerations(dependsOn([r.snap]));
   const why = lost(r.snap, (id) => generations.get(id));
   if (why) return { steps: [], refused: said(why, (id) => r.disks.get(id)?.name, true) };
@@ -213,28 +220,14 @@ async function survey(r: Restoring): Promise<{ steps: Step[]; refused?: Msg }> {
   return { steps };
 }
 
-/** Earlier fork `id` attached again by a restore: marked as its, with what the attachment had (`kept`: it stays if undone). */
-async function reattach(store: Store, id: string | undefined, before: { overlay?: string; inPlace?: true }) {
-  const o = id ? await store.get('overlays', id) : undefined;
-  if (!o?.fork) throw new Error(`the earlier fork ${id ?? ''} is gone`); // read just now, under the machine's lock
-  const fork = { ...o.fork, before: { ...before, kept: true as const } };
-  await store.put('overlays', { ...o, fork, restoring: true, modified: Date.now() });
-}
+/** What a commit gathers: the machine's `restoring` steps, and the new forks' records to make once it's written. */
+type Commit = { pending: RestoreStep[]; make: (() => Promise<unknown>)[] };
 
 /**
- * Overlay `id` replaced by a restore (its blocks emptied, the snapshot's written): marked as its. An earlier fork's
- * `before` (what the attachment had before that restore) is no longer the machine's to go back to, should this restore
- * never load (`undoCutRestores`: the overlay stays, read as empty).
+ * Makes step `s` so in machine record `r.m` (a reused fork attached, the attached overlay written, or a new fork, its
+ * record made after the machine's: `c.make`), with what undoes it (`c.pending`); its part of the worker's plan.
  */
-async function replacing(store: Store, id: string) {
-  const o = await store.get('overlays', id);
-  if (!o) return;
-  const fork = o.fork && { snapshot: o.fork.snapshot, generation: o.fork.generation };
-  await store.put('overlays', { ...o, ...(fork ? { fork } : {}), restoring: true, modified: Date.now() });
-}
-
-/** Makes step `s` so (a reused fork attached, the attached overlay written, or a new fork); its part of the worker's plan. */
-async function commitStep(r: Restoring, s: Step, replace: boolean): Promise<DiskPlan> {
+async function commitStep(r: Restoring, s: Step, replace: boolean, c: Commit): Promise<DiskPlan> {
   const a = r.m.attachments.find((x) => x.id === s.attachment);
   if (!a) throw new Error(`the plan's attachment ${s.attachment} is not the machine's`); // made from m above
   const write = (overlay: string, whole = false, fork = false): DiskPlan => ({
@@ -246,40 +239,38 @@ async function commitStep(r: Restoring, s: Step, replace: boolean): Promise<Disk
     whole,
     ...(fork ? { fork } : {}),
   });
-  // What the attachment had, for a restore that never loads (cut off, refused: `undoCutRestores` goes back to it); each
-  // overlay the restore writes, or attaches, is marked `restoring` until it loaded (`restoreLoaded`).
+  // What the attachment had, for a restore that never loads (cut off, refused: `undoCutRestores` goes back to it).
   const before = { ...(a.overlay ? { overlay: a.overlay } : {}), ...(a.inPlace ? { inPlace: true as const } : {}) };
+  const generation = async (id: string) => (await overlayMeta(overlayDir(id))).generation;
   if (s.action === 'reuse') {
-    await reattach(r.store, s.reuse, before);
-    a.overlay = s.reuse;
+    const id = s.reuse;
+    if (!id || !(await r.store.get('overlays', id))) throw new Error(`the earlier fork ${id ?? ''} is gone`); // read just now
+    c.pending.push({ attachment: a.id, how: 'reuse', overlay: id, before });
+    a.overlay = id;
     a.inPlace = undefined;
     return { slot: s.slot, action: 'keep', generation: s.generation ?? 0 };
   }
   if (replace && s.action === 'fork' && a.overlay) {
-    await replacing(r.store, a.overlay);
+    c.pending.push({ attachment: a.id, how: 'into', overlay: a.overlay, generation: await generation(a.overlay) });
     return write(a.overlay);
   }
-  // A new overlay with the snapshot's blocks: its generation after the restore is 1 (web/snapshot.ts).
-  const fork = { snapshot: r.snap.key, generation: 1 };
-  const into = s.into === a.overlay && s.into ? await r.store.get('overlays', s.into) : undefined;
-  if (into) {
-    // The attached overlay never written: it is the fork (named after the snapshot, reused as one). No `before`: a
-    // restore that never loads leaves it attached, read as empty, and no fork (`undoCutRestores`).
-    await r.store.put('overlays', { ...into, name: r.snap.name, fork, restoring: true, modified: Date.now() });
-    return write(into.id);
+  if (s.into && s.into === a.overlay && (await r.store.get('overlays', s.into))) {
+    // The attached overlay never written: it takes the blocks, and is the snapshot's fork (named after it) once it loaded.
+    const fork = { snapshot: r.snap.key, name: r.snap.name };
+    c.pending.push({ attachment: a.id, how: 'into', overlay: s.into, generation: await generation(s.into), fork });
+    return write(s.into);
   }
-  const o = await createOverlay(
-    r.store,
-    s.disk,
-    r.snap.name,
-    { ...fork, before },
-    s.size,
-    await forkMark(r.store, s.pinned, s.size),
+  // A new overlay with the snapshot's blocks: its generation after the restore is 1 (web/snapshot.ts).
+  const id = newId();
+  const mark = await forkMark(r.store, s.pinned, s.size);
+  const disk = s.disk;
+  c.make.push(() =>
+    createOverlay(r.store, disk, r.snap.name, { snapshot: r.snap.key, generation: 1 }, s.size, mark, id),
   );
-  await r.store.put('overlays', { ...o, restoring: true });
-  a.overlay = o.id;
+  c.pending.push({ attachment: a.id, how: 'fork', overlay: id, before });
+  a.overlay = id;
   a.inPlace = undefined;
-  return write(o.id, s.action === 'fork-whole', true);
+  return write(id, s.action === 'fork-whole', true);
 }
 
 /** Machine `id` and its disks as the store has them now. */
@@ -310,9 +301,16 @@ async function commit(planned: Restoring, asked: Set<string>, replace: boolean):
   const plan: DiskPlan[] = steps.flatMap((s) =>
     s.action === 'keep' ? [{ slot: s.slot, action: 'keep' as const, generation: s.generation ?? 0 }] : [],
   );
-  for (const s of steps) if (s.action !== 'keep') plan.push(await commitStep(r, s, replace && asked.has(s.attachment)));
+  pendingRestore(r.m); // an earlier one's undo left steps (an overlay open elsewhere): said, nothing committed
+  const c: Commit = { pending: [], make: [] };
+  for (const s of steps)
+    if (s.action !== 'keep') plan.push(await commitStep(r, s, replace && asked.has(s.attachment), c));
+  r.m.restoring = c.pending.length ? c.pending : undefined;
   r.m.modified = Date.now();
+  // The commit: the attachments switched and what undoes them, in one write (docs/machines.md §5.2 "A restore's
+  // records"). The new forks' records after it: cut off between, the next load finds their ids there and goes back.
   await r.store.put('machines', r.m);
+  for (const make of c.make) await make();
   return plan;
 }
 

@@ -1373,10 +1373,13 @@ From the machine worker, as `problem`:
 | `snapshot` | a snapshot was refused (`SnapshotError`: another machine, another disk, damaged or truncated, devices this page can't make; below, "Snapshots") | Start, Load snapshot… |
 | `emulator` | anything else (an exception, an unimplemented exit) | the same three |
 
-Retry and Restart start a new machine worker. Retry after a snapshot's restore failed (its commit, or its start
-before the snapshot loaded) restores the snapshot again rather than booting (`Runner.again`, set by the restore and
-cleared once the snapshot loaded; machines.md §5.2). A start that finds its machine's lock held says it runs in
-another tab, or, while a merge into one of its disks holds it, that the merge runs. The failed states (`failed`) make the toolbar's
+Retry and Restart start a new machine worker. Retry after a snapshot's restore failed (its commit, its start before
+the snapshot loaded, or the record of its load refused) restores the snapshot again rather than booting
+(`Runner.again`, set by the restore, cleared once the snapshot loaded and by every start and stop, so a Retry after a
+switch to another machine, a power off or Import changes is that action's own; machines.md §5.2). A start that finds
+its machine's lock held says it runs in another tab, or, while a merge into one of its disks holds it, that the merge
+runs, or, while another change to its disks holds it (Delete overlay, a resize, Import changes: `holdMachines` holds a
+second lock beside the machine's, `heldOff`), that its disks are being changed ([One of the machine's disks is being changed in this tab or another: an overlay deleted, a disk resized or changes imported. Wait for that to finish, then Retry.](ui:machine:machine-hold.diskChanging.cause)). The failed states (`failed`) make the toolbar's
 Start button read Retry. **The serial log** is kept by the page (the last 1–2 MB of the serial console's
 output, beyond xterm.js's 5,000 lines of scrollback) for Copy (the clipboard) and Save (a
 `waarm64-<machine>-serial-<time>.log` download); Show serial log switches the Screen view to Both.

@@ -2,6 +2,7 @@
 // are, the slots a machine's devices take, and the shape: a canonical description of what the guest
 // sees, whose SHA-256 a snapshot is checked against. DOM-free: the page, the workers and Node's
 // tests use it alike. web/app/store.ts keeps these records; web/app/shape-diff.ts says how two shapes differ.
+import type { RestoreStep } from './restore-step.ts';
 import { CPU_DEFAULT, CPU_FEATURES, type CpuFeature } from '../cpu-features.ts';
 import { sizeSeen, type GrowMark, type OverlaySizes } from './disk-size.ts';
 
@@ -178,6 +179,14 @@ export type MachineRecord = {
    * overlays. Cleared by that restore. Not in the shape.
    */
   restoreFirst?: string;
+  /**
+   * A restore of a snapshot committed and not yet loaded (docs/machines.md §5.2 "A restore's records"): per attachment it
+   * changed, what it did and what undoing it takes. Written with the attachments it switched, in the one write that
+   * commits the restore (web/app/snapshots.ts `commit`); cleared in one write once the worker says the snapshot loaded
+   * (web/app/snapshot-undo.ts `restoreLoaded`), or by the undo at the machine's next load with its lock free. Only this
+   * machine's own load, start or `loaded` reads it. Not in the shape or a definition.
+   */
+  restoring?: RestoreStep[];
   /** The demo it was made from (web/app/demo-store.ts `DemoRef`; "started before"). Not in the shape or a definition. */
   fromDemo?: { store: string; id: string };
   /** In slot order (the guest's vda, vdb…). */

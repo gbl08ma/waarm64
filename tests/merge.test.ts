@@ -309,11 +309,23 @@ test("an overlay a restore was cut off in (marked, or a new fork never filled) i
   await assert.rejects(async () => mergeIntoDisk(store, w.ob.id, (await mergeEffect(store, w.ob.id))!), refused);
   assert.equal((await store.get('disks', w.blank.id))!.kind, 'blank', 'the disk as it was');
   assert.ok(await store.get('overlays', other.id), 'its other overlay kept');
-  // A restore's new fork the worker never opened (generation 0, its record's `before`): refused too.
-  const fork: OverlayRecord = { ...w.ob, id: `${w.ob.id.slice(0, 10)}fe`, name: 'Fork', fork: { snapshot: 'k', generation: 1, before: { overlay: other.id } } };
+  // A restore's new fork that never loaded (machine A's record names it, A back on Other once undone): the merge, which
+  // holds A off, undoes A's restore first, so the fork is gone and nothing else is touched.
+  const fork: OverlayRecord = { ...w.ob, id: `${w.ob.id.slice(0, 10)}fe`, name: 'Fork', fork: { snapshot: 'k', generation: 1 } };
   await store.put('overlays', fork);
-  await assert.rejects(async () => mergeIntoDisk(store, fork.id, (await mergeEffect(store, fork.id))!), refused);
+  const a = w.A.attachments[0];
+  await store.put('machines', { ...w.A, attachments: [{ ...a, overlay: fork.id }], restoring: [{ attachment: a.id, how: 'fork', overlay: fork.id, before: { overlay: other.id } }] });
+  const effect = (await mergeEffect(store, fork.id))!;
+  await assert.rejects(mergeIntoDisk(store, fork.id, effect), (e: unknown) => msgOf(e)?.key === 'disks:disks.overlayGone');
+  assert.equal(await store.get('overlays', fork.id), undefined, "the fork gone with A's restore");
+  assert.equal((await store.get('machines', w.A.id))!.attachments[0].overlay, other.id, 'A back on the overlay it had');
   assert.ok(await store.get('overlays', other.id), 'the overlay it forked from kept');
+  assert.equal((await store.get('disks', w.blank.id))!.kind, 'blank', 'the disk as it was');
+  // One a machine that doesn't attach the disk any more still names (its undo not run): refused, as cut off.
+  await store.put('overlays', fork);
+  await store.put('machines', { ...w.A, id: `${w.A.id.slice(0, 10)}a2`, attachments: [], restoring: [{ attachment: a.id, how: 'fork', overlay: fork.id, before: {} }] });
+  await assert.rejects(async () => mergeIntoDisk(store, fork.id, (await mergeEffect(store, fork.id))!), refused);
+  assert.ok(await store.get('overlays', fork.id));
 });
 
 /** Holds machine `id`'s lock as a start does (web/app/run/runner.ts `own`, from before it reads the record); its release. */

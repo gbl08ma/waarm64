@@ -499,6 +499,18 @@
     "message": "Couldn't restore <name>{{name}}</name>",
     "note": "Error headline in the message bar (under the toolbar, or the Home page's banner) when a snapshot's restore failed while its disks were prepared; {{name}} is the snapshot's name; why is the detail under it."
   },
+  "restore-loaded.notRecorded": {
+    "message": "Couldn't finish the snapshot's restore",
+    "note": "Error headline in the message bar (under the toolbar) when a snapshot of a machine kept in this browser loaded, but the page couldn't record that the machine's disks are now the snapshot's (the browser's storage refused the write, typically because it is full): the machine was stopped (Retry follows); what happened is the cause under it (snapshots:restore-loaded.notRecorded.cause)."
+  },
+  "restore-loaded.notRecorded.cause": {
+    "message": "The snapshot loaded, but the browser's storage refused to record that the machine's disks are now the snapshot's. The machine was stopped, and its restore is undone as one that didn't finish. <ui>Retry</ui> restores the snapshot again.",
+    "note": "Error details: the cause under the headline snapshots:restore-loaded.notRecorded, on the line under it in the same place; the storage's error is the detail under it. What happened: the restore's record stays that of a restore that never loaded, so the machine's next start or load undoes it (a new overlay it made is deleted with what the guest wrote to it in that moment, a disk goes back on the overlay it had; an overlay it replaced reads as empty). <ui>Retry</ui> is the message bar's button (machine:problems.retry)."
+  },
+  "snapshot-undo.pending": {
+    "message": "A restore of this machine that didn't finish is still to be undone, and one of the disks it wrote to is open in another tab or window of this web app. Close that tab, then <ui>Retry</ui>.",
+    "note": "Error details under a start's headline (disks:runner.notOpened) or a restore's (snapshots:snapshot-restore.restore.failed), on the line under it in the same place, when a machine kept in this browser can't start or be restored yet: an earlier restore of it that never loaded is still to be undone (its disks put back as they were before it), and an overlay that undo needs is open elsewhere (Retry follows). <ui>Retry</ui> is the message bar's button (machine:problems.retry)."
+  },
   "snapshot-restore.restore.refused": {
     "message": "Couldn't restore <name>{{name}}</name>",
     "note": "The headline of a warning in the message bar (under the toolbar, or the Home page's banner), a warning that stays until closed, when a snapshot can't be restored onto the machine's disks as they are; under it, the reason (e.g. snapshots:snapshots.writtenInPlace, a disk written in place moved on). {{name}} is the snapshot's name."
