@@ -154,9 +154,15 @@ export class Screen {
     this.present();
   }
 
+  /** The default framebuffer bound: through the renderer where there is one, which keeps what it has bound (`attached`). */
+  private bindDefault() {
+    if (this.r) this.r.bindDefaultFramebuffer();
+    else this.gl.bindFramebuffer(E.FRAMEBUFFER, null);
+  }
+
   clear() {
     const gl = this.gl;
-    gl.bindFramebuffer(E.FRAMEBUFFER, null);
+    this.bindDefault();
     gl.clearColor(0, 0, 0, 1);
     gl.disable(E.SCISSOR_TEST);
     gl.colorMask(true, true, true, true);
@@ -237,7 +243,7 @@ export class Screen {
       swz = src.fmt.sample.slice(0, 3);
       [tw, th] = [src.width, src.height];
     }
-    gl.bindFramebuffer(E.FRAMEBUFFER, null);
+    this.bindDefault();
     gl.viewport(0, 0, s.rect.w, s.rect.h);
     gl.useProgram(this.prog);
     gl.bindVertexArray(null);
@@ -275,7 +281,7 @@ export class Screen {
     const { w, h } = s.rect,
       px = new Uint8Array(w * h * 4),
       out = new Uint8Array(w * h * 4);
-    gl.bindFramebuffer(E.FRAMEBUFFER, null);
+    this.bindDefault();
     gl.readPixels(0, 0, w, h, E.RGBA, E.UNSIGNED_BYTE, px);
     for (let y = 0; y < h; y++) out.set(px.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);
     return { width: w, height: h, pixels: out };

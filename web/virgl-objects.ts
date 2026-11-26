@@ -260,8 +260,9 @@ export type Sub = {
   so: { targets: (SoTarget | undefined)[]; tf?: WebGLTransformFeedback; seen: Set<string> };
   vao?: WebGLVertexArrayObject;
   /** What `vao` has (the draws set it, and nothing else does): the attributes enabled, as bits, and each one's pointer
-   * (its buffer, then size, type, normalized, stride, offset and integer-ness) and divisor, as the last draw left them. */
-  vaoState?: { on: number; buf: (WebGLBuffer | null)[]; ptr: number[][]; divisor: number[] };
+   * (its buffer, then six numbers at 6k of `ptr`: size, type, normalized, stride, offset and integer-ness; NaN: never
+   * set) and divisor, as the last draw left them. */
+  vaoState?: { on: number; buf: (WebGLBuffer | null)[]; ptr: Float64Array; divisor: number[] };
   /** A long shader arriving in pieces (VIRGL_OBJ_SHADER_OFFSET_CONT), by stage. */
   longShader: Map<number, { handle: number; shader: Shader }>;
   /** The occlusion queries begun and not ended. */
@@ -320,6 +321,6 @@ export type Program = {
   prog: WebGLProgram;
   layout: ProgramLayout;
   loc: Map<string, WebGLUniformLocation | null>;
-  /** The values the draws gave its uniforms, by name (only the draws set them): a value already set isn't set again. */
-  set?: Map<string, number | Float64Array>;
+  /** The values the draws gave its uniforms, by name (only the draws set them; arrays as their words' bits): a value already set isn't set again. */
+  set?: Map<string, number | Uint32Array>;
 };

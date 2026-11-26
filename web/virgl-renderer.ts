@@ -166,6 +166,9 @@ const WRAP = [
   E.MIRRORED_REPEAT,
   E.MIRRORED_REPEAT,
 ];
+/** The draw buffers of a pass that writes color attachment 0 only, or no color (`setDrawBuffers`; never changed). */
+const COLOR0_ONLY: readonly number[] = [E.COLOR_ATTACHMENT0],
+  NO_COLOR: readonly number[] = [E.NONE];
 const PRIM = [E.POINTS, E.LINES, E.LINE_LOOP, E.LINE_STRIP, E.TRIANGLES, E.TRIANGLE_STRIP, E.TRIANGLE_FAN];
 /** The primitives `n` vertices make, per Gallium primitive (PRIM's order). */
 const primitives = (mode: number, n: number) =>
@@ -197,6 +200,25 @@ const colorPart = (sf: Surface, r: Res | undefined): ColorPart | undefined => {
   const f = FORMATS.get(sf.format) ?? r?.fmt;
   if (!f) return undefined;
   return { type: f.kind === 'uint' ? 'u' : f.kind === 'sint' ? 'i' : 'f', write: [...(f.write ?? [0, 1, 2, 3])] };
+};
+/** What a framebuffer has at a point (`VirglRenderer.attached`): an object, and a texture's level and face or layer. */
+type Attached = { obj: WebGLTexture | WebGLRenderbuffer | null; level: number; layer: number };
+/** Whether `points` has `obj`'s level and layer at `point` already; if not, it has them from now on. */
+const keepPoint = (
+  points: Map<number, Attached>,
+  point: number,
+  obj: Attached['obj'],
+  level: number,
+  layer: number,
+) => {
+  const a = points.get(point);
+  if (!a) points.set(point, { obj, level, layer });
+  else if (a.obj !== obj || a.level !== level || a.layer !== layer) {
+    a.obj = obj;
+    a.level = level;
+    a.layer = layer;
+  } else return true;
+  return false;
 };
 const sameSignature = (a: Int32Array, b: Int32Array, n: number) => {
   if (a.length !== n) return false;
@@ -274,11 +296,17 @@ export class VirglRenderer {
    * (nothing is assumed bound), mostly to what it was, and ANGLE on Metal takes an empty point emptied again as a
    * change of the framebuffer: ~38 µs of the GPU process a draw (bench/gpu/state-cost.ts, PERF loop 79).
    */
-  private attached = new Map<
-    WebGLFramebuffer,
-    Map<number, { obj: WebGLTexture | WebGLRenderbuffer | null; level: number; layer: number }>
-  >();
-  private fboBuffers = '';
+  private attached = new Map<WebGLFramebuffer, Map<number, Attached>>();
+  /** `fbo`'s draw buffers (the first `fboBufferCount`, at most `colorAttachments`: 8; -1: not set yet). */
+  private fboBuffers = new Int32Array(8);
+  private fboBufferCount = -1;
+  /** The draw buffers `bindFramebuffer` gives a draw (reused). */
+  private drawBufs: number[] = [];
+  /** The blend color as float32s and their bits (`Program.set` compares a uniform's bits). */
+  private blendBits = (() => {
+    const f = new Float32Array(4);
+    return { f, u: new Uint32Array(f.buffer) };
+  })();
   /** `?gpu=noattachcache`: every attachment and draw buffer set again (`attached`; PERF loop 79's A/B). */
   private attachCache: boolean;
   /** `?gpu=nodrawcache`: a draw's vertex arrays and uniforms set again (`Sub.vaoState`, `Program.set`; PERF loop 79's A/B). */
@@ -472,19 +500,22 @@ export class VirglRenderer {
 
   /** A shader object gone: the programs made with it are deleted (a new object of the same text is another shader). */
   private forgetShader(sh: Shader) {
-    const drop = (programs?: Map<number, Program | null>) => {
-      for (const p of programs?.values() ?? []) if (p) this.gl.deleteProgram(p.prog);
-    };
-    for (const [fs, programs] of sh.programs ?? []) {
-      drop(programs);
-      fs.pairs?.delete(sh);
-    }
+    this.dropPrograms(sh);
     // As a fragment shader: the vertex shaders' lists too (a long-lived vertex shader meets many fragment shaders).
     for (const vs of sh.pairs ?? []) {
-      drop(vs.programs?.get(sh));
+      for (const p of vs.programs?.get(sh)?.values() ?? []) if (p) this.gl.deleteProgram(p.prog);
       vs.programs?.delete(sh);
     }
-    sh.programs = sh.pairs = undefined;
+    sh.pairs = undefined;
+  }
+
+  /** The programs made with `vs` as their vertex shader, deleted. */
+  private dropPrograms(vs: Shader) {
+    for (const [fs, programs] of vs.programs ?? []) {
+      for (const p of programs.values()) if (p) this.gl.deleteProgram(p.prog);
+      fs.pairs?.delete(vs);
+    }
+    vs.programs = undefined;
   }
 
   // --- resources -------------------------------------------------------------------------------------------------
@@ -723,7 +754,6 @@ export class VirglRenderer {
     this.dropPicture(r);
     if (r.tex) gl.deleteTexture(r.tex);
     if (r.rb) gl.deleteRenderbuffer(r.rb);
-    this.fbCache.clear();
   }
 
   attachBacking(id: number, backing: Backing) {
@@ -1042,21 +1072,32 @@ export class VirglRenderer {
     return gl.checkFramebufferStatus(E.READ_FRAMEBUFFER) === E.FRAMEBUFFER_COMPLETE;
   }
 
-  /** Binds `fb` at `target`, as `attachTo` and `setDrawBuffers` take it (every binding of the renderer's goes through here). */
+  /**
+   * Binds `fb` at `target`, as `attachTo` and `setDrawBuffers` take it: every framebuffer binding on the context goes
+   * through here, the Screen's too (`bindDefaultFramebuffer`), so `boundFb` is GL's binding between calls as well.
+   */
   private bindFb(target: number, fb: WebGLFramebuffer | null) {
     if (target !== E.READ_FRAMEBUFFER) this.boundFb.draw = fb;
     if (target !== E.DRAW_FRAMEBUFFER) this.boundFb.read = fb;
     this.gl.bindFramebuffer(target, fb);
   }
 
+  /** The default framebuffer bound for drawing and reading: the Screen's present and grab (web/virgl-screen.ts). */
+  bindDefaultFramebuffer() {
+    this.bindFb(E.FRAMEBUFFER, null);
+  }
+
   /** The draw buffers of the framebuffer bound for drawing, left as they are on `fbo` when they already are (`attached`). */
-  private setDrawBuffers(bufs: number[]) {
+  private setDrawBuffers(bufs: readonly number[]) {
     if (this.boundFb.draw === this.fbo && this.attachCache) {
-      const k = bufs.join();
-      if (k === this.fboBuffers) return;
-      this.fboBuffers = k;
+      const kept = this.fboBuffers;
+      let same = this.fboBufferCount === bufs.length;
+      for (let k = 0; same && k < bufs.length; k++) same = kept[k] === bufs[k];
+      if (same) return;
+      kept.set(bufs);
+      this.fboBufferCount = bufs.length;
     }
-    this.gl.drawBuffers(bufs);
+    this.gl.drawBuffers(bufs as number[]);
   }
 
   /** Attaches `r`'s level and layer (nothing without it) at `point` of the framebuffer bound at `target`; on `fbo` and
@@ -1071,16 +1112,9 @@ export class VirglRenderer {
       const lv = r && !r.rb ? level : 0,
         ly = r && !r.rb && r.glTarget !== E.TEXTURE_2D ? layer : 0;
       // DEPTH_STENCIL_ATTACHMENT is both the depth and the stencil point (GLES 3.0 §4.4.2.4).
-      const at = point === E.DEPTH_STENCIL_ATTACHMENT ? [E.DEPTH_ATTACHMENT, E.STENCIL_ATTACHMENT] : [point];
-      let same = true;
-      for (const q of at) {
-        const a = points.get(q);
-        if (a?.obj !== obj || a.level !== lv || a.layer !== ly) {
-          same = false;
-          points.set(q, { obj, level: lv, layer: ly });
-        }
-      }
-      if (same) return;
+      const ds = point === E.DEPTH_STENCIL_ATTACHMENT;
+      const same = keepPoint(points, ds ? E.DEPTH_ATTACHMENT : point, obj, lv, ly);
+      if ((ds ? keepPoint(points, E.STENCIL_ATTACHMENT, obj, lv, ly) : true) && same) return;
     }
     if (!r) {
       gl.framebufferRenderbuffer(target, point, E.RENDERBUFFER, null);
@@ -2162,7 +2196,7 @@ export class VirglRenderer {
       this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
       this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, depth ? undefined : dst, p[1], dz + z);
       if (depth) this.attachTo(E.DRAW_FRAMEBUFFER, point, dst, p[1], dz + z);
-      this.setDrawBuffers([depth ? E.NONE : E.COLOR_ATTACHMENT0]);
+      this.setDrawBuffers(depth ? NO_COLOR : COLOR0_ONLY);
       gl.disable(E.SCISSOR_TEST);
       // GLES 3.0's blits ignore the write masks (§4.3.3: only the scissor and pixel ownership tests apply); every mask
       // on all the same, as `blit` and `resolve` set them, so no implementation leaves a draw's masks on a raw copy.
@@ -2183,7 +2217,6 @@ export class VirglRenderer {
       );
       if (depth) this.attachTo(E.READ_FRAMEBUFFER, point, undefined, 0, 0);
     }
-    this.fbCache.clear();
   }
 
   private blit(c: Ctx, p: Uint32Array) {
@@ -2253,7 +2286,7 @@ export class VirglRenderer {
           this.bindFb(E.DRAW_FRAMEBUFFER, this.fbo);
           this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
           this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, dst, db.level, db.z + z);
-          this.setDrawBuffers([E.COLOR_ATTACHMENT0]);
+          this.setDrawBuffers(COLOR0_ONLY);
           this.blitScissor(scissor, p);
           gl.colorMask(true, true, true, true);
           gl.blitFramebuffer(
@@ -2284,7 +2317,7 @@ export class VirglRenderer {
         this.bindFb(E.DRAW_FRAMEBUFFER, this.fbo);
         this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, undefined, 0, 0);
         this.attachTo(E.DRAW_FRAMEBUFFER, pt(dst.fmt), dst, db.level, db.z + z);
-        this.setDrawBuffers([E.NONE]);
+        this.setDrawBuffers(NO_COLOR);
         this.blitScissor(scissor, p);
         gl.depthMask(true);
         gl.stencilMask(0xff);
@@ -2305,7 +2338,6 @@ export class VirglRenderer {
       }
     }
     gl.disable(E.SCISSOR_TEST);
-    this.fbCache.clear();
   }
 
   private blitScissor(on: boolean, p: Uint32Array) {
@@ -2360,7 +2392,7 @@ export class VirglRenderer {
     this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
     this.attachTo(E.DRAW_FRAMEBUFFER, point, t, 0, 0);
     gl.readBuffer(color ? E.COLOR_ATTACHMENT0 : E.NONE);
-    this.setDrawBuffers([color ? E.COLOR_ATTACHMENT0 : E.NONE]);
+    this.setDrawBuffers(color ? COLOR0_ONLY : NO_COLOR);
     gl.disable(E.SCISSOR_TEST);
     gl.colorMask(true, true, true, true);
     gl.depthMask(true);
@@ -2369,7 +2401,6 @@ export class VirglRenderer {
     this.attachTo(E.READ_FRAMEBUFFER, point, undefined, 0, 0);
     this.attachTo(E.DRAW_FRAMEBUFFER, point, undefined, 0, 0);
     gl.readBuffer(E.COLOR_ATTACHMENT0); // the read framebuffer's own state: the other reads expect it
-    this.fbCache.clear();
     return t;
   }
 
@@ -2397,7 +2428,7 @@ export class VirglRenderer {
       this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
     this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
     this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, dst, db.level, dz);
-    this.setDrawBuffers([E.COLOR_ATTACHMENT0]);
+    this.setDrawBuffers(COLOR0_ONLY);
     gl.useProgram(b.prog);
     gl.bindVertexArray(null);
     gl.activeTexture(E.TEXTURE0);
@@ -2513,7 +2544,7 @@ void main() {
     for (let k = 0; k < this.colorAttachments; k++)
       this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
     this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
-    this.setDrawBuffers([E.NONE]);
+    this.setDrawBuffers(NO_COLOR);
     for (const e of [
       E.BLEND,
       E.CULL_FACE,
@@ -2561,7 +2592,6 @@ void main() {
     }
     this.attachTo(E.DRAW_FRAMEBUFFER, point, undefined, 0, 0);
     gl.depthMask(true);
-    this.fbCache.clear();
   }
 
   private blitProgram() {
@@ -2649,36 +2679,42 @@ void main() {
 
   // --- clears and draws ------------------------------------------------------------------------------------------
 
-  private fbCache = new Map<string, true>();
-
   /** Binds the draw framebuffer for the sub-context's surfaces; false if it can't be drawn to. */
   private bindFramebuffer(c: Ctx, s: Sub): { width: number; height: number } | null {
     this.bindFb(E.DRAW_FRAMEBUFFER, this.fbo);
     let width = 0,
       height = 0;
-    const bufs: number[] = [];
+    const bufs = this.drawBufs;
+    bufs.length = 0;
     for (let k = 0; k < this.colorAttachments; k++) {
       const sf = s.fb.cbufs[k];
       const r = sf && this.lookup(c, sf.res);
       this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, r, sf?.level ?? 0, sf?.firstLayer ?? 0);
       if (k < s.fb.cbufs.length) bufs.push(r ? E.COLOR_ATTACHMENT0 + k : E.NONE);
-      if (r) [width, height] = [Math.max(1, r.width >> sf.level), Math.max(1, r.height >> sf.level)];
+      if (r) {
+        width = Math.max(1, r.width >> sf.level);
+        height = Math.max(1, r.height >> sf.level);
+      }
     }
     const zs = s.fb.zs && this.lookup(c, s.fb.zs.res);
-    this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
-    this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_ATTACHMENT, undefined, 0, 0);
-    this.attachTo(E.DRAW_FRAMEBUFFER, E.STENCIL_ATTACHMENT, undefined, 0, 0);
-    if (zs?.fmt) {
-      const point =
-        zs.fmt.kind === 'depth'
-          ? E.DEPTH_ATTACHMENT
-          : zs.fmt.kind === 'stencil'
-            ? E.STENCIL_ATTACHMENT
-            : E.DEPTH_STENCIL_ATTACHMENT;
-      this.attachTo(E.DRAW_FRAMEBUFFER, point, zs, s.fb.zs!.level, s.fb.zs!.firstLayer);
-      if (!width) [width, height] = [Math.max(1, zs.width >> s.fb.zs!.level), Math.max(1, zs.height >> s.fb.zs!.level)];
+    // The depth and stencil points: the target's, and only the one it leaves empty emptied (emptying the target's own
+    // point first would detach and attach it again at every draw: two changes of the framebuffer, ~38 µs of ANGLE on
+    // Metal's GPU process a draw; PERF loop 81).
+    const kind = zs?.fmt?.kind;
+    if (!zs || !kind) this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
+    else {
+      const { level, firstLayer } = s.fb.zs!;
+      if (kind === 'depth' || kind === 'stencil') {
+        const depth = kind === 'depth';
+        this.attachTo(E.DRAW_FRAMEBUFFER, depth ? E.STENCIL_ATTACHMENT : E.DEPTH_ATTACHMENT, undefined, 0, 0);
+        this.attachTo(E.DRAW_FRAMEBUFFER, depth ? E.DEPTH_ATTACHMENT : E.STENCIL_ATTACHMENT, zs, level, firstLayer);
+      } else this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, zs, level, firstLayer);
+      if (!width) {
+        width = Math.max(1, zs.width >> level);
+        height = Math.max(1, zs.height >> level);
+      }
     }
-    this.setDrawBuffers(bufs.length ? bufs : [E.NONE]);
+    this.setDrawBuffers(bufs.length ? bufs : NO_COLOR);
     if (!width) return null;
     return { width, height };
   }
@@ -2926,7 +2962,7 @@ void main() {
       this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
     this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
     gl.readBuffer(color ? E.COLOR_ATTACHMENT0 : E.NONE);
-    this.setDrawBuffers([color ? E.COLOR_ATTACHMENT0 : E.NONE]);
+    this.setDrawBuffers(color ? COLOR0_ONLY : NO_COLOR);
     gl.disable(E.SCISSOR_TEST);
     gl.colorMask(true, true, true, true);
     gl.depthMask(true);
@@ -2950,7 +2986,6 @@ void main() {
     this.attachTo(E.READ_FRAMEBUFFER, point, undefined, 0, 0);
     this.attachTo(E.DRAW_FRAMEBUFFER, point, undefined, 0, 0);
     gl.readBuffer(E.COLOR_ATTACHMENT0); // the read framebuffer's own state: the other reads expect it
-    this.fbCache.clear();
     this.stats.feedbackCopies++;
     return t;
   }
@@ -3100,8 +3135,9 @@ void main() {
 
   /**
    * The parts and the states forgotten, once a guest made more than any real one does (it can make them without end:
-   * vertex elements of any length, states of any mix). Programs stay with their shaders, under state ids that aren't
-   * given again, so a state met again makes its programs again.
+   * vertex elements of any length, states of any mix), and every program with them: each was made for a state, by its
+   * id, and ids aren't given again, so a state met again makes its program again (kept, the old ones grew by a copy of
+   * every program in use at each forget).
    */
   private forgetStates() {
     this.parts = [undefined];
@@ -3111,6 +3147,12 @@ void main() {
     this.resPartOf = new WeakMap();
     this.states.clear();
     this.statesKept = 0;
+    // The vertex shaders hold the programs: every live shader object's, and the ones bound (a destroyed one may be).
+    for (const c of this.contexts.values())
+      for (const s of c.subs.values()) {
+        for (const o of s.objects.values()) if (o.kind === 'shader') this.dropPrograms(o.v);
+        if (s.shaders.vs) this.dropPrograms(s.shaders.vs);
+      }
   }
 
   /** The state of the signature in `sig` (its first `n`): the one met before, or a new one with its key. */
@@ -3211,16 +3253,16 @@ void main() {
     gl.useProgram(prog.prog);
     // Uniforms: constant buffer 0 and the system values; a value the program's uniform already has isn't set again
     // (`Program.set`).
-    const kept = this.drawCache ? (prog.set ??= new Map<string, number | Float64Array>()) : undefined;
-    /** Whether uniform `n` holds `v`'s first `len` values already; if not, they're kept as its. */
-    const holds = (n: string, v: ArrayLike<number>, len = v.length) => {
+    const kept = this.drawCache ? (prog.set ??= new Map<string, number | Uint32Array>()) : undefined;
+    /** Whether uniform `n` holds `v`'s first `len` words already (bits: a float's −0 isn't its +0); if not, they're kept as its. */
+    const holds = (n: string, v: Uint32Array, len = v.length) => {
       if (!kept) return false;
       let o = kept.get(n);
-      if (o instanceof Float64Array && o.length === len) {
+      if (o instanceof Uint32Array && o.length === len) {
         let k = 0;
         while (k < len && o[k] === v[k]) k++;
         if (k === len) return true;
-      } else kept.set(n, (o = new Float64Array(len)));
+      } else kept.set(n, (o = new Uint32Array(len)));
       for (let k = 0; k < len; k++) o[k] = v[k];
       return false;
     };
@@ -3240,7 +3282,7 @@ void main() {
     const negative = vp.scale[1] < 0;
     const set1 = (n: string, v: number) => {
       const l = prog.loc.get(n);
-      if (!l || kept?.get(n) === v) return;
+      if (!l || (kept && Object.is(kept.get(n), v))) return;
       kept?.set(n, v);
       gl.uniform1f(l, v);
     };
@@ -3265,7 +3307,11 @@ void main() {
     set1('u_fbh', fb.height);
     if (dsa) set1('u_alpharef', dsa.alpha.ref);
     const lbc = prog.loc.get('u_blendc');
-    if (lbc && !holds('u_blendc', s.blendColor)) gl.uniform4fv(lbc, s.blendColor);
+    if (lbc) {
+      const bc = this.blendBits;
+      for (let k = 0; k < 4; k++) bc.f[k] = s.blendColor[k];
+      if (!holds('u_blendc', bc.u)) gl.uniform4fv(lbc, s.blendColor);
+    }
     set1('u_psize', rs?.pointSize || 1);
     const stl = prog.loc.get('u_stipple');
     if (stl && !holds('u_stipple', s.stipple)) gl.uniform1uiv(stl, s.stipple);
@@ -3450,7 +3496,9 @@ void main() {
     s.vao ??= gl.createVertexArray();
     gl.bindVertexArray(s.vao);
     // What the sub-context's array already has is left as it is (`Sub.vaoState`).
-    const va = this.drawCache ? (s.vaoState ??= { on: 0, buf: [], ptr: [], divisor: [] }) : undefined;
+    const va = this.drawCache
+      ? (s.vaoState ??= { on: 0, buf: [], ptr: new Float64Array(16 * 6).fill(NaN), divisor: [] })
+      : undefined;
     const enable = (k: number, on: boolean) => {
       if (va) {
         const bit = 1 << k;
@@ -3481,7 +3529,8 @@ void main() {
         continue;
       }
       enable(k, true);
-      let [stride, at] = [vb.stride, vb.offset + e.offset];
+      let stride = vb.stride,
+        at = vb.offset + e.offset;
       let buf = r.buf;
       const comp =
         vf.type === E.FLOAT ||
@@ -3503,26 +3552,36 @@ void main() {
         buf = this.scratchVb[k] ??= gl.createBuffer();
         gl.bindBuffer(E.ARRAY_BUFFER, buf);
         gl.bufferData(E.ARRAY_BUFFER, packed, E.STREAM_DRAW);
-        [stride, at] = [st, 0];
+        stride = st;
+        at = 0;
       }
-      const was = va?.ptr[k];
+      const was = va?.ptr,
+        p = k * 6;
       const int = vf.int ? 1 : 0,
         norm = vf.normalized ? 1 : 0;
       if (
         !va ||
         !was ||
         va.buf[k] !== buf ||
-        was[0] !== vf.size ||
-        was[1] !== vf.type ||
-        was[2] !== norm ||
-        was[3] !== stride ||
-        was[4] !== at ||
-        was[5] !== int
+        was[p] !== vf.size ||
+        was[p + 1] !== vf.type ||
+        was[p + 2] !== norm ||
+        was[p + 3] !== stride ||
+        was[p + 4] !== at ||
+        was[p + 5] !== int
       ) {
         gl.bindBuffer(E.ARRAY_BUFFER, buf);
         if (vf.int) gl.vertexAttribIPointer(k, vf.size, vf.type, stride, at);
         else gl.vertexAttribPointer(k, vf.size, vf.type, vf.normalized, stride, at);
-        if (va) [va.buf[k], va.ptr[k]] = [buf, [vf.size, vf.type, norm, stride, at, int]];
+        if (va) {
+          va.buf[k] = buf;
+          was![p] = vf.size;
+          was![p + 1] = vf.type;
+          was![p + 2] = norm;
+          was![p + 3] = stride;
+          was![p + 4] = at;
+          was![p + 5] = int;
+        }
       }
       if (va?.divisor[k] !== e.divisor) {
         gl.vertexAttribDivisor(k, e.divisor);
@@ -3792,7 +3851,7 @@ void main() {
       gl.framebufferRenderbuffer(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, E.RENDERBUFFER, rb);
     }
     this.bindFb(E.DRAW_FRAMEBUFFER, this.nullFbo);
-    this.setDrawBuffers([E.COLOR_ATTACHMENT0]);
+    this.setDrawBuffers(COLOR0_ONLY);
     return { width: 1, height: 1 };
   }
 
@@ -4311,7 +4370,7 @@ void main() {
     };
   }
 
-  /** The snapshot's framebuffers (read, draw), kept apart from the draws' (their attachments are cached: `fbCache`). */
+  /** The snapshot's framebuffers (read, draw), kept apart from the draws' `fbo` and `readFbo`: not in `attached`, their attachments and draw buffers are always set. */
   private snapFbos?: [WebGLFramebuffer, WebGLFramebuffer];
   private nearest?: WebGLSampler;
 
@@ -4345,7 +4404,7 @@ void main() {
     this.attachTo(E.DRAW_FRAMEBUFFER, point, dst, 0, 0);
     const color = point === E.COLOR_ATTACHMENT0;
     gl.readBuffer(color ? E.COLOR_ATTACHMENT0 : E.NONE);
-    this.setDrawBuffers([color ? E.COLOR_ATTACHMENT0 : E.NONE]);
+    this.setDrawBuffers(color ? COLOR0_ONLY : NO_COLOR);
     gl.disable(E.SCISSOR_TEST);
     gl.colorMask(true, true, true, true); // the write masks, as `copyRegion`'s blit
     gl.depthMask(true);
@@ -4424,7 +4483,7 @@ void main() {
       p = this.snapProgram('copy');
     this.snapFramebuffers();
     this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, r, 0, 0);
-    this.setDrawBuffers([E.COLOR_ATTACHMENT0]);
+    this.setDrawBuffers(COLOR0_ONLY);
     this.snapDrawState(w, h);
     gl.useProgram(p.prog);
     gl.uniform1i(p.loc.get('u_t')!, 0);
@@ -4470,7 +4529,7 @@ void main() {
         gl.texStorage2D(E.TEXTURE_2D, 1, GL.R32UI, w, h);
         this.snapFramebuffers();
         gl.framebufferTexture2D(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, E.TEXTURE_2D, target, 0);
-        this.setDrawBuffers([E.COLOR_ATTACHMENT0]);
+        this.setDrawBuffers(COLOR0_ONLY);
         this.snapDrawState(w, h);
         const p = this.snapProgram('depth');
         gl.useProgram(p.prog);
@@ -4492,7 +4551,7 @@ void main() {
         this.snapFramebuffers();
         gl.framebufferTexture2D(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, E.TEXTURE_2D, target, 0);
         this.attachTo(E.DRAW_FRAMEBUFFER, point, copy, 0, 0);
-        this.setDrawBuffers([E.COLOR_ATTACHMENT0]);
+        this.setDrawBuffers(COLOR0_ONLY);
         this.snapDrawState(w, h);
         gl.clearBufferfv(E.COLOR, 0, [0, 0, 0, 0]);
         gl.enable(E.BLEND);
@@ -4533,7 +4592,6 @@ void main() {
     gl.stencilMask(0xff);
     gl.activeTexture(E.TEXTURE0);
     gl.bindSampler(0, null);
-    this.fbCache.clear();
   }
 
   /** A sub-context as data: its objects (their values; bound state names them by their place in the list). */

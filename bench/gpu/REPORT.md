@@ -469,3 +469,44 @@ Planted and caught: the depth-stencil point as one, the level or the layer left 
 the draw buffers kept on other framebuffers, an attribute's buffer, stride, offset or divisor left out of the
 comparison, its enabled bit taken as set, one array's state for every sub-context, the constants compared by their
 first vector, a scalar uniform kept by name alone.
+
+## PERF loop 81: the review of loop 79's caches fixed (2026-11-26)
+
+The out-of-context review of loop 79's renderer caches (`review/virgl-caches`, six findings at d8792cbf) checked
+against main: all six real. Each got a test in `tests/virgl.test.ts` that failed on 650d988d first, then its fix. The
+M4 Mac mini, Chrome for Testing 158.0.8127.88, ANGLE on Metal; results in `results/perf81/` (`ab.sh` the A/B;
+`../perf79/ab.py 'bench/gpu/results/perf81/gtk-*'` reads it).
+
+1. **A draw or clear with a depth or stencil target detached it and attached it again** (the cache compared each
+   call with the last one: the three depth and stencil points emptied, then the target's attached). Now the target is
+   attached at its own point and only the point it leaves empty is emptied. Counted on the recording WebGL2: dEQP-GLES2's
+   stencil-stride trace (481 draws into one target) made 978 attachment calls, now 11. **What it cost**
+   (`bench/gpu/state-cost.ts ZS=1`, a DEPTH24_STENCIL8 texture on the target, `state-cost-zs.json`, µs a draw to the
+   calls' return / to the GPU's end): the changes alone 0.25 / 1.43, with the texture detached and attached again
+   0.48 / 39.40, attached again alone 0.50 / 2.13: the churn is a changed framebuffer to ANGLE, the same ~38 µs of the
+   GPU process as an empty point emptied again. **The A/B** (gtk4-demo, WARM_S 10, PHASE_S 8, three rounds, the arm
+   first alternating; `gtk-base-*`: 650d988d's renderer, `gtk-new-*`: this loop's): gears (17,160 draws a second into a
+   GtkGLArea with a depth buffer) took the GPU process 351.2 / 319.5 / 317.6 ms a second, now 88.8 / 87.7 / 89.8
+   (**−72%**, 1,270 / 1,160 / 1,155 → 272 / 261 / 276 M cycles a second; ~13 µs a draw), the GPU worker 2.0-2.2 µs a draw
+   either way; iconscroll (no depth) unchanged (the GPU process 218 / 231 → 222-228 ms a second past the session's first
+   round, the worker 7.0-8.2 against 7.3-8.0 µs a draw).
+2. **The screen bound the default framebuffer past the renderer** (`web/virgl-screen.ts`), so between calls the
+   renderer's `boundFb` wasn't GL's binding (latent: every attachment site binds first). The screen now binds through
+   `VirglRenderer.bindDefaultFramebuffer`; the framebuffers' model in the tests also fails any attachment made with the
+   default framebuffer bound.
+3. **The uniforms kept took −0 for +0** (a blend color's sign, which the shader's folded blend reads). They are now kept
+   as 32-bit words and compared by bits (the constants were words already: half the memory of the doubles), the scalars
+   with `Object.is`.
+4. **The caches allocated at every draw** (an array a call to `attachTo`, a string a `setDrawBuffers`, two arrays an
+   attribute changed, the draw buffers' array): constant arrays, a kept `Int32Array` of the draw buffers, the points
+   updated in place, the attributes' pointers in one `Float64Array` a sub-context. Nothing measured: hygiene (docs/host-code.md).
+5. **`fbCache` was dead** (never read, seven clears) and a comment named it as the attachments' cache: removed.
+6. **A forget of the draw states kept every program under the old state ids** (a guest making states without end added a
+   copy of every program in use at each forget, until its shaders died): `forgetStates` deletes them, a shader object's
+   or one destroyed while bound. Two rounds of 4,200 states peaked at 8,400 live programs, now 4,200.
+
+Memory: none added; less by reading (the constants' half, the programs a forget frees). Planted and caught: the
+depth-stencil point emptied before it's attached, the other point left on, the stencil half of the depth-stencil point
+not compared, the screen binding past the renderer, a blend color's sign lost, the draw buffers' count not compared, an
+attribute's offset not compared, a forget's programs kept (the bound shader's and every object's).
+Its commit passed `scripts/ci.sh`, `ci-graphics.sh` and `ci-deqp.sh`.

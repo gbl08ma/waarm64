@@ -514,7 +514,10 @@ function framebufferViews(log: [string, unknown[]][]) {
       if (t !== E.READ_FRAMEBUFFER) draw = a[1];
       if (t !== E.DRAW_FRAMEBUFFER) read = a[1];
     } else if (ATTACH.includes(n)) {
-      const f = fb(t === E.READ_FRAMEBUFFER ? read : draw);
+      const bound = t === E.READ_FRAMEBUFFER ? read : draw;
+      // An attachment on the default framebuffer is GL's error, and the cache would keep it as its framebuffer's.
+      assert.ok(bound, `${n} with the default framebuffer bound`);
+      const f = fb(bound);
       const what = n === 'framebufferTextureLayer' ? `${name(a[2])}@${a[3]}/${a[4]}` : n === 'framebufferTexture2D' ? `${name(a[3])}@${a[4]}/${a[2]}` : name(a[3]);
       for (const p of a[1] === E.DEPTH_STENCIL_ATTACHMENT ? [E.DEPTH_ATTACHMENT, E.STENCIL_ATTACHMENT] : [a[1] as number]) f.points.set(p, what);
     } else if (n === 'drawBuffers') fb(draw).draw = String(a[0]);
@@ -534,7 +537,8 @@ test('virgl renderer: an attachment or draw buffers already set aren\'t set agai
       replay(fixture(name), (ram) => localHost(new VirglRenderer(gl, { ram, log: (m) => errors.push(m), noAttachCache })));
       assert.deepEqual(errors, [], name);
       const attaches = gl.log.filter(([n]) => n.startsWith('framebuffer') || n === 'drawBuffers').length;
-      return { views: framebufferViews(gl.log), attaches };
+      const draws = gl.log.filter(([n]) => n.startsWith('draw') && n !== 'drawBuffers').length;
+      return { views: framebufferViews(gl.log), attaches, draws };
     };
     const every = run(true),
       cached = run(false);
@@ -542,7 +546,10 @@ test('virgl renderer: an attachment or draw buffers already set aren\'t set agai
     const at = every.views.findIndex((v, k) => v !== cached.views[k]);
     assert.ok(at < 0 && every.views.length === cached.views.length, `${name}: at ${at}, ${every.views[at]} | ${cached.views[at]}`);
     // The traces of many draws into a few targets set a fraction of what every draw set.
-    assert.ok(cached.attaches < every.attaches / (name.startsWith('deqp') ? 1 : 3), `${name}: ${cached.attaches} attachment calls against ${every.attaches}`);
+    assert.ok(cached.attaches < every.attaches / (name.startsWith('deqp-gles3') ? 1 : 3), `${name}: ${cached.attaches} attachment calls against ${every.attaches}`);
+    // dEQP-GLES2's case draws 481 times into one color and depth-stencil target: its attachments set a few times, not
+    // at each draw (a draw's depth-stencil point emptied and attached again was two calls a draw: PERF loop 81).
+    if (name.startsWith('deqp-gles2')) assert.ok(cached.attaches < cached.draws / 10, `${name}: ${cached.attaches} attachment calls for ${cached.draws} draws`);
   }
 });
 
@@ -572,7 +579,9 @@ function drawStateViews(log: [string, unknown[]][]) {
     else if (n === 'vertexAttribDivisor') attrib(a[0] as number).div = a[1] as number;
     else if (n.startsWith('uniform') && !n.startsWith('uniformBlock')) {
       if (!uniforms.has(prog)) uniforms.set(prog, new Map());
-      const v = a.slice(1).map((x) => (ArrayBuffer.isView(x) ? Array.from(x as unknown as ArrayLike<number>).join(',') : String(x)));
+      // −0 as such (uniform4fv sets its sign bit: a blend color's).
+      const num = (x: unknown) => (Object.is(x, -0) ? '-0' : String(x));
+      const v = a.slice(1).map((x) => (ArrayBuffer.isView(x) || Array.isArray(x) ? Array.from(x as ArrayLike<number>, num).join(',') : num(x)));
       // uniform4uiv's offset and length: the values it sets.
       const set = n.endsWith('v') && a.length >= 4 ? (v[0].split(',').slice(a[2] as number, (a[2] as number) + (a[3] as number)).join(',')) : v.join(';');
       uniforms.get(prog)!.set((a[0] as { name: string }).name, set);
@@ -713,6 +722,174 @@ test('virgl renderer: targets of other levels, layers and depth points, a blit a
   assert.ok(every.some((v) => v.startsWith('blitFramebuffer')) && every.length > 8, every.join('\n'));
   const at = every.findIndex((v, k) => v !== cached[k]);
   assert.ok(at < 0 && every.length === cached.length, `at ${at}: ${every[at]} | ${cached[at]}`);
+});
+
+test('virgl renderer: clears and draws into the same color and depth, stencil or depth-stencil target set no attachment again (Z24S8, Z16, S8)', () => {
+  for (const [format, points] of [[19, [E.DEPTH_ATTACHMENT, E.STENCIL_ATTACHMENT]], [16, [E.DEPTH_ATTACHMENT]], [23, [E.STENCIL_ATTACHMENT]]] as const) {
+    const run = (noAttachCache: boolean) => {
+      const gl = mockGl();
+      gl.keepLog = true;
+      const errors: string[] = [];
+      const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)], log: (m) => errors.push(m), noAttachCache });
+      r.createContext(1);
+      const d = drawable(r);
+      r.createResource({ id: 4, target: 2, format, bind: 1, width: 4, height: 4, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+      r.attach(1, 4);
+      const words: number[] = [];
+      const cmd = (c: number, obj: number, ...p: number[]) => words.push(c | obj << 8 | p.length << 16, ...p);
+      cmd(1, 8, 23, 4, format, 0, 0);
+      cmd(5, 0, 1, 23, 22); // the color surface and the depth or stencil one
+      const clear = () => cmd(7, 0, 0x7, 0, 0, 0, 0, 0, 0, 0);
+      clear();
+      r.submit(1, new Uint32Array([...d.setup, ...words]));
+      const first = gl.log.length;
+      words.length = 0;
+      clear();
+      r.submit(1, new Uint32Array([...words, ...d.draw, ...d.draw]));
+      words.length = 0;
+      clear();
+      r.submit(1, new Uint32Array(words));
+      assert.deepEqual(errors, []);
+      return { views: framebufferViews(gl.log), after: gl.log.slice(first).filter(([n]) => n.startsWith('framebuffer') || n === 'drawBuffers').map(([n, a]) => `${n}(${a[1]})`) };
+    };
+    const every = run(true),
+      cached = run(false);
+    assert.equal(every.views.length, 8, every.views.join('\n')); // a clear's color and depth-stencil calls, two draws
+    assert.deepEqual(cached.views, every.views, `format ${format}`);
+    // The target is at its points (and only there), and the draws and clears after the first set nothing.
+    const at = (v: string) => [E.DEPTH_ATTACHMENT, E.STENCIL_ATTACHMENT].filter((p) => new RegExp(` ${p}=`).test(v.split(';')[0]));
+    assert.deepEqual(at(cached.views[7]), points, cached.views[7]);
+    assert.deepEqual(cached.after, [], `format ${format}`);
+  }
+});
+
+test('virgl renderer: a target of other depth and stencil points after another leaves only its own attached (Z24S8, Z16, S8, none)', () => {
+  const run = (noAttachCache: boolean) => {
+    const gl = mockGl();
+    gl.keepLog = true;
+    const errors: string[] = [];
+    const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)], log: (m) => errors.push(m), noAttachCache });
+    r.createContext(1);
+    const d = drawable(r);
+    const words: number[] = [];
+    const cmd = (c: number, obj: number, ...p: number[]) => words.push(c | obj << 8 | p.length << 16, ...p);
+    for (const [id, format] of [[4, 19], [5, 16], [6, 23]]) {
+      r.createResource({ id, target: 2, format, bind: 1, width: 4, height: 4, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+      r.attach(1, id);
+      cmd(1, 8, 20 + id, id, format, 0, 0);
+    }
+    for (const zs of [24, 25, 26, 0, 24, 26, 25, 24]) {
+      cmd(5, 0, 1, zs, 22);
+      words.push(...d.draw);
+    }
+    r.submit(1, new Uint32Array([...d.setup, ...words]));
+    assert.deepEqual(errors, []);
+    return framebufferViews(gl.log);
+  };
+  const every = run(true),
+    cached = run(false);
+  assert.deepEqual(cached, every);
+  // Each draw's depth and stencil points: the target's alone (GLES 3.0's model of the framebuffer).
+  const points = (v: string) => [E.DEPTH_ATTACHMENT, E.STENCIL_ATTACHMENT].map((p) => new RegExp(` ${p}=(\\S+)`).exec(v.split(';')[0])?.[1] ?? '-').join(' ');
+  const ids = new Set(cached.map(points).flatMap((p) => p.split(' ')).filter((x) => x !== '-'));
+  assert.equal(ids.size, 3, cached.join('\n'));
+  const [z24s8, z16, s8] = [...ids];
+  const want = { 24: `${z24s8} ${z24s8}`, 25: `${z16} -`, 26: `- ${s8}`, 0: '- -' } as Record<number, string>;
+  assert.deepEqual(cached.map(points), [24, 25, 26, 0, 24, 26, 25, 24].map((zs) => want[zs]));
+});
+
+test('virgl screen: a present binds the default framebuffer through the renderer, whose attachments are cached by what it bound', () => {
+  const run = (noAttachCache: boolean) => {
+    const gl = mockGl();
+    gl.keepLog = true;
+    const errors: string[] = [];
+    const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)], log: (m) => errors.push(m), noAttachCache });
+    r.createContext(1);
+    const d = drawable(r);
+    const screen = new Screen(gl, r);
+    r.submit(1, new Uint32Array([...d.setup, ...d.draw]));
+    screen.set({ res: 3, width: 4, height: 4, rect: { x: 0, y: 0, w: 4, h: 4 } });
+    screen.draw();
+    // What the renderer takes as bound is what GL has.
+    let draw: unknown = null,
+      read: unknown = null;
+    for (const [n, a] of gl.log)
+      if (n === 'bindFramebuffer') {
+        if (a[0] !== E.READ_FRAMEBUFFER) draw = a[1];
+        if (a[0] !== E.DRAW_FRAMEBUFFER) read = a[1];
+      }
+    const bound = (r as unknown as { boundFb: { draw: unknown; read: unknown } }).boundFb;
+    assert.ok(bound.draw === draw && bound.read === read, 'the renderer\'s bindings are GL\'s after a present');
+    r.submit(1, new Uint32Array(d.draw));
+    screen.draw();
+    r.submit(1, new Uint32Array(d.draw));
+    assert.deepEqual(errors, []);
+    return framebufferViews(gl.log);
+  };
+  const every = run(true),
+    cached = run(false);
+  assert.ok(every.length >= 3, every.join('\n'));
+  assert.deepEqual(cached, every);
+});
+
+test('virgl renderer: a blend color\'s −0 after +0 reaches the shader\'s uniform (the uniforms kept compare bits)', () => {
+  const f = (x: number) => new Uint32Array(new Float32Array([x]).buffer)[0];
+  const run = (noDrawCache: boolean) => {
+    const gl = mockGl();
+    gl.keepLog = true;
+    const errors: string[] = [];
+    const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)], log: (m) => errors.push(m), noDrawCache });
+    r.createContext(1);
+    const d = drawable(r);
+    const words: number[] = [];
+    const cmd = (c: number, obj: number, ...p: number[]) => words.push(c | obj << 8 | p.length << 16, ...p);
+    // Constant color with one minus constant alpha, which WebGL can't pair: the shader blends with u_blendc.
+    cmd(1, 1, 30, 0, 0, 1 | 0x7 << 4 | 0x18 << 9 | 1 << 17 | 0x11 << 22 | 0xf << 27, 0, 0, 0, 0, 0, 0, 0); cmd(2, 1, 30);
+    cmd(14, 0, 0, f(0.5), 0, f(1));
+    words.push(...d.draw);
+    cmd(14, 0, 0x80000000, f(0.5), 0, f(1));
+    words.push(...d.draw);
+    r.submit(1, new Uint32Array([...d.setup, ...words]));
+    assert.deepEqual(errors, []);
+    return drawStateViews(gl.log);
+  };
+  const every = run(true),
+    cached = run(false);
+  assert.equal(every.length, 2);
+  assert.match(every[1], /u_blendc=-0,0\.5,0,1/, every[1]);
+  assert.deepEqual(cached, every);
+});
+
+test('virgl renderer: the programs of draw states forgotten are deleted with them (a guest making states without end)', () => {
+  // The vertex shader's object kept, or destroyed while it stays bound (its programs then have no object to reach).
+  for (const destroyed of [false, true]) {
+    const gl = mockGl();
+    const errors: string[] = [];
+    const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)], log: (m) => errors.push(m) });
+    r.createContext(1);
+    const d = drawable(r);
+    r.submit(1, new Uint32Array(destroyed ? [...d.setup, 3 | 4 << 8 | 1 << 16, 10] : d.setup));
+    const live = () => (gl.calls.get('createProgram') ?? 0) - (gl.calls.get('deleteProgram') ?? 0);
+    // Rasterizer states that differ in their sprite coordinates, each a state of its own for points: 4,200 a round, more
+    // than the 4,096 states kept, twice.
+    const peaks: number[] = [];
+    for (let round = 0; round < 2; round++) {
+      let peak = 0;
+      for (let k = 0; k < 4200; k += 100) {
+        const words: number[] = [];
+        for (let i = k; i < k + 100; i++) {
+          words.push(1 | 2 << 8 | 9 << 16, 21, 1 << 1 | 1 << 7, 0x3f800000, i, 0, 0x3f800000, 0, 0, 0, 2 | 2 << 8 | 1 << 16, 21);
+          words.push(8 | 12 << 16, 0, 3, 0, 0, 1, 0, 0, 0, 0, 0, 2, 0);
+        }
+        r.submit(1, new Uint32Array(words));
+        peak = Math.max(peak, live());
+      }
+      peaks.push(peak);
+    }
+    assert.deepEqual(errors, []);
+    assert.ok(r.stats.programs > 8000, `${r.stats.programs} programs linked`);
+    assert.ok(peaks[1] <= 4096 + 16, `destroyed ${destroyed}: live programs at their most, by round: ${peaks.join(', ')}`);
+  }
 });
 
 test('virgl renderer: an RG target first doesn\'t mask an RGBA target\'s B and A (dEQP-GLES3 fragment_out.random)', () => {
@@ -1238,7 +1415,7 @@ test('virgl screen: a 3D scanout is drawn from its level 0 through the screen\'s
   const gl = mockGl();
   gl.keepLog = true;
   const tex = { obj: 'tex', id: 999 };
-  const fake = { scanoutSource: () => ({ tex, fmt: FORMATS.get(2)!, width: 8, height: 8 }) } as unknown as VirglRenderer;
+  const fake = { scanoutSource: () => ({ tex, fmt: FORMATS.get(2)!, width: 8, height: 8 }), bindDefaultFramebuffer: () => gl.bindFramebuffer(E.FRAMEBUFFER, null) } as unknown as VirglRenderer;
   const screen = new Screen(gl, fake);
   screen.set({ res: 3, width: 8, height: 8, rect: { x: 0, y: 0, w: 8, h: 8 } });
   // The guest's last draw sampled the texture from level 1 (its view), with mipmapped filtering.

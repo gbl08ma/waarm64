@@ -46,7 +46,8 @@ export function mockGl(o: { extensions?: string[]; params?: Record<number, unkno
         if (/^[A-Z_0-9]+$/.test(name)) return (E as Record<string, number>)[name] ?? 0;
         return (...a: unknown[]) => {
           calls.set(name, (calls.get(name) ?? 0) + 1);
-          if (target.keepLog) log.push([name, a]);
+          // A plain array as it was at the call (WebGL copies a sequence: drawBuffers' may be reused).
+          if (target.keepLog) log.push([name, a.map((x) => (Array.isArray(x) ? [...x] : x))]);
           if (answers[name]) return answers[name](...a);
           if (name.startsWith('create')) return { obj: name.slice(6), id: ++serial };
           return undefined;

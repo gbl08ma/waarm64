@@ -126,18 +126,23 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried and lost: polled code without `acc`").
 
-## State (2026-11-26, after loop 80)
+## State (2026-11-26, after loop 81)
 
 **The rule since 2026-11-24 (the user): spend as little time in benchmarks and CI as the answers allow
-("Batching", above).** Loops 76-78 took the disk path on a persistent profile (rows 14 and 15) and fixed its two reviews (bench/io/REPORT.md "PERF loop 76" to "PERF loop 78"). Loop 75's notes still hold: `bench/boot/results/perf75/diag.patch`
-applies to 3a08fdf3; loop 67's warm-up is not landed (local branches `perf67-warmup`, `perf-smp-warm`, unpushed);
-`../waarm64-base` is detached at 5d8f29ef. Loop 79 took row 16 (bench/gpu/REPORT.md "PERF loop 79", `bench/gpu/results/perf79/`): virgl's draws made 79 WebGL calls before each, 80% repeats; emptying an empty framebuffer point again cost ANGLE on Metal ~38 µs of the GPU process a draw (`bench/gpu/state-cost.ts`). Kept: the renderer's framebuffers' attachments and draw buffers, each sub-context's vertex array and each program's uniforms set only where they differ (`?gpu=noattachcache`, `nodrawcache` the old way; gtk4-demo's iconscroll's GPU process −53%, gears' worker −24% a draw, Firefox's GPU process −5-8% on three pages); the global state's shadow left (~0.5 µs a draw, ~110 sites to invalidate). Its commit passed `scripts/ci.sh`, `ci-graphics.sh` and `ci-deqp.sh`. On the Mac, `pages.waarm64snap` restores with 3D off on the real renderer (its caps are SwiftShader's): GPU A/Bs there boot. Loop 80 fixed the out-of-context review of loop 78's disk locks (bench/io/REPORT.md "PERF loop 80": a merge, Delete overlay and Import changes hold the machines off; a restore's overlays are marked `restoring` until the worker's `loaded`, undone at the next load otherwise; a restore's Retry restores again; a template's first start keeps `restoreFirst` until it loaded and runs within `exclusively`). **Next: loop 81** fixes the out-of-context review of loop 79's renderer caches (`origin/review/virgl-caches`, if that branch exists by then), **then row 17**. Outside the track, 554848b8 bounded a host folder's permission query at a machine's start (a hang on the user's Chromium; docs/shares.md). `target/snapbench/pages.waarm64snap` loads into the current
-state layout; `target/archarm/desktop.qcow2` is ab-mac.sh's default disk. The ABI is 74.
+("Batching", above).** Loop 75's notes still hold: `bench/boot/results/perf75/diag.patch` applies to 3a08fdf3; loop
+67's warm-up is not landed (local branches `perf67-warmup`, `perf-smp-warm`, unpushed); `../waarm64-base` is detached
+at 5d8f29ef. Loop 79 kept virgl's caches of what only the renderer sets (bench/gpu/REPORT.md "PERF loop 79"); loop 81
+fixed their out-of-context review (bench/gpu/REPORT.md "PERF loop 81": a draw's depth or stencil target no longer
+detached and attached again at each draw, the screen binding through the renderer, uniforms compared by bits, no
+allocation a draw, a forget's programs deleted; gears' GPU process −72%; passed `scripts/ci.sh`, `ci-graphics.sh`, `ci-deqp.sh`). On the Mac, `pages.waarm64snap` restores with 3D off on the real
+renderer (its caps are SwiftShader's): GPU A/Bs there boot. **Next: row 17**, then **loop 83** fixes the out-of-context
+review of loop 80 (`origin/review/restore-marks`). `target/snapbench/pages.waarm64snap`
+loads into the current state layout; `target/archarm/desktop.qcow2` is ab-mac.sh's default disk. The ABI is 74.
 
 What every loop kept, dropped and found is in its REPORT entry (bench/boot/REPORT.md "PERF loop 36" to "PERF loop
 66" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
-36, 42, 47, 50, 55, 58, 71, 73, 74, 76, 77 and 78) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43, 48, 56, 60, 72, 75,
-77, 78 and 80 (50's: comments only), 73's in its own commit while paused; 79's is loop 81's. Built but off by default (measured slower): I8MM, FCMA,
+36, 42, 47, 50, 55, 58, 71, 73, 74, 76, 77, 78 and 79) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43, 48, 56, 60, 72, 75,
+77, 78, 80 and 81 (50's: comments only), 73's in its own commit while paused; 80's is reviewed, to be fixed after row 17. Built but off by default (measured slower): I8MM, FCMA,
 FP16, FHM, BF16. The ABI is 74.
 
 ## Still open (the queue: the first is next; by expected gain, highest first)

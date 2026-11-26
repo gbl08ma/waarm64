@@ -4,8 +4,11 @@
 // texture's unit, levels and sampler, the viewport, depth range, the capabilities, blend, masks, depth and stencil, all
 // 16 vertex attributes), or only those of them that change the state (the vertex pointer, whose offset moves at every
 // draw as in Mesa's upload buffer), or every call but one group's repeats, or the changes and one framebuffer call. Per draw: the time to issue the calls (JS:
-// what the GPU worker's busy time sees) and to the GPU's end (a 1×1 readPixels after the draws). Prints JSON.
-//   node bench/gpu/state-cost.ts [out.json]     (CHROMIUM=<binary>; DRAWS, ROUNDS, SIZE (the target's side, 512); on the Mac host through sway-mac.sh's copy)
+// what the GPU worker's busy time sees) and to the GPU's end (a 1×1 readPixels after the draws). ZS=1 gives the target a
+// depth-stencil texture (DEPTH24_STENCIL8, as the renderer makes a Z24S8 resource), which the framebuffer's calls attach
+// after emptying the depth and stencil points (as the renderer did up to PERF loop 81), and two arms more: the changes
+// and that texture detached and attached again (`zs churn`), or attached again alone (`zs again`). Prints JSON.
+//   node bench/gpu/state-cost.ts [out.json]     (CHROMIUM=<binary>; DRAWS, ROUNDS, SIZE (the target's side, 512), ZS; on the Mac host through sway-mac.sh's copy)
 import { writeFileSync } from 'node:fs';
 import { chromium } from 'playwright-core';
 import { chromiumEnv } from '../../tools/nosme.ts';
@@ -13,10 +16,11 @@ import { chromiumEnv } from '../../tools/nosme.ts';
 const DRAWS = Number(process.env.DRAWS ?? 4000);
 const ROUNDS = Number(process.env.ROUNDS ?? 7);
 const SIZE = Number(process.env.SIZE ?? 512);
+const ZS = process.env.ZS === '1';
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium', headless: true, env: chromiumEnv() });
 const page = await browser.newPage();
 const result = await page.evaluate(
-  ({ DRAWS, ROUNDS, SIZE }) => {
+  ({ DRAWS, ROUNDS, SIZE, ZS }) => {
     const gl = new OffscreenCanvas(64, 64).getContext('webgl2')!;
     const E = WebGL2RenderingContext;
     const d = gl.getExtension('WEBGL_debug_renderer_info');
@@ -33,6 +37,12 @@ const result = await page.evaluate(
     gl.samplerParameteri(sampler, E.TEXTURE_MIN_FILTER, E.LINEAR);
     gl.samplerParameteri(sampler, E.TEXTURE_MAG_FILTER, E.LINEAR);
     const fbo = gl.createFramebuffer();
+    let zs: WebGLTexture | null = null;
+    if (ZS) {
+      zs = gl.createTexture();
+      gl.bindTexture(E.TEXTURE_2D, zs);
+      gl.texStorage2D(E.TEXTURE_2D, 1, E.DEPTH24_STENCIL8, W, W);
+    }
     const sh = (type: number, s: string) => {
       const o = gl.createShader(type)!;
       gl.shaderSource(o, s);
@@ -75,7 +85,7 @@ void main() { o = texture(s, v) * uintBitsToFloat(fc0[0].x) + vec4(u_fbh * 0.0);
     fc[0] = new Uint32Array(new Float32Array([1]).buffer)[0];
     const caps = [E.SCISSOR_TEST, E.CULL_FACE, E.POLYGON_OFFSET_FILL, E.RASTERIZER_DISCARD, E.DITHER, E.SAMPLE_ALPHA_TO_COVERAGE, E.SAMPLE_COVERAGE, E.DEPTH_TEST, E.STENCIL_TEST];
     // The groups of calls a draw makes, each either always ('all') or only where it changes the state.
-    type Groups = { fb: boolean; prog: boolean; tex: boolean; raster: boolean; attribs: boolean; fbPart?: 'bind' | 'color' | 'nulls' | 'buffers' };
+    type Groups = { fb: boolean; prog: boolean; tex: boolean; raster: boolean; attribs: boolean; fbPart?: 'bind' | 'color' | 'nulls' | 'buffers' | 'zs churn' | 'zs again' };
     const once = { first: true };
     const draw = (q: number, all: Groups) => {
       const first = once.first;
@@ -85,12 +95,16 @@ void main() { o = texture(s, v) * uintBitsToFloat(fc0[0].x) + vec4(u_fbh * 0.0);
         if (all.fbPart === 'nulls')
           for (let k = 1; k < 8; k++) gl.framebufferRenderbuffer(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, E.RENDERBUFFER, null);
         if (all.fbPart === 'buffers') gl.drawBuffers([E.COLOR_ATTACHMENT0]);
+        if (all.fbPart === 'zs churn') gl.framebufferRenderbuffer(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, E.RENDERBUFFER, null);
+        if (all.fbPart === 'zs churn' || all.fbPart === 'zs again')
+          gl.framebufferTexture2D(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, E.TEXTURE_2D, zs, 0);
       }
       if (all.fb || first) {
         gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, fbo);
         gl.framebufferTexture2D(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, E.TEXTURE_2D, target, 0);
         for (let k = 1; k < 8; k++) gl.framebufferRenderbuffer(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, E.RENDERBUFFER, null);
         for (const p of [E.DEPTH_STENCIL_ATTACHMENT, E.DEPTH_ATTACHMENT, E.STENCIL_ATTACHMENT]) gl.framebufferRenderbuffer(E.DRAW_FRAMEBUFFER, p, E.RENDERBUFFER, null);
+        if (zs) gl.framebufferTexture2D(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, E.TEXTURE_2D, zs, 0);
         gl.drawBuffers([E.COLOR_ATTACHMENT0]);
       }
       if (all.prog || first) {
@@ -160,6 +174,12 @@ void main() { o = texture(s, v) * uintBitsToFloat(fc0[0].x) + vec4(u_fbh * 0.0);
       'changed + fb color': { fb: F, prog: F, tex: F, raster: F, attribs: F, fbPart: 'color' },
       'changed + fb nulls': { fb: F, prog: F, tex: F, raster: F, attribs: F, fbPart: 'nulls' },
       'changed + drawBuffers': { fb: F, prog: F, tex: F, raster: F, attribs: F, fbPart: 'buffers' },
+      ...(ZS
+        ? {
+            'changed + zs churn': { fb: F, prog: F, tex: F, raster: F, attribs: F, fbPart: 'zs churn' as const },
+            'changed + zs again': { fb: F, prog: F, tex: F, raster: F, attribs: F, fbPart: 'zs again' as const },
+          }
+        : {}),
     };
     const res: Record<string, { jsUs: number[]; endUs: number[] }> = {};
     for (const n of Object.keys(arms)) res[n] = { jsUs: [], endUs: [] };
@@ -189,11 +209,12 @@ void main() { o = texture(s, v) * uintBitsToFloat(fc0[0].x) + vec4(u_fbh * 0.0);
       renderer,
       draws: DRAWS,
       size: SIZE,
+      zs: ZS,
       rounds: ROUNDS,
       arms: Object.fromEntries(Object.entries(res).map(([n, v]) => [n, { jsUs: +med(v.jsUs).toFixed(2), endUs: +med(v.endUs).toFixed(2), jsAll: v.jsUs.map((x) => +x.toFixed(2)), endAll: v.endUs.map((x) => +x.toFixed(2)) }])),
     };
   },
-  { DRAWS, ROUNDS, SIZE },
+  { DRAWS, ROUNDS, SIZE, ZS },
 );
 const out = { chromium: browser.version(), ...result };
 await browser.close();

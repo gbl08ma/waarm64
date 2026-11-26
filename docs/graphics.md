@@ -407,14 +407,18 @@ that use them (a resource the guest unrefs lives until the last context lets go)
 one WebGL2 context** (WebGL contexts share no objects, where virglrenderer gives each guest context a GL context in one
 share group), so the GL state is set from the sub-context at every draw and nothing is assumed bound between draws,
 except what only the draws and the renderer's own two framebuffers hold, which is kept and set only where it differs:
-- **the attachments of `fbo` and `readFbo` and `fbo`'s draw buffers** (`attached`: every binding of the renderer's goes
-  through `bindFb`, every attachment through `attachTo`, every draw buffer through `setDrawBuffers`; the depth-stencil
-  point is the depth and the stencil points both). A draw sets all eleven points, most to what they were, and ANGLE on
-  Metal takes an empty point emptied again as a change of the framebuffer: ~38 µs of the GPU process a draw, whatever
-  the target's size (`bench/gpu/state-cost.ts`), where the rest of a draw's repeated calls cost it ~0.7 µs;
+- **the attachments of `fbo` and `readFbo` and `fbo`'s draw buffers** (`attached`: every framebuffer binding on the
+  context goes through `bindFb`, the screen's present and grab too (`bindDefaultFramebuffer`), so what the renderer
+  takes as bound is GL's between calls as well; every attachment through `attachTo`, every draw buffer through
+  `setDrawBuffers`; the depth-stencil point is the depth and the stencil points both). A draw sets all eleven points,
+  most to what they were: its depth or stencil target at its own point (depth, stencil or both), and only the point
+  it leaves empty emptied. ANGLE on Metal takes an empty point emptied again, or an attached one detached and attached
+  again, as a change of the framebuffer: ~38 µs of the GPU process a draw, whatever the target's size
+  (`bench/gpu/state-cost.ts`), where the rest of a draw's repeated calls cost it ~0.7 µs;
 - **each sub-context's vertex array** (`Sub.vaoState`: the attributes enabled, each one's buffer, pointer and divisor;
   nothing else binds a sub-context's array) and **each program's uniforms** (`Program.set`: the constants and the
-  system values; a uniform's value is its program's, and only the draws set them).
+  system values, arrays by their words' bits, so a blend color's −0 is not its +0; a uniform's value is its program's,
+  and only the draws set them).
 
 The rest (the capabilities, viewport, depth range, blend, masks, depth and stencil, the texture units, a view's levels,
 samplers, uniform buffers) is still set at every draw: the blits, clears, uploads, read-backs, snapshots and the screen
@@ -423,7 +427,10 @@ and `?gpu=nodrawcache` set everything again (tests compare the two ways: the sta
 sees is the same).
 Programs come from the translator, made at the first draw that needs a (shader pair, draw state) and kept with the
 shaders until either shader object is destroyed (`forgetShader`; a new object of the same text is another shader, so
-before this the cache only grew: every Qt Quick or Firefox process of a desktop session left its programs behind).
+before this the cache only grew: every Qt Quick or Firefox process of a desktop session left its programs behind), or
+until the draw states are forgotten: past 4,096 states, or 1 MiB of their parts' JSON, which only a guest making them
+without end reaches, the parts, the states and every program go (`forgetStates`). A program is kept by its state's
+id and ids aren't given again, so one kept past its state would never be met again.
 **A draw finds its program without building its key:** each state object's contribution to the key (a *part*: the
 vertex elements' types, the rasterizer's flags, the alpha test, the folded blend factors, a view's sampler type and
 swizzle, a color buffer's type) is made once and given a small id, equal parts sharing one; the draw writes the ids
@@ -1299,7 +1306,8 @@ Worth not re-discovering:
 - **A redundant WebGL call costs the GPU worker ~0.03-0.05 µs on the M4, but not every one is that cheap in the GPU
   process**: `framebufferRenderbuffer(…, null)` on a point that is already empty makes ANGLE on Metal treat the
   framebuffer as changed, ~38 µs of the GPU process at the next draw whatever the target's size, where re-attaching
-  the texture already attached costs 0.3 µs and a draw's other repeated calls together 0.7 µs (PERF loop 79,
+  the texture already attached costs 0.3 µs and a draw's other repeated calls together 0.7 µs (PERF loop 79), and a
+  depth-stencil texture detached and attached again the same ~38 µs, attached again alone 0.7 µs (PERF loop 81, `ZS=1`;
   `bench/gpu/state-cost.ts`: small quads into a framebuffer of their own, each draw preceded by the renderer's calls or
   only those that change something). Measure a call's cost to the GPU's end, not only to the call's return: a WebGL
   call's work in the GPU process shows in the caller only when the command buffer fills.
