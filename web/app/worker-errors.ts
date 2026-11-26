@@ -18,11 +18,17 @@ function among(err: unknown, test: (e: Error & { problem?: string }) => boolean)
 /** What the start had reached when it failed: `restoring`, `bootVm` had the snapshot; the RAM it asked for, MiB. */
 export type Reached = { restoring: boolean; ramMiB: number };
 
-/** A snapshot refused (a SnapshotError has a `problem` of its own: why the file was refused). */
-function refused(err: SnapshotError, machine: Machine, restoring: boolean): Error {
+/** Whether a restore's failure came once its fill had emptied an overlay of the disk's own changes (web/snapshot.ts). */
+const emptiedBy = (err: unknown) => !!(err as { emptied?: unknown } | null | undefined)?.emptied;
+
+/**
+ * A snapshot refused (a SnapshotError has a `problem` of its own: why the file was refused), or a restore refused by
+ * anything else once its fill had emptied an overlay (`emptied`: the storage full, a disk that didn't open after it).
+ */
+function refused(err: Error, machine: Machine, restoring: boolean): Error {
   // From `readSnapshot` nothing was touched; once `bootVm` has the file, a disk may hold part of it (a new fork's,
   // which the page puts back, or one whose own changes the fill deleted: `emptied`, web/snapshot.ts).
-  const cause = (err as { emptied?: unknown }).emptied
+  const cause = emptiedBy(err)
     ? 'snapshots:worker-errors.notRestored.emptied'
     : 'snapshots:worker-errors.notRestored.cause';
   return restoring
@@ -80,6 +86,13 @@ function emulatorError(err: unknown): Error {
 export function explain(err: unknown, machine: Machine, at: Reached): [Problem, Error] {
   // A SnapshotError's problem is checked before the worker's.
   if (err instanceof SnapshotError) return ['snapshot', refused(err, machine, at.restoring)];
+  // A restore refused by anything else once its fill had emptied an overlay the user had it replace (the storage full,
+  // a disk that didn't open after the fill): a snapshot that didn't restore, whose words say those changes are gone
+  // (Start boots normally; a template's first start boots instead), what refused it in its own words under them.
+  if (at.restoring && emptiedBy(err)) {
+    const why = overlayProblem(err, machine)?.[1] ?? (msgOf(err) ? (err as Error) : emulatorError(err));
+    return ['snapshot', refused(Object.assign(why, { emptied: true }), machine, true)];
+  }
   const overlay = overlayProblem(err, machine);
   if (overlay) return overlay;
   const problem = (err as { problem?: Problem } | null | undefined)?.problem;

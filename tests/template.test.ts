@@ -87,9 +87,11 @@ test("a template's restore onto a new machine with no overlay yet forks: a new o
   const steps = await plan.commit(false);
   const m = (await b.get('machines', machine.id))!;
   const o = (await b.get('overlays', m.attachments[0].overlay!))!;
-  assert.deepEqual(steps, [{ slot: pins[0].slot, action: 'write', overlay: overlayDir(o.id), identity: canonical(o.identity), size: 256 * MiB, whole: false, fork: true }]);
+  const token = m.restoring?.[0].token;
+  assert.match(token ?? '', /^[0-9a-f]{12}$/, "the restore's fill token");
+  assert.deepEqual(steps, [{ slot: pins[0].slot, action: 'write', overlay: overlayDir(o.id), identity: canonical(o.identity), size: 256 * MiB, whole: false, fork: true, token }]);
   assert.deepEqual([o.name, o.fork], ['Alpine', { snapshot: 'k1', generation: 1 }]);
-  assert.deepEqual(m.restoring, [{ attachment: m.attachments[0].id, how: 'fork', overlay: o.id, before: {} }], 'what the attachment had: no overlay');
+  assert.deepEqual(m.restoring, [{ attachment: m.attachments[0].id, how: 'fork', overlay: o.id, before: {}, token }], 'what the attachment had: no overlay');
   assert.equal((await b.all('overlays')).length, 1);
 });
 
@@ -112,7 +114,7 @@ test("a machine's first restore onto a fresh overlay (never written) fills that 
   const m = (await b.get('machines', machine.id))!;
   assert.equal(m.attachments[0].overlay, empty.id, 'the fresh overlay is the fork');
   assert.deepEqual(steps.map((s) => s.action === 'write' && s.overlay), [overlayDir(empty.id)]);
-  assert.deepEqual(m.restoring, [{ attachment: m.attachments[0].id, how: 'into', overlay: empty.id, generation: 0, fork: { snapshot: 'k2', name: 'Alpine' } }]);
+  assert.deepEqual(m.restoring, [{ attachment: m.attachments[0].id, how: 'into', overlay: empty.id, generation: 0, fork: { snapshot: 'k2', name: 'Alpine' }, token: m.restoring?.[0].token }]);
   await restoreLoaded(b, m.id); // it loaded: named after the snapshot, its fork
   m.restoring = undefined; // as the record is now
   const o = (await b.get('overlays', empty.id))!;
@@ -152,9 +154,9 @@ test("a fork whose restore was cut off before its fill was done is never reused;
   assert.notEqual(fork, mine.id);
   assert.deepEqual((await b.get('overlays', fork))!.fork, { snapshot: 'k4', generation: 1 });
   assert.deepEqual(m.restoring?.map((s) => s.how !== 'into' && s.before), [{ overlay: mine.id }]);
-  // The worker's fill cut off: the fork marked at generation 1, part of the blocks in (web/snapshot.ts).
+  // The worker's fill cut off: the fork marked at generation 1 with the restore's token, part of the blocks in (web/snapshot.ts).
   const f = await openOverlay(overlayDir(fork), canonical(disk.identity));
-  assert.ok(writeMeta(f.meta, { generation: 1, merging: '', size: 0, filling: true }));
+  assert.ok(writeMeta(f.meta, { generation: 1, merging: '', size: 0, filling: true, token: m.restoring?.[0].token }));
   f.close();
   await navigator.locks.request(`waarm64-overlay:${overlayDir(fork)}`, async () => {}); // its lock let go (a release lands a moment later)
   const again = await planRestore(b, m, await disksOf(b), { name: 'Alpine', key: 'k4', pins }, { display: '2d' });
@@ -238,7 +240,7 @@ test("a replace into an earlier fork, cut off, leaves the machine on that fork (
   assert.deepEqual(steps.map((s) => s.action === 'write' && s.overlay), [overlayDir(fork)]);
   // The worker's fill: emptied and marked one past its generation, then cut off.
   {
-    const f = await openOverlay(overlayDir(fork), canonical(disk.identity), undefined, { fresh: true });
+    const f = await openOverlay(overlayDir(fork), canonical(disk.identity), undefined, { fresh: { size: 0 } });
     assert.ok(writeMeta(f.meta, { generation: 2, merging: '', size: 0, filling: true }));
     f.close();
   }
@@ -353,8 +355,8 @@ test('a restore that never loaded, its fill done (refused after it), is undone a
   await plan.commit(false);
   const m = (await b.get('machines', machine.id))!;
   const fork = m.attachments[0].overlay!;
-  const f = await openOverlay(overlayDir(fork), canonical(disk.identity)); // filled: generation 1, no mark
-  assert.ok(writeMeta(f.meta, { generation: 1, merging: '', size: 0 }));
+  const f = await openOverlay(overlayDir(fork), canonical(disk.identity)); // filled: generation 1, no mark, the restore's token
+  assert.ok(writeMeta(f.meta, { generation: 1, merging: '', size: 0, token: m.restoring?.[0].token }));
   f.close();
   await letGo(fork);
   const back = await undoCutRestores(b, m);

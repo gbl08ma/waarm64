@@ -5,7 +5,7 @@
 import { MsgError } from '../msg.ts';
 import { fillCutOff, mergeLock, overlayBytes, overlayMeta, removeOverlay } from '../overlay.ts';
 import { sizeSeen } from './disk-size.ts';
-import { deleteOverlay, diskJob, identityOf, inUse, refreshStored } from './disks.ts';
+import { deleteOverlay, diskJob, identityOf, inUse, refreshStored, unchoose } from './disks.ts';
 import { holdMachines } from './machine-hold.ts';
 import { namedByRestores, undoCutRestores } from './snapshot-undo.ts';
 import { canonical, serialOf, type DiskRecord } from './shape.ts';
@@ -101,15 +101,6 @@ async function noneInUse(d: DiskRecord, overlays: OverlayRecord[]) {
   for (const x of overlays)
     if (await inUse(overlayDir(x.id))) throw new MsgError('disks:merge.overlayNamedRunning', { name: x.name });
   if (await inUse(diskDir(d.id))) throw new MsgError('disks:merge.diskRunning');
-}
-
-/** Leaves the machines that had overlay `id` chosen without one (their next start makes an empty one). */
-async function unchoose(store: Store, id: string) {
-  for (const m of await store.all('machines')) {
-    if (!m.attachments.some((a) => a.overlay === id)) continue;
-    for (const a of m.attachments) if (a.overlay === id) a.overlay = undefined;
-    await store.put('machines', { ...m, modified: Date.now() });
-  }
 }
 
 /** `mergeIntoDisk`'s work into a stored disk, or into a blank disk made a stored one, under its lock. */

@@ -91,7 +91,7 @@ export async function pageDisk(m: PageMachine) {
  * keeps the machine's record. A ramdisk has none (its writes stay in memory).
  */
 async function ensureOverlays(m: PageMachine, s: Stored) {
-  let changed = false;
+  const made = new Map<string, string>();
   for (const a of s.record.attachments) {
     const d = diskOf(s, a.disk);
     if (a.readOnly || d.kind === 'ramdisk' || a.inPlace || a.overlay) continue;
@@ -107,9 +107,21 @@ async function ensureOverlays(m: PageMachine, s: Stored) {
       created: now,
       modified: now,
     });
-    changed = true;
+    made.set(a.id, a.overlay);
   }
-  if (changed) await m.store.put('machines', s.record);
+  // Onto the record as the store has it (one read and write: another tab's write to its other fields meanwhile stays),
+  // where the attachment has none there either.
+  if (made.size)
+    await m.store.update('machines', s.record.id, (r) =>
+      r
+        ? {
+            ...r,
+            attachments: r.attachments.map((a) =>
+              made.has(a.id) && !a.overlay ? { ...a, overlay: made.get(a.id) } : a,
+            ),
+          }
+        : undefined,
+    );
 }
 
 /** A stored machine's disks, in slot order, and the OPFS directory of its own files. */

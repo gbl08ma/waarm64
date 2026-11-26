@@ -17,6 +17,11 @@ export function memoryRecords(): Records {
     put: async (kind, value) => {
       maps[kind].set(value.id, structuredClone(value));
     },
+    update: async (kind, id, f) => {
+      const next = f(structuredClone(maps[kind].get(id)) as never);
+      if (next) maps[kind].set(id, structuredClone(next));
+      return structuredClone(next);
+    },
     delete: async (kind, id) => {
       maps[kind].delete(id);
     },
@@ -83,6 +88,28 @@ export async function idbRecords(name = DB): Promise<Records> {
     get: (kind, id) => idb(store(kind, 'readonly').get(id)) as never,
     all: (kind) => idb(store(kind, 'readonly').getAll()) as never,
     put: (kind, value) => commit(kind, (s) => s.put(value)),
+    // The get and the put in one transaction: IndexedDB runs no other readwrite transaction on the store between.
+    update: (kind, id, f) => {
+      let next: unknown;
+      let thrown: { e: unknown } | undefined;
+      return commit(kind, (s) => {
+        const req = s.get(id);
+        req.onsuccess = () => {
+          try {
+            next = f(req.result as never);
+            if (next) s.put(next);
+          } catch (e) {
+            thrown = { e };
+            s.transaction.abort();
+          }
+        };
+      }).then(
+        () => next as never,
+        (e: unknown) => {
+          throw thrown ? thrown.e : e;
+        },
+      );
+    },
     delete: (kind, id) => commit(kind, (s) => s.delete(id)),
   };
 }

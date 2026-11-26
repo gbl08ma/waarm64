@@ -65,13 +65,23 @@ const standIn = (page: Page, failing = 0, unrecorded = 0) => page.addInitScript(
 const refuseRecords = (page: Page) => page.evaluate(async () => {
   const { Store } = await import('/web/app/store.ts' as string);
   const w = window as unknown as { __unrecorded?: boolean };
+  const refused = (kind: string, value: { restoring?: unknown } | undefined) => {
+    if (!w.__unrecorded || kind !== 'machines' || !value || value.restoring !== undefined) return false;
+    w.__unrecorded = false;
+    return true;
+  };
+  const full = () => new DOMException('the storage is full', 'QuotaExceededError');
   const put = Store.prototype.put;
   Store.prototype.put = function (this: unknown, kind: string, value: { restoring?: unknown }) {
-    if (w.__unrecorded && kind === 'machines' && value.restoring === undefined) {
-      w.__unrecorded = false;
-      return Promise.reject(new DOMException('the storage is full', 'QuotaExceededError'));
-    }
-    return put.call(this, kind, value);
+    return refused(kind, value) ? Promise.reject(full()) : put.call(this, kind, value);
+  };
+  const update = Store.prototype.update;
+  Store.prototype.update = function (this: unknown, kind: string, id: string, f: (was: unknown) => { restoring?: unknown } | undefined) {
+    return update.call(this, kind, id, (was: unknown) => {
+      const next = f(was);
+      if (refused(kind, next)) throw full();
+      return next;
+    });
   };
 });
 
@@ -511,6 +521,44 @@ test('a start that finds its machine held off by a change to its disks says that
   await page.evaluate(() => (window as unknown as { release: () => void }).release());
   await page.locator('#message-actions button', { hasText: t('machine:problems.retry') }).click();
   await page.waitForFunction(() => (window as unknown as { __starts: unknown[] }).__starts.length === 2, null, { timeout: 30_000, polling: 50 });
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+// Review restore-records 7: Reset disk after a restore that never loaded deleted the restore's fork, and the next
+// start's undo put the machine back on the overlay it had: the disk wasn't reset.
+test('Reset disk after a restore that never loaded resets the disk the machine is on, the one the undo puts it back on', async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await standIn(page, 1); // the restore's start fails (the disk in use) before the snapshot loaded
+  await answerAsks(page); // Restore: yes; keep the overlay (it forks): yes; Reset: yes
+  await page.goto(`${base}/web/app/?autostart=1`);
+  const ids = await blankMachine(page, 'Resettable');
+  await page.goto(`${base}/web/app/?autostart=1&m=${ids.m}`);
+  await stateIs(page, 'off');
+  const sid = await keepSnapshot(page, ids.m, { overlay: `overlays/${ids.o}`, generation: 7, blocks: 0 });
+  await page.evaluate(async (sid) => {
+    const { page: p } = await import('/web/app/page.ts' as string);
+    await p.restoreKept(sid);
+  }, sid);
+  await stateIs(page, 'failed');
+  const cut = await recordOf(page, ids.m);
+  assert.ok(cut.restoring && cut.overlay !== ids.o, 'on the fork, its restore to undo');
+  await page.evaluate(async () => {
+    const { page: p } = await import('/web/app/page.ts' as string);
+    await p.resetDisk();
+  });
+  await page.waitForFunction(() => (window as unknown as { __starts: unknown[] }).__starts.length === 3, null, { timeout: 30_000, polling: 50 });
+  await stateIs(page, 'off');
+  const all = await starts(page);
+  assert.deepEqual(all.map((x) => x.snapshot), [false, true, false], 'the boot at the page load, the restore, the boot after the reset');
+  const rec = await recordOf(page, ids.m);
+  assert.notEqual(all[2].disks[0].overlay, `overlays/${ids.o}`, 'not on the overlay it had: that one was reset');
+  assert.equal(all[2].disks[0].overlay, `overlays/${rec.overlay}`);
+  assert.deepEqual(rec.overlays, [rec.overlay], 'the fork undone, the overlay it had deleted, a new empty one');
+  assert.equal(rec.restoring, false);
   assert.deepEqual(errors, []);
   await context.close();
 });

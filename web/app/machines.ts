@@ -4,7 +4,6 @@
 // user; the Home page confirms first.
 import { t } from '../i18n.ts';
 import { MsgError } from '../msg.ts';
-import { SWAP_MIN_PAGES } from '../ramdisk.ts';
 import { FOLLOW_BROWSER } from './keyboard.ts';
 import { defaultCpus } from './machine.ts';
 import {
@@ -12,7 +11,6 @@ import {
   canonical,
   generateName,
   MAX_ADAPTERS,
-  MAX_DISKS,
   newId,
   newMac,
   uniqueName,
@@ -49,7 +47,7 @@ export async function needsOff(id: string, what: keyof typeof NEEDS_OFF) {
 }
 
 /** The error of an edit to a machine that another tab deleted meanwhile. */
-const gone = () =>
+export const gone = () =>
   new MsgError('machines:machines.machineGone', undefined, {
     cause: new MsgError('machines:machines.machineGone.cause'),
   });
@@ -91,17 +89,27 @@ export async function createMachine(
   return m;
 }
 
-/** A copy of machine `id`: the same settings and disks, new attachments (so new serials) with the same overlays chosen. */
+/**
+ * A copy of machine `id`: the same settings and disks, new attachments (so new serials) with the same overlays chosen.
+ * Of a machine whose restore hasn't loaded, the overlays its undo puts it back on (docs/machines.md §5.2 "Other
+ * machines"): a restore's fork, made or attached again, is its machine's to undo, and a copy on it would run on what
+ * that undo leaves.
+ */
 export async function duplicateMachine(store: Store, id: string) {
   const m = await store.get('machines', id);
   if (!m) throw gone();
   const taken = (await store.all('machines')).map((x) => x.name);
   const now = Date.now();
+  const back = (a: Attachment) => {
+    const s = m.restoring?.find((x) => x.attachment === a.id);
+    if (!s || s.how === 'into' || (a.overlay !== s.overlay && a.overlay !== undefined)) return a;
+    return { ...a, overlay: s.before.overlay, inPlace: s.before.inPlace };
+  };
   const copy: MachineRecord = {
     ...m,
     id: newId(),
     name: uniqueName(t('machines:machines.copyName', { name: m.name }), taken),
-    attachments: m.attachments.map((a) => ({ ...a, id: newId() })),
+    attachments: m.attachments.map((a) => ({ ...back(a), id: newId() })),
     adapters: adaptersOf(m).map((a) => ({ id: newId(), mac: a.mac })),
     network: undefined,
     ...(m.usbDevices ? { usbDevices: m.usbDevices.map((u) => ({ ...u, id: newId() })) } : {}),
@@ -145,24 +153,29 @@ export function movedAdapter(m: MachineRecord, id: string, by: number): MachineR
  * an adapter (the same MAC: the shape stays).
  */
 export async function setAdapterConnection(store: Store, id: string, index: number, connection: string | undefined) {
-  const m = await store.get('machines', id);
-  if (!m) throw gone();
-  const adapters = adaptersOf(m).map((a) => ({ ...a }));
-  if (!adapters[index]) throw new Error(`${m.name} has no adapter ${index + 1}`);
-  if (connection) adapters[index].connection = connection;
-  else delete adapters[index].connection;
-  await store.put('machines', { ...m, network: undefined, adapters });
+  await store.update('machines', id, (m) => {
+    if (!m) throw gone();
+    const adapters = adaptersOf(m).map((a) => ({ ...a }));
+    if (!adapters[index]) throw new Error(`${m.name} has no adapter ${index + 1}`);
+    if (connection) adapters[index].connection = connection;
+    else delete adapters[index].connection;
+    return { ...m, network: undefined, adapters };
+  });
 }
 
 /** Takes connection `connection` off every machine that has it attached (it was deleted). */
 export async function detachEverywhere(store: Store, connection: string) {
-  for (const m of await store.all('machines')) {
-    if (!m.adapters?.some((a) => a.connection === connection)) continue;
-    await store.put('machines', {
-      ...m,
-      adapters: m.adapters.map(({ connection: c, ...a }) => (c && c !== connection ? { ...a, connection: c } : a)),
-    });
-  }
+  for (const { id } of await store.all('machines'))
+    await store.update('machines', id, (m) =>
+      m?.adapters?.some((a) => a.connection === connection)
+        ? {
+            ...m,
+            adapters: m.adapters.map(({ connection: c, ...a }) =>
+              c && c !== connection ? { ...a, connection: c } : a,
+            ),
+          }
+        : undefined,
+    );
 }
 
 /** Deletes machine `id` (its variable store, suspended copy and snapshots); its disks and their overlays stay. */
@@ -192,32 +205,35 @@ export async function updateMachine(store: Store, m: MachineRecord) {
       x.jitMiB ?? 0,
     ]);
   if (shape(was) !== shape(m)) await needsOff(m.id, 'shape');
-  // The remembered USB devices are the USB tab's (web/app/usb-ports.ts), edited while the machine runs: a settings draft doesn't carry them.
-  m.usbDevices = was.usbDevices;
-  // Nor its disks: the attachments, a restore's to undo and a template's first start are the Disks tab's, the
-  // restore's and the undo's (docs/machines.md §5.2 "A restore's records"), written while a draft was open.
-  m.attachments = was.attachments;
-  m.restoring = was.restoring;
-  m.restoreFirst = was.restoreFirst;
-  // The attached folders are the Shared folders tab's: the same (web/app/folders.ts).
-  if (was.folders) m.folders = was.folders;
-  else delete m.folders;
-  // So are the adapters' connections (the Network tab attaches them while the machine runs, web/app/net-live.ts).
-  const attached = new Map(adaptersOf(was).map((a) => [a.id, a.connection]));
-  if (m.adapters || was.adapters) {
-    m.adapters = adaptersOf(m).map(({ connection: _, ...a }) =>
-      attached.get(a.id) ? { ...a, connection: attached.get(a.id) } : a,
-    );
-    m.network = undefined;
-  }
-  if (m.name !== was.name)
-    m.name = uniqueName(
-      m.name.trim() || was.name,
-      (await store.all('machines')).filter((x) => x.id !== m.id).map((x) => x.name),
-    );
-  m.modified = Date.now();
-  await store.put('machines', m);
-  return m;
+  const names = (await store.all('machines')).filter((x) => x.id !== m.id).map((x) => x.name);
+  // The draft's fields onto the record as the store has it at the write (one read and write: `Store.update`), the rest
+  // kept as they are there.
+  const saved = await store.update('machines', m.id, (cur) => {
+    if (!cur) throw gone();
+    const next: MachineRecord = { ...m };
+    // The remembered USB devices are the USB tab's (web/app/usb-ports.ts), edited while the machine runs: a settings draft doesn't carry them.
+    next.usbDevices = cur.usbDevices;
+    // Nor its disks: the attachments, a restore's to undo and a template's first start are the Disks tab's, the
+    // restore's and the undo's (docs/machines.md §5.2 "A restore's records"), written while a draft was open.
+    next.attachments = cur.attachments;
+    next.restoring = cur.restoring;
+    next.restoreFirst = cur.restoreFirst;
+    // The attached folders are the Shared folders tab's: the same (web/app/folders.ts).
+    if (cur.folders) next.folders = cur.folders;
+    else delete next.folders;
+    // So are the adapters' connections (the Network tab attaches them while the machine runs, web/app/net-live.ts).
+    const attached = new Map(adaptersOf(cur).map((a) => [a.id, a.connection]));
+    if (next.adapters || cur.adapters) {
+      next.adapters = adaptersOf(next).map(({ connection: _, ...a }) =>
+        attached.get(a.id) ? { ...a, connection: attached.get(a.id) } : a,
+      );
+      next.network = undefined;
+    }
+    if (next.name !== cur.name) next.name = uniqueName(next.name.trim() || cur.name, names);
+    next.modified = Date.now();
+    return next;
+  });
+  return Object.assign(m, saved);
 }
 
 /** What a new disk is: its kind and what the kind needs (a URL checked, a file's handle, a size). */
@@ -307,69 +323,7 @@ export async function createDisk(store: Store, d: NewDisk): Promise<DiskRecord> 
   return r;
 }
 
-/** Attaches disk `disk` to machine `m`, last (16 at most). A blank disk is always writable; an ISO read-only unless asked. */
-export async function attach(store: Store, m: MachineRecord, disk: DiskRecord, o: { readOnly?: boolean } = {}) {
-  await needsOff(m.id, 'attach');
-  if (m.attachments.length >= MAX_DISKS)
-    throw new MsgError('machines:machines.maxDisks', undefined, {
-      cause: new MsgError('machines:machines.maxDisks.cause', { max: MAX_DISKS }),
-    });
-  const readOnly = disk.kind === 'blank' || disk.kind === 'ramdisk' ? false : (o.readOnly ?? disk.format === 'iso');
-  const a: Attachment = { id: newId(), disk: disk.id, readOnly };
-  m.attachments.push(a);
-  m.modified = Date.now();
-  await store.put('machines', m);
-  return a;
-}
-
-/** Read-only or not (a blank disk or a ramdisk is always writable); read-only, not written in place any more. */
-function setReadOnly(a: Attachment, disk: DiskRecord | undefined, readOnly: boolean) {
-  if (!readOnly || (disk?.kind !== 'blank' && disk?.kind !== 'ramdisk')) a.readOnly = readOnly;
-  if (a.readOnly) a.inPlace = undefined;
-}
-
-/** Written in place (only a disk stored in the browser). */
-function setInPlace(a: Attachment, disk: DiskRecord | undefined, inPlace: boolean) {
-  if (disk?.kind !== 'stored') throw new Error('only a disk stored in the browser can be written in place');
-  a.inPlace = inPlace || undefined;
-}
-
-/** The guest's swap (only a ramdisk, of `SWAP_MIN_PAGES` at least). */
-function setSwap(a: Attachment, disk: DiskRecord | undefined, swap: boolean) {
-  if (disk?.kind !== 'ramdisk') throw new Error("only a ramdisk can be the guest's swap");
-  if (swap && disk.size < SWAP_MIN_PAGES * 4096)
-    throw new MsgError('machines:machines.swapMin', undefined, {
-      cause: new MsgError('machines:machines.swapMin.cause', { kib: SWAP_MIN_PAGES * 4 }),
-    });
-  a.swap = swap || undefined;
-}
-
-/** Changes attachment `id` of machine `m` (read-only, in place, swap, its place in the order) or detaches it (`detach`). */
-export async function editAttachment(
-  store: Store,
-  m: MachineRecord,
-  id: string,
-  change: { readOnly?: boolean; inPlace?: boolean; swap?: boolean; move?: -1 | 1; detach?: boolean },
-) {
-  await needsOff(m.id, 'disks');
-  const i = m.attachments.findIndex((a) => a.id === id);
-  if (i < 0)
-    throw new MsgError('machines:machines.notAttached', undefined, {
-      cause: new MsgError('machines:machines.notAttached.cause'),
-    });
-  const a = m.attachments[i];
-  const disk = await store.get('disks', a.disk);
-  if (change.detach) m.attachments.splice(i, 1);
-  if (change.readOnly !== undefined) setReadOnly(a, disk, change.readOnly);
-  if (change.inPlace !== undefined) setInPlace(a, disk, change.inPlace);
-  if (change.swap !== undefined) setSwap(a, disk, change.swap);
-  if (change.move) {
-    const j = i + change.move;
-    if (j >= 0 && j < m.attachments.length) [m.attachments[i], m.attachments[j]] = [m.attachments[j], m.attachments[i]];
-  }
-  m.modified = Date.now();
-  await store.put('machines', m);
-}
-
 /** Bytes in words. */
 export { bytesText } from './bytes.ts';
+// A machine's disks, attached and edited (web/app/machine-attachments.ts), where the Home page and the tests look for them.
+export { attach, editAttachment } from './machine-attachments.ts';

@@ -187,13 +187,13 @@
     "message": "Like <name>{{name}}</name>",
     "note": "Name of the machine Create a machine like it creates (Home page, Snapshots tab); {{name}} is the snapshot's name. A number is added if a machine has that name already. Its words become the new machine's name, as text (the marker draws nothing there)."
   },
-  "snapshots.notKept": {
+  "snapshot-import.notKept": {
     "message": "Couldn't import <name>{{file}}</name>",
-    "note": "Error of Import a file… (Home page, Snapshots tab), shown under the page's header: the headline; why is the cause under it: the file has no description of its machine to keep it by (snapshots:snapshots.notKept.cause), or the browser's storage is full (disks:overlay.storageFull.numbers); {{file}} is the file's name."
+    "note": "Error of Import a file… (Home page, Snapshots tab), shown under the page's header: the headline; why is the cause under it: the file has no description of its machine to keep it by (snapshots:snapshot-import.notKept.cause), or the browser's storage is full (disks:overlay.storageFull.numbers); {{file}} is the file's name."
   },
-  "snapshots.notKept.cause": {
+  "snapshot-import.notKept.cause": {
     "message": "It's a snapshot of a machine that isn't stored in this browser, such as a test machine or one from an older version of this web app. It can only be loaded on that machine.",
-    "note": "Error details: the cause under the headline snapshots:snapshots.notKept, on the line under it in the same place; what happened, and what the user can do if anything."
+    "note": "Error details: the cause under the headline snapshots:snapshot-import.notKept, on the line under it in the same place; what happened, and what the user can do if anything."
   },
   "snapshot-file.corrupt": {
     "message": "This snapshot is damaged ({{what}}). Download or copy it again, and if that doesn't help, save a new one.",
@@ -561,11 +561,11 @@
   },
   "snapshot-restore.restore.keep_one": {
     "message": "Keep the overlay {{list}} as it is and restore into a new overlay? Replacing it will lose what the machine wrote since the snapshot.",
-    "note": "Text of the question asked after Restore when one disk's overlay changed since the snapshot and could be replaced; {{list}} is that overlay (its name and size)."
+    "note": "Text of the question asked after Restore when one disk's overlay changed since the snapshot and could be replaced (one that another machine also has chosen is never offered: it forks without a question); {{list}} is that overlay (its name and size)."
   },
   "snapshot-restore.restore.keep_other": {
     "message": "Keep the overlays {{list}} as they are and restore into new overlays? Replacing them will lose what the machine wrote since the snapshot.",
-    "note": "Text of the question asked after Restore when several disks' overlays changed since the snapshot and could be replaced; {{list}} is them (names and sizes), {{count}} how many."
+    "note": "Text of the question asked after Restore when several disks' overlays changed since the snapshot and could be replaced (one that another machine also has chosen is never offered: it forks without a question); {{list}} is them (names and sizes), {{count}} how many."
   },
   "snapshot-restore.restore.keep.title": {
     "message": "Keep the changes made since the snapshot?",
@@ -721,11 +721,11 @@
   },
   "worker-errors.notRestored.cause": {
     "message": "The machine didn't start, and its disks hold none of the snapshot's changes. <ui>Start</ui> boots <name>{{machine}}</name> normally.",
-    "note": "Error details: the cause under the headline snapshots:worker-errors.notRestored, on the line under it in the same place, when the restore deleted none of the disks' own changes (it was refused in the memory's part, before or after the snapshot's disk changes were written, or only new overlays it made took part of the snapshot); what happened: a restore that never loaded is undone when the machine is next loaded or started, so a disk it forked goes back on the overlay it had (a new one deleted, an earlier one it attached again kept). {{machine}}: as that entry's note says. <ui>Start</ui> is the message bar's button (snapshots:problems.startNormally)."
+    "note": "Error details: the cause under the headline snapshots:worker-errors.notRestored, on the line under it in the same place, when the restore deleted none of the disks' own changes (it was refused in the memory's part, before or after the snapshot's disk changes were written, or only new overlays it made took part of the snapshot); what happened: a restore that never loaded is undone when the machine is next loaded or started, so a disk it forked goes back on the overlay it had (a new one deleted, unless another machine has chosen it since or something other than the restore wrote it; an earlier one it attached again kept). {{machine}}: as that entry's note says. <ui>Start</ui> is the message bar's button (snapshots:problems.startNormally)."
   },
   "worker-errors.notRestored.emptied": {
     "message": "The machine didn't start. The changes the restore was replacing were deleted, so the disks that held them start from their images. <ui>Start</ui> boots <name>{{machine}}</name> normally.",
-    "note": "Error details: the cause under the headline snapshots:worker-errors.notRestored, on the line under it in the same place, when the restore had already deleted a disk's own changes before it failed: an overlay the user chose to replace, a machine's fresh overlay, or a page's own disk a loaded snapshot replaces (the confirmation said they would be deleted). Those disks hold nothing of the snapshot and start from their base images (an overlay the restore wrote into is read as empty when the machine is next loaded or started, whether its fill finished or not); a disk the restore forked goes back on the overlay it had. {{machine}}: as that entry's note says. <ui>Start</ui> is the message bar's button (snapshots:problems.startNormally)."
+    "note": "Error details: the cause under the headline snapshots:worker-errors.notRestored, on the line under it in the same place, when the restore had already deleted a disk's own changes before it failed: an overlay the user chose to replace, a machine's fresh overlay, or a page's own disk a loaded snapshot replaces (the confirmation said they would be deleted). Those disks hold nothing of the snapshot and start from their base images (an overlay the restore wrote into is read as empty when the machine is next loaded or started, whether its fill finished or not, unless another machine wrote it since); a disk the restore forked goes back on the overlay it had. Also when what stopped the restore wasn't the snapshot (the storage full, a disk that didn't open): what did is the detail under this. {{machine}}: as that entry's note says. <ui>Start</ui> is the message bar's button (snapshots:problems.startNormally)."
   },
   "worker-errors.notLoaded": {
     "message": "Couldn't load the snapshot",

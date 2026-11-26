@@ -13,7 +13,7 @@ import { splitmix64 } from '../tools/corpus/corpus.ts';
 import { changesInto, hashSource, loadChanges } from '../web/changes.ts';
 import type { Source } from '../web/disk-sources.ts';
 import { msgOf } from '../web/msg.ts';
-import { memFile, openOverlay, overlay } from '../web/overlay.ts';
+import { memFile, openOverlay, overlay, overlayMeta, writeMeta } from '../web/overlay.ts';
 import { openDisk, readChanges } from '../web/qcow2.ts';
 import { changedClusters, writeQcow2, type Sink } from '../web/qcow2-write.ts';
 import { loggedFiles } from './logged-files.ts';
@@ -63,10 +63,15 @@ test('loading a changes file gives the overlay the saved disk, and replaces what
   // The overlay already holds a block the changes don't: it must go.
   const old = await openOverlay('page', ident('page'));
   assert.ok(await overlay(openDisk((o, l) => base.slice(o, o + l), base.length), old.data, old.map).write(4096 * 7, Uint8Array.of(0xee)));
+  assert.ok(writeMeta(old.meta, { generation: 5, merging: '', size: 0 }));
   old.close();
+  await navigator.locks.request('waarm64-overlay:page', async () => {}); // its lock let go
   const r = await load('page', file, base);
   assert.equal(r.blocks, 3);
   assert.deepEqual(await mergedOf('page', base), merged);
+  // Review restore-records 4 (PERF loop 84): its generation goes on from where it was (the fill's opening writes the
+  // meta, moved on, before it deletes anything), never back to one a kept snapshot may pin.
+  assert.ok((await overlayMeta('page')).generation > 5, `past 5: ${(await overlayMeta('page')).generation}`);
 });
 
 test('a compressed changes file loads the same disk, from a smaller file', async () => {

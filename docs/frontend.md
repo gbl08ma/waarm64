@@ -1541,7 +1541,8 @@ first, when a disk is written in place, whether the whole disk goes in, §4.4).
   state); one that moved on **forks**: a new overlay named after the snapshot gets its blocks and is attached, the old
   one stays as it was; an earlier fork of the same snapshot that hasn't moved since (its generation is still the
   restore's, 1) is attached again instead of forking once more. The confirmation says which disks fork, and a second
-  one offers to **replace** instead (the attached overlay takes the blocks; what was written since is lost). A
+  one offers to **replace** instead (the attached overlay takes the blocks; what was written since is lost), for an
+  overlay no other machine has chosen (machines.md §5.2 "Other machines": one another machine has forks, unasked). A
   replaced overlay's generation goes on from its old one, never back to one a snapshot pinned. A disk written in place
   keeps only at its pinned generation; else a file with the whole disk forks it into an overlay (zeroed first, so the
   moved store under it doesn't matter), and one without is refused with the reason. A ramdisk takes the file's blocks
@@ -2175,7 +2176,8 @@ each other's disks.
 
 **Reset disk** (M8 decision 4; a transient machine's, on the Home page's Disks tab: a stored machine has New empty
 instead, which keeps the old overlay) asks for a confirmation that
-says what goes (the overlay's size, from `overlayBytes`), stops the machine (its device worker
+says what goes (the overlay's size, from `overlayBytes`; a stored machine's restore that never loaded is undone
+first, so it says and resets the overlay the machine is on, not the restore's fork: machines.md §5.2), stops the machine (its device worker
 releases the overlay's sync access handles), deletes the overlay (`removeOverlay` in
 web/overlay.ts: under the overlay's Web Lock, `removeEntry(name, {recursive: true})` on the OPFS
 root) and starts a new

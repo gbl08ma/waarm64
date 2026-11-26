@@ -107,10 +107,13 @@ test('a snapshot pins generations and carries the ramdisk; a restore keeps, fork
 
   // write: the file's blocks go into a fork, the pinned overlay is untouched.
   const fork = `${name}-fork`;
-  const r2 = await readSnapshot(file, codec, codec.snapshotVersion, { devices: devices(), plan: [{ slot: 0, action: 'write', overlay: fork, identity: 'test-disk', size: SIZE }] });
+  const r2 = await readSnapshot(file, codec, codec.snapshotVersion, { devices: devices(), plan: [{ slot: 0, action: 'write', overlay: fork, identity: 'test-disk', size: SIZE, token: 'f111e2223333' }] });
   await (await bootVm(module, { ...o, devices: devices(), restore: r2.restore })).close();
   assert.deepEqual([await byteAt(fork, 1), await byteAt(fork, 2), await byteAt(name, 1)], [0x11, 0x11, 0x22]);
   assert.equal((await overlayMeta(fork)).generation, 1, "a fork's generation is 1 (what the page records as its fork's)");
+  // Review restore-records 1, 3 (PERF loop 84): the fill leaves the restore's token in the meta (what the page's undo
+  // needs before it empties or deletes the overlay); the machine's close here wrote nothing, so it's still there.
+  assert.equal((await overlayMeta(fork)).token, 'f111e2223333', "the plan's fill token in the fork's meta");
   // The default (no plan): a replace of the pinned overlay.
   const r3 = await readSnapshot(file, codec, codec.snapshotVersion, { devices: devices() });
   await (await bootVm(module, { ...o, devices: devices(), restore: r3.restore })).close();

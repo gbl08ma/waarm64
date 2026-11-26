@@ -8,7 +8,7 @@ export { isSnapshot } from '../../snapshot-file.ts'; // what main.ts tells a dro
 import type { DiskPlan, SnapshotDisk } from '../../snapshot.ts';
 import { ask } from '../ask.svelte.ts';
 import { shapeDiff } from '../shape-diff.ts';
-import type { Shape } from '../shape.ts';
+import type { MachineRecord, Shape } from '../shape.ts';
 import { planRestore } from '../snapshots.ts';
 import { basesIn } from '../snapshot-lost.ts';
 import { snapshotPath } from '../store.ts';
@@ -270,9 +270,8 @@ export class SnapshotRestore {
   /** The stored machine's `restoreFirst` cleared in its record (it boots instead); true (a failure is said in the console). */
   async #clearFirst() {
     const { machine: m } = this.#c;
-    const r = m.stored && (await m.store.get('machines', m.stored.record.id).catch(() => undefined));
-    if (r?.restoreFirst)
-      await m.store.put('machines', { ...r, restoreFirst: undefined }).catch((e: unknown) => console.warn(e));
+    const clear = (r?: MachineRecord) => (r?.restoreFirst ? { ...r, restoreFirst: undefined } : undefined);
+    if (m.stored) await m.store.update('machines', m.stored.record.id, clear).catch((e: unknown) => console.warn(e));
     return true;
   }
 

@@ -42,13 +42,15 @@ export class UsbEntries {
   async #editNow(id: string | undefined, f: (e: UsbEntry[]) => UsbEntry[]) {
     if (!id) this.transient = f(this.transient);
     else {
-      const m = await this.#m.store.get('machines', id);
-      if (!m) throw new MsgError('usb:usb-entries.machineGone');
-      m.usbDevices = f(m.usbDevices ?? []);
-      if (!m.usbDevices.length) delete m.usbDevices;
-      await this.#m.store.put('machines', m);
+      // In one read and write (`Store.update`): what another tab wrote to the record's other fields meanwhile stays.
+      const m = await this.#m.store.update('machines', id, (m) => {
+        if (!m) throw new MsgError('usb:usb-entries.machineGone');
+        const usbDevices = f(m.usbDevices ?? []);
+        const { usbDevices: _, ...rest } = m;
+        return { ...rest, ...(usbDevices.length ? { usbDevices } : {}) };
+      });
       const s = this.#m.stored;
-      if (s?.record.id === id) s.record = { ...s.record, usbDevices: m.usbDevices };
+      if (s?.record.id === id) s.record = { ...s.record, usbDevices: m?.usbDevices };
     }
     this.#changed();
   }

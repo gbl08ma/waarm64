@@ -20,7 +20,8 @@
   import { shapeDiff } from './shape-diff.ts';
   import { snapshotPath } from './store.ts';
   import { msg, t, text } from '../i18n.ts';
-  import { importSnapshot, unrestorable } from './snapshots.ts';
+  import { importSnapshot } from './snapshot-import.ts';
+  import { unrestorable } from './snapshots.ts';
   import { dependsOn, watchGenerations } from './snapshot-lost.ts';
   import { machineLike } from './machine-like.ts';
   import { opfsDir } from '../overlay.ts';

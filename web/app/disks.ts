@@ -111,14 +111,19 @@ export async function renameOverlay(store: Store, id: string, name: string) {
   await store.put('overlays', { ...o, name, modified: Date.now() });
 }
 
-/** Attaches overlay `overlay` (one of the disk's) to machine `m`'s attachment `attachment`; the machine is off. */
+/**
+ * Attaches overlay `overlay` (one of the disk's) to machine `m`'s attachment `attachment`; the machine is off. Written
+ * onto the record as the store has it (`m` is the caller's copy, maybe older than a restore's commit or its load).
+ */
 export async function switchOverlay(store: Store, m: MachineRecord, attachment: string, overlay: string) {
-  const a = m.attachments.find((x) => x.id === attachment);
   const o = await store.get('overlays', overlay);
-  if (!a || o?.disk !== a.disk) throw new MsgError('disks:disks.notThisDisk');
-  a.overlay = overlay;
-  m.modified = Date.now();
-  await store.put('machines', m);
+  const saved = await store.update('machines', m.id, (cur) => {
+    const a = cur?.attachments.find((x) => x.id === attachment);
+    if (!cur || !a || o?.disk !== a.disk) throw new MsgError('disks:disks.notThisDisk');
+    const attachments = cur.attachments.map((x) => (x.id === attachment ? { ...x, overlay } : x));
+    return { ...cur, attachments, modified: Date.now() };
+  });
+  Object.assign(m, saved);
 }
 
 /**
@@ -131,13 +136,23 @@ export async function deleteOverlay(store: Store, id: string) {
   const o = await store.get('overlays', id);
   if (o && (await overlayMeta(diskDir(o.disk))).merging === overlayDir(id))
     throw new MsgError('disks:disks.overlayMerging');
-  for (const m of await store.all('machines')) {
-    if (!m.attachments.some((a) => a.overlay === id)) continue;
-    for (const a of m.attachments) if (a.overlay === id) a.overlay = undefined;
-    await store.put('machines', { ...m, modified: Date.now() });
-  }
+  await unchoose(store, id);
   await store.deleteOverlay(id);
   await removeOverlay(overlayDir(id));
+}
+
+/** Leaves the machines that had overlay `id` chosen without one (their next start makes an empty one), each in one read and write. */
+export async function unchoose(store: Store, id: string) {
+  for (const { id: machine } of await store.all('machines'))
+    await store.update('machines', machine, (m) =>
+      m?.attachments.some((a) => a.overlay === id)
+        ? {
+            ...m,
+            attachments: m.attachments.map((a) => (a.overlay === id ? { ...a, overlay: undefined } : a)),
+            modified: Date.now(),
+          }
+        : undefined,
+    );
 }
 
 /**

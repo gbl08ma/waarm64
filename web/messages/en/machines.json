@@ -347,29 +347,29 @@
     "message": "Ramdisk",
     "note": "The name a new ramdisk gets when the user gives none (Home page, Disks tab, Add a disk). Stored: it stays the disk's name."
   },
-  "machines.maxDisks": {
+  "machine-attachments.maxDisks": {
     "message": "Couldn't add the disk",
-    "note": "Error in the message bar when a disk is added to a machine that has the most already: the headline; its details are the line under it (machines:machines.maxDisks.cause). {{max}}: the most disks (16)."
+    "note": "Error in the message bar when a disk is added to a machine that has the most already: the headline; its details are the line under it (machines:machine-attachments.maxDisks.cause). {{max}}: the most disks (16)."
   },
-  "machines.maxDisks.cause": {
+  "machine-attachments.maxDisks.cause": {
     "message": "A machine can't have more than {{max}} disks.",
-    "note": "Error details: the cause under the headline machines:machines.maxDisks, on the line under it in the same place; what happened, and what the user can do if anything. {{max}}: as that entry's note says."
+    "note": "Error details: the cause under the headline machines:machine-attachments.maxDisks, on the line under it in the same place; what happened, and what the user can do if anything. {{max}}: as that entry's note says."
   },
-  "machines.notAttached": {
+  "machine-attachments.notAttached": {
     "message": "Couldn't change the disk",
-    "note": "Error in the Home page's message bar when a change on the Disks tab finds the disk detached meanwhile (in another tab): the headline; its details are the line under it (machines:machines.notAttached.cause)."
+    "note": "Error in the Home page's message bar when a change on the Disks tab finds the disk detached meanwhile (in another tab): the headline; its details are the line under it (machines:machine-attachments.notAttached.cause)."
   },
-  "machines.notAttached.cause": {
+  "machine-attachments.notAttached.cause": {
     "message": "It's no longer attached to this machine.",
-    "note": "Error details: the cause under the headline machines:machines.notAttached, on the line under it in the same place; what happened, and what the user can do if anything."
+    "note": "Error details: the cause under the headline machines:machine-attachments.notAttached, on the line under it in the same place; what happened, and what the user can do if anything."
   },
-  "machines.swapMin": {
+  "machine-attachments.swapMin": {
     "message": "Couldn't use the ramdisk as swap",
-    "note": "Error in the Home page's message bar when the user ticks swap on a ramdisk too small for it (Disks tab): the headline; its details are the line under it (machines:machines.swapMin.cause). {{kib}}: the least size, KiB."
+    "note": "Error in the Home page's message bar when the user ticks swap on a ramdisk too small for it (Disks tab): the headline; its details are the line under it (machines:machine-attachments.swapMin.cause). {{kib}}: the least size, KiB."
   },
-  "machines.swapMin.cause": {
+  "machine-attachments.swapMin.cause": {
     "message": "A swap ramdisk must be at least {{kib}} KiB.",
-    "note": "Error details: the cause under the headline machines:machines.swapMin, on the line under it in the same place; what happened, and what the user can do if anything. {{kib}}: as that entry's note says."
+    "note": "Error details: the cause under the headline machines:machine-attachments.swapMin, on the line under it in the same place; what happened, and what the user can do if anything. {{kib}}: as that entry's note says."
   },
   "storage-report.storage.stored": {
     "message": "Stored disk <name>{{name}}</name>",

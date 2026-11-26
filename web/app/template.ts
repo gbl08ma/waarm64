@@ -13,7 +13,7 @@ import { importDefinition, parseDefinition, resolveUrls, type Definition } from 
 import { fetchText, type DemoRef, type StoreDemo } from './demo-store.ts';
 import { withDemoNetwork, withDemoRoom } from './net-demo.ts';
 import { newMac, type MachineRecord } from './shape.ts';
-import { importSnapshot } from './snapshots.ts';
+import { importSnapshot } from './snapshot-import.ts';
 import type { SnapshotRecord, Store } from './store.ts';
 
 export { resolveUrls };

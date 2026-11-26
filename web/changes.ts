@@ -8,10 +8,8 @@ import {
   endFill,
   openOverlay,
   overlay,
-  readMeta,
   storageFullError,
   withRoom,
-  writeMeta,
   type OverlayFiles,
   type SyncFile,
 } from './overlay.ts';
@@ -118,16 +116,17 @@ export async function loadChanges(o: {
       baseHash: hash.slice(0, 12),
     });
   }
-  // Emptied under its lock (no other opener between), marked as filling before its first block and cleared once both
-  // files are flushed: a load refused or cut off part way is never read as the disk's (web/overlay.ts `openOverlay`
-  // empties it). What failed from here on has emptied the overlay: it says so (`cleared`, for the page's words).
+  // Emptied under its lock (no other opener between), marked as filling (its generation moved on) before anything of
+  // it is deleted and cleared once both files are flushed: a load refused or cut off part way is never read as the
+  // disk's (web/overlay.ts `openOverlay`'s `fresh`). What failed once it was marked has emptied the overlay: it says so
+  // (`cleared`, for the page's words).
   let files: OverlayFiles | undefined;
   try {
-    files = await openOverlay(o.overlay, o.identity, undefined, { fresh: true });
-    const f = files;
     const lands = withRoom(o.makeRoom);
-    const m = { ...readMeta(f.meta), filling: true, ...(c.size > base.size ? { size: c.size } : {}) };
-    if (!(await lands(() => writeMeta(f.meta, m)))) throw await storageFullError();
+    files = await openOverlay(o.overlay, o.identity, undefined, {
+      fresh: { size: c.size > base.size ? c.size : 0, lands },
+    });
+    const f = files;
     const total = Math.ceil(c.size / 4096);
     const r = await changesInto(c.blocks(), base, f, lands, (block) =>
       progress(msg('disks:changes.loadingChanges'), block, total),
@@ -135,8 +134,8 @@ export async function loadChanges(o: {
     if (!(await lands(() => endFill(f.meta)))) throw await storageFullError();
     return r;
   } catch (e) {
-    // Its lock not given (another tab has the disk open): nothing was touched.
-    const untouched = (e as { problem?: unknown } | null)?.problem === 'overlay-in-use';
+    // Its lock not given (another tab has the disk open), or its mark refused (the storage full): nothing was touched.
+    const untouched = !files && !(e as { marked?: unknown } | null)?.marked;
     if (!untouched && e && typeof e === 'object') Object.assign(e, { cleared: true });
     throw e;
   } finally {

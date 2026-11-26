@@ -1057,8 +1057,12 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   the first change of each opening: a write, a discard or a zeroing; an opening that only reads leaves it, so "the
   overlay is as it was at generation g" is two integers compared: docs/machines.md §3.3), for a stored
   disk the overlay being merged into it, and the overlay's **own size** (a u64 at 32: a grown overlay's,
-  docs/machines.md §4.5; a 32-byte `meta` from before sizes has none), and the **fill mark** (a u64 at 40, 1 while a
-  bulk fill runs: below; a 40-byte `meta` has none, and one without a mark stays 40 bytes), `base` the image's identity (`diskIdentity`: a URL's path and the size, or a chosen `File`'s name, size and modification time; a mismatch refuses to open). A block's
+  docs/machines.md §4.5; a 32-byte `meta` from before sizes has none), the **fill mark** (a u64 at 40, 1 while a
+  bulk fill runs: below; a 40-byte `meta` has none, and one without a mark stays 40 bytes), and a restore's **fill
+  token** (16 ASCII bytes at 48: written with the mark, kept when it is cleared, and cleared with the generation's bump
+  by the first change of any later opening, so it proves that nothing but that fill wrote the overlay since: the proof
+  a restore's undo needs before it empties or deletes an overlay, machines.md §5.2 "Other machines"; a 48-byte `meta`
+  has none), `base` the image's identity (`diskIdentity`: a URL's path and the size, or a chosen `File`'s name, size and modification time; a mismatch refuses to open). A block's
   slot is written before its map entry, so a crash leaks a slot but never maps garbage: a block reads as the base, as
   something written to it, or as zeros it was given, never as another block's data or an I/O error. **Against an OS
   crash or a power loss too** (`ORDERED`): the OS may write either file back first, so the order is made durable by
@@ -1079,9 +1083,11 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   their end: **a snapshot's restore** (a data flush per run was most of the restore's disk phase: bench/boot/REPORT.md
   "SNAPZ loop 5"), **an image's import** (web/stored.ts `importImage`) and **[Import changes](ui:disks:disk-changes.changes.title)** (web/changes.ts
   `loadChanges`, `changesInto`). Each is a **fill**: a restore's and an Import changes' overlay is opened `fresh`
-  (emptied under its Web Lock, so no other opener comes between the deletion and the fill), an import's new store is
-  made by its opening (`openStoredForWriting`, a new id: nothing to empty), and each is marked as filling in its `meta`
-  before the first block, the mark cleared once both files are flushed. A restore of several disks takes all their
+  (emptied under its Web Lock, so no other opener comes between the deletion and the fill; its `meta` written first,
+  marked, its generation one past what it was, with the restore's token, and everything else deleted after, so a fill
+  cut off at any point is read as empty and never at a generation it had before), an import's new store is made by its
+  opening (`openStoredForWriting`, a new id: nothing to empty) and marked as filling in its `meta` before the first
+  block; each mark is cleared once both files are flushed. A restore of several disks takes all their
   locks before it empties the first, so one open elsewhere refuses it with none touched (`openOverlay`'s `held`). A restore's and an Import changes' overlay may already have a
   record (a fork the page made, a replace, the page's own disk at its fixed name), so the mark, not the record, is what
   keeps a fill cut off part way (a closed tab, the storage full, a damaged file, a crash) from being read as a disk:
@@ -1091,8 +1097,8 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   a marked fork (web/app/snapshots.ts `earlierFork`), shows a marked overlay as holding nothing (`refreshOverlay`) and
   doesn't merge it (`disks:merge.cutOff`), and puts a machine whose restore never loaded (its record's `restoring`, until
   the worker's `loaded`; not while a start holds the machine) back on what it had, an overlay the restore wrote into
-  marked as a cut-off fill again where the fill moved its generation on (web/app/snapshot-undo.ts `undoCutRestores`, at
-  the machine's loading; machines.md §5.2 "A restore's records"). A store or overlay an import or a stored machine's Import changes cut
+  marked as a cut-off fill again where its `meta` still carries the fill's token (web/app/snapshot-undo.ts
+  `undoCutRestores`, at the machine's loading; machines.md §5.2 "A restore's records"). A store or overlay an import or a stored machine's Import changes cut
   off leaves has no record (the record comes after the job): the page's start removes those (`Store.dropCutFills`:
   marked, the lock free, no record; tests/stored.test.ts closes a page during an import; one it can't remove is left for
   the next start, the rest removed all the same). A cut-off between the opening and the mark leaves an unrecorded

@@ -126,25 +126,23 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried and lost: polled code without `acc`").
 
-## State (2026-11-26, after loop 83)
+## State (2026-11-26, after loop 84)
 
 **The rule since 2026-11-24 (the user): spend as little time in benchmarks and CI as the answers allow
 ("Batching", above).** Loop 75's notes still hold: `bench/boot/results/perf75/diag.patch` applies to 3a08fdf3; loop
 67's warm-up is not landed (local branches `perf67-warmup`, `perf-smp-warm`, unpushed); `../waarm64-base` is detached
-at 5d8f29ef. Loop 82 fixed the out-of-context review of loop 80 (bench/io/REPORT.md "PERF loop 82"): a restore that
-hasn't loaded is now one record, its machine's `restoring`, written once at the commit and cleared once at `loaded`
-(machines.md §5.2 "A restore's records"). On the Mac, `pages.waarm64snap` restores with 3D off on the real renderer
-(its caps are SwiftShader's): GPU A/Bs there boot. Loop 83 (row 17) counted the broadcast wakes (under the floor,
-nothing built for them) and cut an idle vCPU's poll 50 → 20 µs (bench/boot/REPORT.md "PERF loop 83"); its
-`diag.patch` (wake tallies) applies to 0c7707e7; its commit passed the push tier (`ci.sh`, `ci-jit.sh`, `ci-debian.sh`)
-and fixed the agent's GROW-test flake. **Next: loop 84 fixes the out-of-context review of loop 82
-(`origin/review/restore-records`), then row 20.** `target/snapbench/pages.waarm64snap`
-loads into the current state layout; `target/archarm/desktop.qcow2` is ab-mac.sh's default disk. The ABI is 74.
+at 5d8f29ef. Loop 83's `diag.patch` (wake tallies) applies to 0c7707e7. Loop 84 fixed the out-of-context review of
+loop 82 (bench/io/REPORT.md "PERF loop 84"): the rules for overlays other machines have (machines.md §5.2 "Other
+machines": a restore writes into no other machine's overlay; an undo empties or deletes only what the fill's token in
+the overlay's `meta` proves; a machine's record is written field by field, `Store.update`). On the Mac,
+`pages.waarm64snap` restores with 3D off on the real renderer (its caps are SwiftShader's): GPU A/Bs there boot.
+**Next: row 20.** `target/snapbench/pages.waarm64snap` loads into the current state layout;
+`target/archarm/desktop.qcow2` is ab-mac.sh's default disk. The ABI is 74.
 
 What every loop kept, dropped and found is in its REPORT entry (bench/boot/REPORT.md "PERF loop 36" to "PERF loop
 66" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
-36, 42, 47, 50, 55, 58, 71, 73, 74, 76, 77, 78, 79 and 80) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43, 48, 56, 60, 72,
-75, 77, 78, 80, 81 and 82 (50's: comments only), 73's in its own commit while paused. Built but off by default (measured slower): I8MM, FCMA,
+36, 42, 47, 50, 55, 58, 71, 73, 74, 76, 77, 78, 79, 80 and 82) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43, 48, 56, 60, 72,
+75, 77, 78, 80, 81, 82 and 84 (50's: comments only), 73's in its own commit while paused. Built but off by default (measured slower): I8MM, FCMA,
 FP16, FHM, BF16. The ABI is 74.
 
 ## Still open (the queue: the first is next; by expected gain, highest first)

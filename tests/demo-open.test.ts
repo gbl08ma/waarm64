@@ -34,9 +34,9 @@ async function demoMachine(s: Store) {
 }
 
 /** Sets overlay `id`'s files' generation (what the device worker bumps before an opening's first change). */
-async function setGeneration(id: string, generation: number) {
+async function setGeneration(id: string, generation: number, token?: string) {
   const f = await openOverlay(overlayDir(id), undefined);
-  writeMeta(f.meta, { ...readMeta(f.meta), generation });
+  writeMeta(f.meta, { ...readMeta(f.meta), generation, ...(token ? { token } : {}) });
   f.close();
 }
 
@@ -97,9 +97,10 @@ test("a template's first start whose restore never loaded (it booted instead, or
   // The first restore's commit, into the machine's fresh overlay (no fork of the template until it loaded).
   const { fork: _, ...unforked } = (await s.get('overlays', overlay))!;
   await s.put('overlays', unforked);
-  const committed: MachineRecord = { ...m, restoring: [{ attachment: m.attachments[0].id, how: 'into', overlay, generation: 0, fork: { snapshot: 'template', name: 'Template' } }] };
+  const token = 'ab12cd34ef56';
+  const committed: MachineRecord = { ...m, restoring: [{ attachment: m.attachments[0].id, how: 'into', overlay, generation: 0, fork: { snapshot: 'template', name: 'Template' }, token }] };
   await s.put('machines', committed);
-  await setGeneration(overlay, 1); // its fill done, its RAM never loaded
+  await setGeneration(overlay, 1, token); // its fill done (its token left in the meta), its RAM never loaded
   await navigator.locks.request(`waarm64-overlay:${overlayDir(overlay)}`, async () => {}); // let go
   const after = await undoCutRestores(s, committed);
   assert.equal(after.attachments[0].overlay, overlay, 'the machine keeps the overlay');

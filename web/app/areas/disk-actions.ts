@@ -261,6 +261,10 @@ export class DiskActions {
   // The disk reset (M8 decision 4): stop the machine (its overlay's files are locked while it runs), delete the overlay, start again.
   async reset() {
     const { machine: m, power: pw } = this.#d;
+    if (pw.busy()) return;
+    // A restore of it that never loaded is undone first (its record read again: `loadStored`), so the disk reset is the
+    // one the machine is on, as its page said (the disks as they were), not a fork the undo takes it off.
+    if (m.stored?.record.restoring && !isLive(power.state) && !(await pw.reloadStored())) return;
     const name = overlayName(m);
     if (!name || pw.busy()) return;
     const written = await overlayBytes(name).catch(() => 0);

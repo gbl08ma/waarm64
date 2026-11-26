@@ -95,6 +95,15 @@ export type Records = {
   get<K extends Kind>(kind: K, id: string): Promise<Kinds[K] | undefined>;
   all<K extends Kind>(kind: K): Promise<Kinds[K][]>;
   put<K extends Kind>(kind: K, value: Kinds[K]): Promise<void>;
+  /**
+   * Record `id` read and written back as `f` makes it of what it is, in one transaction (no other write between): what
+   * `f` returned, written; undefined, nothing written. `f` is synchronous; one that throws writes nothing.
+   */
+  update<K extends Kind>(
+    kind: K,
+    id: string,
+    f: (was: Kinds[K] | undefined) => Kinds[K] | undefined,
+  ): Promise<Kinds[K] | undefined>;
   delete(kind: Kind, id: string): Promise<void>;
 };
 
@@ -228,6 +237,18 @@ export class Store {
   async put<K extends Kind>(kind: K, value: Kinds[K]) {
     await this.records.put(kind, value);
     this.said({ kind, id: value.id });
+  }
+
+  /**
+   * Changes record `id` as `f` makes it of what the store has now, in one read and write (`Records.update`): a writer of
+   * some of a record's fields that keeps what another tab wrote to the rest meanwhile (a machine's record: its
+   * attachments and a restore's `restoring` among them, docs/machines.md §5.2 "A restore's records"). What was
+   * written, or undefined where `f` wrote nothing.
+   */
+  async update<K extends Kind>(kind: K, id: string, f: (was: Kinds[K] | undefined) => Kinds[K] | undefined) {
+    const value = await this.records.update(kind, id, f);
+    if (value) this.said({ kind, id });
+    return value;
   }
 
   /**

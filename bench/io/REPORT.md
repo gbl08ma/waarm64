@@ -541,3 +541,77 @@ its first restore load, as the page does (`scripts/ci.sh`'s first run failed the
 
 **CI:** `scripts/ci.sh` failed once (tests/resize.test.ts, above), then OK (710 s); `scripts/ci-machines.sh` OK
 (338 s); `scripts/ci-debian.sh` OK (233 s).
+
+## PERF loop 84 (2026-11-26): the out-of-context review of a restore's records, fixed
+
+The review of a machine's `restoring`, its commit, `loaded` and the undo (branch `review/restore-records` at 7bd56e85,
+`review/restore-records.md`; static, at 0c7707e7) ranked nine findings. Each was checked against main at 31e6c26f
+(loop 83 touched none of it); each real one got its test at the cheapest layer, run first against that code (each
+failed there: the Node tests on the base sources, the page test with the fix left out), then fixed. Nothing was
+measured: no change touches a path the guest's I/O takes (the fill writes its `meta` once before it empties an
+overlay instead of once after; the device's existing first-change bump clears 16 more bytes; the page's record writes
+are the same writes, each in one IndexedDB transaction). The overlay's `meta` grows to 64 bytes where a restore's fill
+writes a token (48 or 40 bytes otherwise, as before); step counts don't move.
+
+**The rules first.** This was the area's fourth review, and like the last two it found high-severity cases in the
+last round's rules, most of them about overlays more than one machine has (Duplicate copies a machine's attachments
+with their overlays; the Overlays dialog lets any machine of a disk choose any of its overlays) and about an undo
+emptying or deleting what it couldn't prove its restore made. Loop 82's undo of a replace compared the overlay's
+generation with the commit's, but any opener that writes moves it; its undo deleted a fork unless a machine held its
+lock, whoever had chosen it. The rules decided (docs/machines.md §5.2 "Other machines"):
+- **A restore changes no other machine's disk:** it writes into an overlay (a replace, a template's fresh overlay)
+  only where no other machine has it chosen and no restore that hasn't loaded names it (made, wrote into, or goes back
+  on); otherwise that disk forks and no replace is offered for it. An earlier fork is attached again on the same
+  terms. Checked at the plan and again at the commit; the replace answer holds for the overlay the question named,
+  still attached. This narrows the feature: a restore on one of two machines sharing an overlay forks rather than
+  asking to replace (it costs a fork's storage). Asking with the other machine named was the alternative; it would
+  still have changed that machine's disk, and every later rule would have had to cover it.
+- **An undo moves only its own machine's attachments, and empties or deletes only what it can prove nothing else
+  wrote.** The proof is a **fill token**: the commit's id, in each step and each write of the worker's plan, which the
+  fill writes into the overlay's `meta` (16 bytes at 48) with its mark, and which the first change of any later opening
+  clears with the generation's bump. An overlay written into is read as empty only while it carries the token; a fork
+  is deleted only while no other machine has it chosen or names it and it is either never opened (generation 0) or
+  carries the token. Metas and steps from before tokens carry none: their undo never empties or deletes anything.
+- **A copy is of what the undo leaves:** Duplicate gives the copy each pending fork's `before`.
+- **A machine's record is written field by field:** every writer other than the commit, `loaded` and the undo changes
+  only its own fields onto the record as the store has it (`Store.update`, one IndexedDB transaction); the commit and
+  the undo write theirs the same way.
+
+| # | the review's finding | outcome | test (failing first) | fix |
+|---|---|---|---|---|
+| 1 | High: an `into` step is undone by comparing generations, so another machine's run on a shared overlay empties it (and the template variant: a copy's disk emptied, then filled with the template) | **defect** (confirmed) | tests/restore-records.test.ts "review 1: a replace is not offered…" (failed: Mine offered and written), "…a replace's undo leaves an overlay another machine wrote after the commit…" (failed: read as empty, before and after a fill), "…a template's first restore cut off, then a copy boots on its fresh overlay…" (failed: emptied, then written into again), "…doesn't write into a fresh overlay another machine has chosen" (failed: written into) | the fill token (`markCutFill(name, token)`); no write into an overlay another machine has (`taken`, web/app/snapshots.ts) |
+| 2 | High: the replace answer is kept per attachment | **defect** (confirmed) | "review 2: the replace answer holds for the overlay the question named…" (failed: Work written into) | `asked` maps an attachment to the overlay named; the commit writes into it only while it is still attached and replaceable |
+| 3 | High/medium: the undo deletes a fork a stopped machine has chosen; Duplicate copies a pending restore's fork | **two defects** (confirmed) | "review 3: a copy made while a restore has not loaded…" (failed: the copy on the fork, then left without one), "…never deletes a fork another machine has chosen since, running or not, written or not" (failed: deleted), "…keeps a fork someone else wrote since…" (failed: deleted) | `dropFork` leaves a fork another machine has or names, and one whose `meta` doesn't prove the fill (generation 0 or the token); Duplicate copies each fork step's `before` |
+| 4 | Medium: a fill cut off between emptying the overlay and its meta takes its generation back to 0 | **defect** (confirmed; Import changes had the same order) | "review 4: a fill cut off between emptying the overlay and its meta never takes the generation back" (failed: 1 after Mine's 2); tests/changes.test.ts "loading a changes file…" (its generation past the one before) | `openOverlay`'s `fresh` writes the `meta` first (one past, marked, the token; through `withRoom`), then deletes everything else; Import changes goes through it; a fill's own mark isn't taken for a cut-off fill |
+| 5 | Medium: machine-record writers read-modify-write outside the machine's lock, losing a commit or bringing back a `restoring` that loaded | **defect** (confirmed for each writer) | "review 5: a machine record's other writers keep a restore's commit and its load…" (a settings save from its own read, a connection, a shared folder, an attachment edit and an attach from the caller's copy: each failed both ways); "…a restore's commit and its undo keep what another tab wrote…" (failed both) | `Store.update` (memory and IndexedDB: one transaction); `updateMachine`, `setAdapterConnection`, `detachEverywhere`, the folders' and the USB entries' edits, `attach`, `editAttachment`, `switchOverlay`, an overlay's detach (`unchoose`), a start's new overlays, the first start's mark, the commit, the undo and `restoreLoaded` through it |
+| 6 | Medium: a refusal after the fill that isn't a SnapshotError loses `emptied` | **defect** (by reading; the test shows it) | "review 6: a restore refused after its fill emptied an overlay says so, whatever refused it" (the storage full, a disk in use: failed, `emulator`) | `explain`: `emptied` while restoring is the `snapshot` problem with `notRestored.emptied`, what refused it under those words (so a template's first start boots instead too); the worker's mark refused by the storage keeps the restore's storage words |
+| 7 | Low: Reset disk after a restore that never loaded doesn't reset the disk | **defect** (by reading; the page test shows it) | tests/page-restore.test.ts "Reset disk after a restore that never loaded…" (failed: the boot back on the overlay it had) | Reset disk undoes such a restore first (`reloadStored`), so it says and resets the overlay the machine is on |
+| 8 | Low: a fork chosen by a running machine blocks its own machine | **defect** (by reading) | "review 3: the undo never deletes a fork…" ("running": failed, the restore still to be undone) | a fork another machine has holds nothing up: only this machine's attachment goes back |
+| 9 | Low: `namedByRestores` leaves out the steps' `before` | **defect** (by reading) | "review 9: a restore doesn't attach again an earlier fork that another machine has chosen, or that another machine's undo goes back onto" (failed both) | `namedByRestores(…, { before })` for `earlierFork`, and no fork another machine has |
+
+**Also changed by the rules:** two earlier tests pinned what the rules no longer do: tests/restore-records.test.ts's
+review restore-marks 3 case had One's restore attach Two's chosen fork again (it now forks, and One's undo deletes its
+own fork, not Two's), and its shared replace now has Two choose Mine after the commit (a copy of One). `markCutFill`
+reads the `meta` before it takes the lock, so an overlay another machine runs on whose token is gone no longer holds
+the undo up. Moved to keep files in the page's size rules: a machine's attachment edits to web/app/machine-attachments.ts
+(re-exported by machines.ts; their messages keyed `machines:machine-attachments.*`), a snapshot file's import to
+web/app/snapshot-import.ts (`snapshots:snapshot-import.notKept`). Tests that simulate the worker's fill
+(tests/template.test.ts, tests/demo-open.test.ts, tests/overlay.test.ts) now write its token and open it `fresh` with
+the fill's size; those that refuse a machine's write intercept `Store.update` too (tests/page-restore.test.ts,
+tests/page-template-first.test.ts). Import changes' generation check (tests/changes.test.ts) was shown failing by the
+planted bug below rather than on the base sources, which had the same order.
+
+**Planted bugs, each caught by its test:** `markCutFill` without the token; a writer's first change keeping the token
+(tests/overlay.test.ts "a fill's token"); the fill's opening deleting the `meta` too (review 4, and tests/changes.test.ts);
+a fill's own mark taken as a cut-off fill and the worker dropping the plan's token (tests/snapshot-plan.test.ts); an
+overlay another machine has written into; an earlier fork another machine has reused; `namedByRestores` without the
+`before`s; the replace keyed by attachment; Duplicate copying a pending fork; `dropFork` deleting one another machine
+has, and without the token's proof; a fork another machine runs on holding the undo; a connection written from its own
+read; an attachment edit onto the caller's copy; the commit and the undo writing the record they read; `explain`
+without the emptied case; the undo marking without its lock check; Reset disk without the undo first (the page test).
+
+**CI:** `scripts/ci.sh` failed twice before it passed: the page's format check (web/app/snapshot-import.ts, made after
+the formatting run), then tests/page-run.test.ts "finding 9", whose stand-in store spread a Store and so had no
+`update` (the settings save hung; it now passes `update` and `all` through); then OK (740 s). `scripts/ci-machines.sh`
+OK (337 s); `scripts/ci-debian.sh` OK (233 s).
+

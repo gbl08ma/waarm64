@@ -113,11 +113,13 @@ const editAttachments = async (
   machine: string,
   edit: (m: MachineRecord, list: FolderAttachment[]) => FolderAttachment[],
 ) => {
-  const m = await store.get('machines', machine);
-  if (!m) throw new MsgError('folders:folders.machineGone');
-  const list = edit(m, m.folders ?? []);
-  const { folders: _, ...rest } = m;
-  await store.put('machines', { ...rest, ...(list.length ? { folders: list } : {}) });
+  // In one read and write (`Store.update`): what another tab wrote to the record's other fields meanwhile stays.
+  await store.update('machines', machine, (m) => {
+    if (!m) throw new MsgError('folders:folders.machineGone');
+    const list = edit(m, m.folders ?? []);
+    const { folders: _, ...rest } = m;
+    return { ...rest, ...(list.length ? { folders: list } : {}) };
+  });
 };
 
 /** Attaches folder `id` to `machine`, at the end of its list (saved at once: it needs no restart). */

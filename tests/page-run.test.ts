@@ -205,7 +205,7 @@ test("finding 9: \"Start with N MiB of RAM\" after a crash wins over the address
     const record = { id: 'aaaaaaaaaaa9', name: 'Big', ncpus: 2, ramMiB: 2048, display: '2d', network: false, attachments: [], created: now, modified: now };
     await store.put('machines', record);
     let snapshots: unknown[] = [{}];
-    const m = { name: 'uefi', stored: { record }, store: { ...store, get: (k: string, id: string) => store.get(k, id), put: (k: string, v: unknown) => store.put(k, v), snapshotsOf: async () => snapshots }, jitBudget: () => 320, ramMiB: 4096, ncpus: 2 };
+    const m = { name: 'uefi', stored: { record }, store: { ...store, get: (k: string, id: string) => store.get(k, id), put: (k: string, v: unknown) => store.put(k, v), update: (k: string, id: string, f: unknown) => store.update(k, id, f), all: (k: string) => store.all(k), snapshotsOf: async () => snapshots }, jitBudget: () => 320, ramMiB: 4096, ncpus: 2 };
     let shown: { label: string; run(): void }[] = [];
     let restarts = 0;
     const signal = new MemorySignal(m, { setState: (_s: string, _m: unknown, a: typeof shown) => { shown = a; } }, async () => void restarts++);
