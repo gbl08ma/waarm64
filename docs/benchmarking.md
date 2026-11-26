@@ -471,7 +471,7 @@ at 160 MiB against 98.6% at 320 in all six sessions of 320, the A/A within 0.1 p
   benchmark: [v8.md](v8.md)). For what a macOS user gets, and before ranking work by a profile
   taken here, run the page on the Mac host's Chromium: `bench/run-mac.sh <name> --page
   bench/boot/index.html --only alpine_user_jit` (it copies the pages, the core and the Alpine and
-  Buildroot images to `~/waarm64-bench` there; `WASM=` picks a core; the Mac side's run is bounded by `MAC_TIMEOUT`, 580 s by default; results are
+  Buildroot images to `~/waarm64-bench.noindex` there; `WASM=` picks a core; the Mac side's run is bounded by `MAC_TIMEOUT`, 580 s by default; results are
   moved back into `bench/results/local/mac/`, as every `*-mac.sh` moves its run's output: devenv.md "The Mac host"). `--config bounds-checks` there shows the checks' cost on one machine.
 - Benchmarks run in the dev VM on the M4. Keep the `oracle` VM idle, check `ps` for leftover
   experiments first, and don't rebuild or edit served sources while a benchmark runs.
@@ -700,12 +700,12 @@ and energy (`bench/mac/procstat.c`, built there by `bench/run-mac.sh` and `bench
   one setter keeping a deadline for each `gap` µs ± 50% apart, `ms` per mechanism; per mechanism the wake-up against
   the deadline and the spinner's ack (µs), and the setter's spin share of a core and waits a deadline. The page's
   Mac numbers are bench/boot/REPORT.md "PERF loop 53"'s. `preempt-counts.ts` also runs in the Mac's Node, from
-  `~/waarm64-bench` after a `bench/run-mac.sh` (the diagnostic core copied there): today's latencies on that host.
+  `~/waarm64-bench.noindex` after a `bench/run-mac.sh` (the diagnostic core copied there): today's latencies on that host.
 - **An idle guest's host CPU** (PERF loop 58): `node bench/boot/idle-cpu.ts [ncpus=4] [settle s=6] [measure s=20]
   [spin µs]` boots Buildroot's kernel with `/bin/sleep` as init, parallel on N vCPUs under the JIT, and prints the Node
   process's CPU over the measured span as a share of one core, the idle exits a second and the guest's MIPS (~400 idles
   a second at 4 vCPUs; the Mac's Node 7-8% at the default 20 µs poll, the dev VM's ~11%). `spin` is an idle vCPU's poll
-  (`VmOptions.vcpuSpinUs`; the pages' and bench pages' query `vspin=<µs>`). On the Mac from `~/waarm64-bench` after a `bench/run-mac.sh`
+  (`VmOptions.vcpuSpinUs`; the pages' and bench pages' query `vspin=<µs>`). On the Mac from `~/waarm64-bench.noindex` after a `bench/run-mac.sh`
   (which copies it there); runs move by ~±0.5 points, so alternate arms over three rounds.
 - **Preemption's counts** (a diagnostic core: the `diag` feature, never in the normal build, whose code section it
   leaves byte-identical): `CARGO_TARGET_DIR=target/diag scripts/build-wasm.sh --features diag` (its own target

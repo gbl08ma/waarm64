@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # bench/video/replay.ts on the Mac host's Chrome for Testing (Google's build: FFmpeg's software decoders, VideoToolbox's
-# hardware ones), from a copy in ~/waarm64-gpu-bench there (as bench/gpu/sway-mac.sh: Node and playwright-core there;
+# hardware ones), from a copy in ~/waarm64-gpu-bench.noindex there (as bench/gpu/sway-mac.sh: Node and playwright-core there;
 # nothing else on the host is touched). The capture and the hashes are copied to target/replay/ there, the next run's
 # over them; the run writes nothing there (its report is its output here).
 #   bench/video/replay-mac.sh <capture.vglt> <codec index> <orig.md5> [visible width] [hw|sw]
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 HOST=${MAC_HOST:-macmini.lan}
-DEST=waarm64-gpu-bench
+DEST=waarm64-gpu-bench.noindex
 CAPTURE=$1 MD5=$3
 ssh "$HOST" "mkdir -p $DEST/target/replay $DEST/tools"
 rsync -a --delete --exclude results bench/video "$HOST:$DEST/bench/"

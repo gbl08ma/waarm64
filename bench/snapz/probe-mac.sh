@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # bench/snapz/probe.ts on the Mac host's GPU (Chrome for Testing, headless; docs/devenv.md "The Mac host"), from a copy
-# in ~/waarm64-snapz-bench there: the desktop guest's disks and firmware and the warm snapshot (SNAPSHOT, default
+# in ~/waarm64-snapz-bench.noindex there: the desktop guest's disks and firmware and the warm snapshot (SNAPSHOT, default
 # target/snapbench/pages.waarm64snap: bench/gpu/warm-snapshots.sh firefox), each at its fixed path there (hard links to
-# bench/gpu/sway-mac.sh's copies in ~/waarm64-gpu-bench when those are the same files, copies otherwise). Arms alternate
+# bench/gpu/sway-mac.sh's copies in ~/waarm64-gpu-bench.noindex when those are the same files, copies otherwise). Arms alternate
 # by rounds, each round a browser of its own (ROUNDS=1): an arm `name=<dir>` is that tree's web/ (under the
 # repository), copied over the copy's web/ before its round. No memory there (no /proc). The warm snapshot's caps are
 # SwiftShader's, so a 3D machine loads it with 3D off there (the GPU worker still starts): its load's start is
@@ -14,8 +14,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 HOST=${MAC_HOST:-macmini.lan}
-DEST=waarm64-snapz-bench
-GPU=waarm64-gpu-bench
+DEST=waarm64-snapz-bench.noindex
+GPU=waarm64-gpu-bench.noindex
 OUT=$1; shift
 SNAPSHOT=${SNAPSHOT:-target/snapbench/pages.waarm64snap}
 home=$(ssh "$HOST" 'echo $HOME')

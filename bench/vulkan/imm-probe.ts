@@ -2,7 +2,7 @@
 // @builtin(num_workgroups) (GD G4, bench/vulkan/REPORT.md "GD G4"): the 12 words as read, num_workgroups, and the
 // iterations of a loop bounded by word 5 (capped at 100,001, so a wrong bound can't hang the GPU). Chrome for Testing
 // 153.0.8010.12 on the M4 read the first six words of an indirect dispatch clobbered; 153.0.8010.52 and later don't.
-//   CHROMIUM=<browser> [SANDBOX=1] node bench/vulkan/imm-probe.ts   (on the Mac: copy it to ~/waarm64-gpu-bench, run it
+//   CHROMIUM=<browser> [SANDBOX=1] node bench/vulkan/imm-probe.ts   (on the Mac: copy it to ~/waarm64-gpu-bench.noindex, run it
 //   there with CHROMIUM set as bench/mac-chrome.sh's $MAC_CHROME; SANDBOX=1: Chrome's sandbox on, Playwright's
 //   automation switches left out)
 import { createServer } from 'node:http';

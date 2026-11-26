@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # G3's real-GPU numbers (the G3 kickoff's decision 4): bench/gpu/sway-load.ts on the Mac host's Chromium (Playwright's
-# Chromium, headless, temporary profile) with its GPU, from a copy of what the page needs in ~/waarm64-gpu-bench there
+# Chromium, headless, temporary profile) with its GPU, from a copy of what the page needs in ~/waarm64-gpu-bench.noindex there
 # (as run-mac.sh: Node and playwright-core there; nothing else on the host is touched). The disk image is copied once.
 #   bench/gpu/sway-mac.sh <virgl|pixman|llvmpipe> <image.qcow2> <name>   -> bench/results/local/<name>/ (VIRGL_GPU as sway-load.ts)
 # and bench/results/local/<name>.* (log, vmstat, macos, gpu, rss), moved back at the end, also of a failed run: nothing
@@ -16,7 +16,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 HOST=${MAC_HOST:-macmini.lan}
-DEST=waarm64-gpu-bench
+DEST=waarm64-gpu-bench.noindex
 MODE=$1 IMAGE=$2 NAME=$3
 ssh "$HOST" "mkdir -p $DEST/bench/results/local $DEST/target/images/debian $DEST/target/wasm32-unknown-unknown/release"
 rsync -a --delete --exclude results bench/gpu bench/audio bench/video bench/vulkan bench/mem "$HOST:$DEST/bench/"

@@ -6,7 +6,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 HOST=${MAC_HOST:-macmini.lan}
-DEST=waarm64-gpu-bench
+DEST=waarm64-gpu-bench.noindex
 NAME=$1
 DIR=$2
 ssh "$HOST" "mkdir -p $DEST/bench/vulkan $DEST/bench/results/local && rm -rf $DEST/target/tint-time && mkdir -p $DEST/target/tint-time"

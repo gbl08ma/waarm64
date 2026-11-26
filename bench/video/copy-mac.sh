@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # bench/video/copy.ts on the Mac host's Chrome for Testing (VideoToolbox's hardware decoders, whose frames are NV12: the
-# dev VM's Chromium has none), from a copy in ~/waarm64-gpu-bench there (as bench/video/replay-mac.sh: Node and the
+# dev VM's Chromium has none), from a copy in ~/waarm64-gpu-bench.noindex there (as bench/video/replay-mac.sh: Node and the
 # page's packages there; nothing else on the host is touched). Alone: the VM shares the Mac's cores.
 #   bench/video/copy-mac.sh <out.json> [copy.ts's arguments]
 # TOOL=upload runs bench/video/upload.ts there instead (a picture's uploads, on a real GPU). The JSON is moved back
@@ -8,7 +8,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 HOST=${MAC_HOST:-macmini.lan}
-DEST=waarm64-gpu-bench
+DEST=waarm64-gpu-bench.noindex
 OUT=$1; shift
 TOOL=${TOOL:-copy}
 ssh "$HOST" "mkdir -p $DEST/bench/results/local/video $DEST/tools"

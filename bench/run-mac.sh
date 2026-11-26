@@ -2,7 +2,7 @@
 # The boot and small-guest benchmarks (and bench/vulkan's pages) on the Mac host's Chromium (Playwright's Chrome for Testing,
 # headless, temporary profile): macOS has V8's wasm trap handler, so its numbers are without the
 # explicit bounds checks this Linux arm64 VM's carry (docs/v8.md "Bounds checks"). The pages, the
-# wasm core and the Alpine images are copied to ~/waarm64-bench there (~600 MB), the packages installed there; it
+# wasm core and the Alpine images are copied to ~/waarm64-bench.noindex there (~600 MB), the packages installed there; it
 # needs Node, npm and the Chromium that Playwright installed. Nothing else on the host is touched.
 #   [WASM=core.wasm] [MAC_TIMEOUT=s, the Mac side's bound, 580] bench/run-mac.sh <name> [bench/run.ts args]   -> bench/results/local/mac/<name>.json
 # The JSON is moved back (nothing of a run stays on the Mac: bench/mac-out.sh), and a --profile=<dir>'s profiles that
@@ -13,7 +13,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 name=$1; shift
 HOST=${MAC_HOST:-macmini.lan}
-DEST=waarm64-bench
+DEST=waarm64-bench.noindex
 CORE=target/wasm32-unknown-unknown/release
 ssh "$HOST" "mkdir -p $DEST/bench $DEST/tools $DEST/$CORE $DEST/target/images $DEST/target/bench"
 rsync -a --delete --exclude results --exclude memory bench/boot bench/interp bench/io bench/spike bench/vulkan bench/mac bench/run.ts bench/stats.ts bench/procstat.ts "$HOST:$DEST/bench/"

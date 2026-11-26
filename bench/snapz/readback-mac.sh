@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # bench/snapz/readback.ts on the Mac host's GPU (Chrome for Testing, headless; docs/devenv.md "The Mac host"), from a
-# copy in ~/waarm64-snapz-bench there. Arms alternate by rounds, each round a browser of its own: `name=<dir>` serves
+# copy in ~/waarm64-snapz-bench.noindex there. Arms alternate by rounds, each round a browser of its own: `name=<dir>` serves
 # <dir> (a tree's web/, under the repository) as that arm's /web, at arms/<name>/ there (the arms of earlier runs
 # deleted). Each round's JSON is moved back, also from a failed run: nothing of a run stays on the Mac (bench/mac-out.sh).
 #   [ROUNDS=6] [SAVES=5] [MAC_TIMEOUT=s, 580] bench/snapz/readback-mac.sh <outdir> <name>=<dir>...   -> <outdir>/<name>-<k>.json
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 HOST=${MAC_HOST:-macmini.lan}
-DEST=waarm64-snapz-bench
+DEST=waarm64-snapz-bench.noindex
 OUT=$1; shift
 . bench/mac-out.sh
 names=; for a in "$@"; do names+=" ${a%%=*}"; done

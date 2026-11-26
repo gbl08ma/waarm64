@@ -27,14 +27,16 @@ which `bench/mac-chrome.sh` (every `*-mac.sh` sources it) fetches into `~/waarm6
 not Playwright's own download: that lags Stable and is an early build of its milestone (153.0.8010.12 read clobbered
 immediates in indirect dispatches, which 153's release didn't: GD G4).
 
-Its directories (`bench/mac-out.sh` lists the mirrors, ours besides, and where runs write, for `mac-leftovers.sh`):
+Its directories (`bench/mac-out.sh` lists the mirrors, ours besides, and where runs write, for `mac-leftovers.sh`). The
+mirrors' names end in `.noindex`, which keeps Spotlight from indexing what the runs copy in and write (its indexers
+took several cores during runs before):
 
 | Directory | Whose | What it holds |
 |---|---|---|
-| `~/waarm64-bench` | `bench/run-mac.sh`, `bench/ab-mac.sh`, `bench/compare/run-mac.sh` (and `bench/boot/results/perf83/idle-mac.sh` after them) | the pages, the packages, the core, the A/B arms' cores (`target/ab/`), the Alpine and Buildroot images, the Debian image and firmware |
-| `~/waarm64-bench-<tree>` | `bench/ab-mac.sh` (an arm `@<tree>`) | that checkout's host code and pages; its images hard links to `~/waarm64-bench`'s |
-| `~/waarm64-gpu-bench` | `bench/gpu/sway-mac.sh` (and `bench/gpu/ab-mac.sh`, `bench/vulkan/green.sh` through it), `bench/gpu/run-mac.sh`, `bench/vulkan/mac*.sh`, `bench/video/*-mac.sh` | the pages, the packages, the core, `venus.wasm`, the disks at their paths in the repository (the desktop guests, Debian, dEQP's, Godot's, vkd3d's, the media disk, …); `target/in/`: an input from outside the repository (an image at an absolute path, `FROM_SNAPSHOT`), alone in its directory; `target/replay/`, `target/tint-time/`: those scripts' inputs; `vulkan/` (LunarG's SDK, the scene and its build) and `vulkan-web/`: `bench/vulkan/mac.sh`'s |
-| `~/waarm64-snapz-bench` | `bench/snapz/probe-mac.sh`, `bench/snapz/readback-mac.sh` | the probe's disks (hard links to `~/waarm64-gpu-bench`'s when they're the same files) and warm snapshot; `arms/`: the read-back's arms' web/ trees (the last run's) |
+| `~/waarm64-bench.noindex` | `bench/run-mac.sh`, `bench/ab-mac.sh`, `bench/compare/run-mac.sh` (and `bench/boot/results/perf83/idle-mac.sh` after them) | the pages, the packages, the core, the A/B arms' cores (`target/ab/`), the Alpine and Buildroot images, the Debian image and firmware |
+| `~/waarm64-bench-<tree>.noindex` | `bench/ab-mac.sh` (an arm `@<tree>`) | that checkout's host code and pages; its images hard links to `~/waarm64-bench.noindex`'s |
+| `~/waarm64-gpu-bench.noindex` | `bench/gpu/sway-mac.sh` (and `bench/gpu/ab-mac.sh`, `bench/vulkan/green.sh` through it), `bench/gpu/run-mac.sh`, `bench/vulkan/mac*.sh`, `bench/video/*-mac.sh` | the pages, the packages, the core, `venus.wasm`, the disks at their paths in the repository (the desktop guests, Debian, dEQP's, Godot's, vkd3d's, the media disk, …); `target/in/`: an input from outside the repository (an image at an absolute path, `FROM_SNAPSHOT`), alone in its directory; `target/replay/`, `target/tint-time/`: those scripts' inputs; `vulkan/` (LunarG's SDK, the scene and its build) and `vulkan-web/`: `bench/vulkan/mac.sh`'s |
+| `~/waarm64-snapz-bench.noindex` | `bench/snapz/probe-mac.sh`, `bench/snapz/readback-mac.sh` | the probe's disks (hard links to `~/waarm64-gpu-bench.noindex`'s when they're the same files) and warm snapshot; `arms/`: the read-back's arms' web/ trees (the last run's) |
 | `~/waarm64-chrome` | `bench/mac-chrome.sh` | Chrome for Testing, the two newest versions |
 | `~/waarm64-net-test` | `bench/net/local-ipv6.ts mac` | the network helper |
 | `~/waarm64-tailcat` | by hand ([testing.md](testing.md): the exit node's check) | tailcat, built here for macOS |

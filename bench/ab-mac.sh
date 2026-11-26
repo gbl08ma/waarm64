@@ -20,7 +20,7 @@ out=$(cd "$from" && realpath -m "$1"); shift
 source scripts/ci-lock.sh; ci_lock exclusive
 trap '' PIPE HUP # a reader that went away doesn't end the run or lose its results
 HOST=${MAC_HOST:-macmini.lan}
-DEST=waarm64-bench
+DEST=waarm64-bench.noindex
 # A host that went away ends a copy or a command within a minute, not never (the CI lock is held meanwhile).
 export RSYNC_RSH='ssh -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=4'
 ssh() { command ssh -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 "$@"; }
@@ -56,7 +56,7 @@ for arm in "$@"; do
   case $rest in *@*) tree=$(cd "$from" && realpath "${rest#*@}") rest=${rest%%@*} ;; esac
   rest=$(cd "$from" && realpath "$rest")
   if [[ $tree != "$repo" ]]; then
-    dest=$DEST-$(basename "$tree")
+    dest=${DEST%.noindex}-$(basename "$tree").noindex
     [[ $synced == *" $dest "* ]] || { sync_tree "$tree" "$dest"; synced+="$dest "; }
   fi
   rsync -a "$rest" "$HOST:$dest/target/ab/$name.wasm"

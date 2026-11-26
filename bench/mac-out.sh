@@ -8,11 +8,11 @@
 #   mac_move_at_exit <host> <dest> <local dir> <path>...   mac_move at this script's exit (an EXIT trap: also when the
 #                                                   run failed or the script was ended); a failed move fails a run that passed
 #   mac_rm <host> <dest> <path>...                  the paths (globs expanded there) deleted there
-# The mirrors (under ~ there): waarm64-bench (bench/run-mac.sh, bench/ab-mac.sh, bench/compare/run-mac.sh),
-# waarm64-bench-<tree> (bench/ab-mac.sh's arms from another checkout), waarm64-gpu-bench (bench/gpu/*-mac.sh,
-# bench/vulkan/mac*.sh, bench/video/*-mac.sh), waarm64-snapz-bench (bench/snapz/*-mac.sh). Ours besides: waarm64-chrome
+# The mirrors (under ~ there): waarm64-bench.noindex (bench/run-mac.sh, bench/ab-mac.sh, bench/compare/run-mac.sh),
+# waarm64-bench-<tree>.noindex (bench/ab-mac.sh's arms from another checkout), waarm64-gpu-bench.noindex (bench/gpu/*-mac.sh,
+# bench/vulkan/mac*.sh, bench/video/*-mac.sh), waarm64-snapz-bench.noindex (bench/snapz/*-mac.sh). Ours besides: waarm64-chrome
 # (bench/mac-chrome.sh), waarm64-net-test (bench/net/local-ipv6.ts), waarm64-tailcat (kept by hand: docs/testing.md).
-MAC_MIRRORS='waarm64-bench waarm64-bench-* waarm64-gpu-bench waarm64-snapz-bench'
+MAC_MIRRORS='waarm64-bench.noindex waarm64-bench-*.noindex waarm64-gpu-bench.noindex waarm64-snapz-bench.noindex'
 MAC_OTHERS='waarm64-chrome waarm64-net-test waarm64-tailcat'
 # Under a mirror: a run's results and logs; bench/vulkan/mac.sh's; bench/snapz/probe.ts's profile, downloads and copies;
 # a bench/run.ts --profile directory's profiles (removed by run.ts unless it was killed).
