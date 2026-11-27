@@ -19,7 +19,7 @@ network", and get the answer from a filter instead of by reading the file. When 
 - **Agents never create, rename or delete labels**, and never create milestones or projects: those need the user's
   OK. The label set lives in the repo (`.github/labels.json`). The user approves changes to it, and a sync script
   that only the user runs applies them.
-- **Agents filing an issue don't set its priority.** An issue without a `priority:*` label is untriaged. Priority is
+- **Agents filing an issue don't set its priority.** An issue without a priority is untriaged. Priority is
   set by the user or by a triage session that looks at many issues together.
 - **Commits name the issues they touch**, whether created, changed, commented on or closed: `Refs #n` / `Fixes #n` in
   the message. The handover lists them too.
@@ -32,13 +32,14 @@ Three groups of labels. Each group has its own color in `.github/labels.json`:
   An issue takes every area it touches. A sub-area label always comes with its parent's label (`network-p2p` with
   `network`), and the tool adds the parent if it is missing. An issue that affects an area as a whole takes only the
   parent. Example: p2p configuration on the page is `network`, `network-p2p`, `page`.
-- **Kind**: exactly one of `bug`, `flake` (CI reliability only), `feature`, `perf`, `measure` (a number never taken),
-  `cleanup`.
+- **Kind**: exactly one, as the issue's type (GitHub's single-valued field; the user switched from labels after the
+  migration): `Bug`, `Flake` (CI reliability only), `Feature`, `Performance`, `Measurement` (a number never taken),
+  `Cleanup`.
 - **Modifiers**: as many as apply, for example `upstream` (waits on, or is to be reported to, another project such as
   Chromium or the kernel) and `needs-human` (needs the user's hardware, a decision, or other work only a person can do). Example: a JIT speedup waiting on a
   Chromium bug is `jit`, `perf`, `upstream`.
-- **Priority**: `priority:high`, `priority:medium`, `priority:low`. Only the user or a triage session sets one; an
-  issue without one is untriaged.
+- **Priority**: GitHub's Priority field (`Urgent`, `High`, `Medium`, `Low`; the user switched from labels after the
+  migration). Only the user or a triage session sets one; an issue without one is untriaged.
 
 **Threshold**: a label exists only if at least 3 of the issues kept after triage would take it (merged and closed
 items don't count). A sub-area below the threshold folds into its parent's label. GitHub's default labels

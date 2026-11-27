@@ -1,11 +1,14 @@
 {
+  "types": [
+    {"name": "Bug", "description": "Something does the wrong thing (in the guest, the page or the tools)"},
+    {"name": "Feature", "description": "Something missing that a guest, a user or a developer would use"},
+    {"name": "Flake", "description": "A test that fails now and then: CI's reliability, not the product"},
+    {"name": "Performance", "description": "Speed or memory: an opportunity or a regression, judged by measurements"},
+    {"name": "Measurement", "description": "A number never taken, or one to take again"},
+    {"name": "Cleanup", "description": "Code, tests or docs to simplify, remove or restructure, with no change in behavior"}
+  ],
+  "priority": { "field_id": 50518492, "options": ["Urgent", "High", "Medium", "Low"] },
   "labels": [
-    {"name": "bug", "group": "kind", "color": "d73a4a", "description": "Something does the wrong thing (in the guest, the page or the tools)"},
-    {"name": "flake", "group": "kind", "color": "e99695", "description": "A test that fails now and then: CI's reliability, not the product"},
-    {"name": "feature", "group": "kind", "color": "0e8a16", "description": "Something missing that a guest, a user or a developer would use"},
-    {"name": "perf", "group": "kind", "color": "fbca04", "description": "Speed or memory: an opportunity or a regression, judged by measurements"},
-    {"name": "measure", "group": "kind", "color": "c5def5", "description": "A number never taken, or one to take again"},
-    {"name": "cleanup", "group": "kind", "color": "bfd4f2", "description": "Code, tests or docs to simplify, remove or restructure, with no change in behavior"},
     {"name": "cpu", "group": "area", "color": "0e6e9e", "description": "The guest CPU: the ISA, the interpreter, FP, the decoder"},
     {"name": "jit", "group": "area", "color": "0e6e9e", "description": "The JIT: compiling guest code to WebAssembly, dispatch, the code cache"},
     {"name": "platform", "group": "area", "color": "0e6e9e", "description": "The machine: the memory map, the run loop, SMP, timers, the GIC, PSCI"},
@@ -39,9 +42,6 @@
     {"name": "images", "group": "area", "color": "c2e0c6", "description": "Guest images and their builds"},
     {"name": "docs", "group": "area", "color": "c2e0c6", "description": "The documentation"},
     {"name": "upstream", "group": "modifier", "color": "5319e7", "description": "Waits on another project (Chromium, the kernel, Mesa…) or is to be reported to one"},
-    {"name": "needs-human", "group": "modifier", "color": "d876e3", "description": "Needs the user: their hardware, a decision, or work only a person can do"},
-    {"name": "priority:high", "group": "priority", "color": "b60205", "description": "Set in triage: pick these first"},
-    {"name": "priority:medium", "group": "priority", "color": "ff9f1c", "description": "Set in triage: worth doing when the area is touched"},
-    {"name": "priority:low", "group": "priority", "color": "ededed", "description": "Set in triage: only if it comes up"}
+    {"name": "needs-human", "group": "modifier", "color": "d876e3", "description": "Needs the user: their hardware, a decision, or work only a person can do"}
   ]
 }

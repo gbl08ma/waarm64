@@ -13,24 +13,31 @@ the cloud sessions' proxy refuses with a 403 (and GitHub Projects, GraphQL-only,
 grouping is by labels). One path works in the dev VM, the cloud and CI. It waits out GitHub's secondary rate limit (a
 minute, three times) and takes bodies from `--body-file` or stdin.
 
-## Labels
+## Types and labels
 
-The set is `.github/labels.json`: each label has a name, a group, a color and a description; a sub-area names its
-parent. `node tools/issue.ts labels` lists it, `labels --lint` checks it (the static checks of `scripts/ci-fast.sh` and
-`scripts/ci.sh`), `labels --diff` compares the repo with it.
+An issue's kind is its **issue type** (GitHub's field, single-valued): exactly one of `Bug`, `Feature`, `Flake` (CI's
+reliability, not the product), `Performance`, `Measurement` (a number never taken, or to take again), `Cleanup`. The
+types are the account's, made in GitHub's settings by the user; `Task` exists by default and isn't used. `list --type`
+and `search --type` filter by it.
+
+The set is `.github/labels.json`: the issue types, the Priority field (its id and options), then the labels (each with a name, a group, a color and a
+description; a sub-area names its parent). `node tools/issue.ts labels` lists it, `labels --lint` checks it (the static checks of `scripts/ci-fast.sh` and
+`scripts/ci.sh`), `labels --diff` compares the repo with it (and reports a type the repo lacks).
 
 - **Areas**, nested by a dash: `network`, `network-p2p`, `network-p2p-domains`. An issue takes every area it touches; a
   sub-area always comes with its parents (the tool adds them), and an issue about an area as a whole takes only the
   parent.
-- **Kind**: exactly one of `bug`, `flake` (CI's reliability, not the product), `feature`, `perf`, `measure` (a number
-  never taken), `cleanup`.
 - **Modifiers**, any number: `upstream` (waits on another project, or is to be reported to one), `needs-human` (the
   user's hardware, a decision, or work only a person can do).
-- **Priority**: `priority:high`, `priority:medium`, `priority:low`, set only by the user or a triage session that weighs
-  many issues together (`--triage`). An issue with no priority is untriaged: `list --untriaged`.
 
-A label exists only if at least 3 issues take it; a sub-area below that folds into its parent. **Agents never create,
-rename or delete labels, milestones or projects**: a change to the set is a change to `.github/labels.json` with the
+An issue's **priority** is the Priority field (single-select: `Urgent`, `High`, `Medium`, `Low`), set only by the user
+or a triage session that weighs many issues together (`edit N --triage --priority High`, `none` clears it). An issue
+without one is untriaged. GitHub's search filters on it only in advanced search (`field.priority:High`,
+`no:field.priority`; `-has:field.priority` answers wrongly), so `list --priority` and `list --untriaged` go through it.
+Reading the field's definition needs the `read:user` scope: `.github/labels.json` keeps its id instead.
+
+The rest are labels. A label exists only if at least 3 issues take it; a sub-area below that folds into its parent. **Agents never create,
+rename or delete labels, types, fields, milestones or projects**: a change to the set is a change to `.github/labels.json` with the
 user's OK, and the user applies it with `node tools/issue.ts labels --sync --apply` (without `--apply` it prints the
 plan).
 
