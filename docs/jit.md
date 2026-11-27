@@ -1233,7 +1233,7 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   An instruction is inline only if its handler can't fail, decided from the word.
 - **Loads and stores (the TLB fast path):** through the TLB array of the block's EL (static:
   EL is in the key), tag = `(va + len − 1) | 0xfff`, host = `va + addend`, entry offset
-  `(va >> 5) & 0x7ff80` plus the array's `16 × (3·el + use)`: the six arrays are interleaved by
+  `(va >> 5) & 0x1fff80` (`TLB_ENTRIES`, 16,384, less one, shifted by 7) plus the array's `16 × (3·el + use)`: the six arrays are interleaved by
   index (`mmu::Tlb`), so every array's offset from the `Vcpu` stays under 0x800 and V8 folds it into
   the load (separate arrays at 0x30540 and up took a `mov`+`movk` for each tag and addend); with the
   MMU off a bounds check against RAM, whose layout the block embeds.

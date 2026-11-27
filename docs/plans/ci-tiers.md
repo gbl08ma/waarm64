@@ -92,7 +92,7 @@ the 736 s step only if the file started within the first ~85 s and ran to the en
 | `ci-jit.sh` | ~104 s (docs) | | |
 | `ci-fp.sh` | ~8.5 min (docs) | | |
 | `ci-deqp.sh` | ~11 min sample, ~49 `--full` (docs) | | |
-| `ci-deqp-vk.sh` | ~12.5 min sample, ~47 `--full` (docs) | 14 GiB cap | |
+| `ci-deqp-vk.sh` | ~12.5 min sample, ~67 `--full` (docs) | 14 GiB cap | |
 
 A Debian test's duration includes its wait for a slot, so the longest test is roughly the script's wall time.
 
