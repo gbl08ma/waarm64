@@ -580,8 +580,8 @@ enum Want {
     },
     /// A conversion's property, read.
     Property(u32),
-    /// RandR's (src/x11/randr.rs).
-    Randr(randr::Step),
+    /// RandR's (src/x11/randr.rs), and the run it is for (0: none, RandR's own setup).
+    Randr(u32, randr::Step),
 }
 
 /// Where a conversion's bytes go.
@@ -956,7 +956,7 @@ impl X {
                             ));
                         }
                         Want::Held { .. } => {}
-                        Want::Randr(step) => self.randr_error(step, code),
+                        Want::Randr(run, step) => self.randr_error(run, step, code),
                     }
                 }
                 // Others are a requestor's window gone mid-transfer, mostly: nothing to do.
@@ -1014,7 +1014,7 @@ impl X {
                 }
             }
             Want::Property(prop) => self.got_property(prop, r, evs),
-            Want::Randr(step) => self.randr_reply(step, r),
+            Want::Randr(run, step) => self.randr_reply(run, step, r),
         }
         Ok(())
     }

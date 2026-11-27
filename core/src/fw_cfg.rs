@@ -186,6 +186,33 @@ mod tests {
     }
 
     #[test]
+    fn a_restore_serves_the_snapshots_files_not_the_starts() {
+        // A restore's start builds its files without the guest agent's binary (web/app/worker-start.ts fetches it only
+        // for a boot): the snapshot's files replace them, so a restored guest's agent that crashes is started again
+        // from them (its unit reads `opt/waarm64/agent.000` …).
+        let booted = FwCfg::new(vec![
+            ("opt/a".into(), b"cred".to_vec()),
+            ("opt/waarm64/agent.000".into(), b"\x1f\x8bgz".to_vec()),
+        ])
+        .unwrap();
+        let mut w = Writer(Vec::new());
+        booted.save(&mut w);
+        let mut f = FwCfg::new(vec![("opt/a".into(), b"cred".to_vec())]).unwrap();
+        f.restore(&mut Reader(&w.0)).unwrap();
+        select(&mut f, FILE_DIR);
+        assert_eq!(
+            f.read(DATA, 4),
+            Some(u32::from_le_bytes([0, 0, 0, 2]) as u64),
+            "two files"
+        );
+        select(&mut f, 0x21);
+        assert_eq!(
+            f.read(DATA, 4),
+            Some(u32::from_le_bytes(*b"\x1f\x8bgz") as u64)
+        );
+    }
+
+    #[test]
     fn parses_the_host_buffer() {
         let rec = |n: &str, d: &[u8]| {
             let mut r = vec![0u8; NAME];

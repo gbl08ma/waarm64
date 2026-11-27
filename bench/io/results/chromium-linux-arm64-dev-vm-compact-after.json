@@ -1,0 +1,59 @@
+{
+ "schema": 1,
+ "page": "bench/io/index.html",
+ "date": "2026-11-27T19:23:49.472Z",
+ "commit": "f1ad6b2d18b1",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "chromiumArgs": "",
+ "quick": false,
+ "profile": "off the record",
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 18
+ },
+ "browser": {
+  "version": "155.0.8059.84",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "compact_full_ms",
+   "unit": "ms",
+   "params": {
+    "disk": "1 GiB, every block written",
+    "discarded": "4 MiB of every 10 (40%)",
+    "opfs": "an overlay"
+   },
+   "samples": [
+    579.164999961853,
+    574.0550000667572,
+    570.2099997997284
+   ],
+   "median": 574.0550000667572,
+   "iqr": 4.477500081062317,
+   "n": 3
+  },
+  {
+   "name": "compact_freed_mib",
+   "unit": "MiB",
+   "params": {
+    "disk": "1 GiB, every block written",
+    "discarded": "4 MiB of every 10 (40%)",
+    "opfs": "an overlay"
+   },
+   "samples": [
+    408,
+    408,
+    408
+   ],
+   "median": 408,
+   "iqr": 0,
+   "n": 3
+  }
+ ]
+}

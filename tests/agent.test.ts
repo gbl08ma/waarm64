@@ -1476,23 +1476,45 @@ test("the guest's trim (web/app/areas/trim-actions.ts): asks joined into one, th
   let m = make(ok.link);
   await until(() => m.shown.canTrim, 'its HELLO shows the button');
   const asked = m.a.asked();
-  const before = m.a.beforeExport();
+  const dialogs: string[] = [];
+  /** The export's dialog: shown, skipped (`skip`), closed. */
+  const dialog = (skip?: Promise<void>) => () => {
+    dialogs.push('shown');
+    return { skipped: skip ?? new Promise<void>(() => {}), close: () => dialogs.push('closed') };
+  };
+  const before = m.a.beforeExport(dialog());
   await until(() => ok.trims.length === 1, 'the TRIM');
   await settle();
+  assert.deepEqual(dialogs, ['shown'], 'the dialog while the guest trims');
   ok.go();
   await Promise.all([asked, before]);
   assert.deepEqual([ok.trims.length, m.compactions.length], [1, 1], 'joined');
   assert.deepEqual(m.said, ['machine:trim-actions.trimmed']);
+  assert.deepEqual(dialogs, ['shown', 'closed'], 'closed once trimmed');
+  // Its button: the export goes on without waiting for the trim (#263: up to ~4 min), the trim left to finish.
+  let skip = () => {};
+  const skipped = m.a.beforeExport(dialog(new Promise<void>((r) => (skip = r))));
+  await until(() => ok.trims.length === 2, 'the TRIM before the skipped export');
+  let done = false;
+  void skipped.then(() => (done = true));
+  await settle();
+  assert.equal(done, false, 'waiting for the trim');
+  skip();
+  await until(() => done, 'the skip ends the wait', 2000);
+  assert.deepEqual(dialogs.slice(2), ['shown', 'closed'], 'skipped');
+  ok.go();
+  await settle();
+  dialogs.length = 0;
   const direct = m.a.trim();
-  await until(() => ok.trims.length === 2, 'the second TRIM');
+  await until(() => ok.trims.length === 3, 'the third TRIM');
   ok.go();
   assert.deepEqual(await direct, { status: TRIMMED.TRIMMED, before: 6 << 20, after: 3 << 20 }, 'before: measured ahead of the trim (its discards may compact already)');
   // The storage full: trimmed again, and said because the overlays shrank.
   const full = m.a.full();
-  await until(() => ok.trims.length === 3, 'the third TRIM');
+  await until(() => ok.trims.length === 4, 'the fourth TRIM');
   ok.go();
   await full;
-  assert.deepEqual([ok.trims.length, m.said.at(-1)], [3, 'machine:trim-actions.full']);
+  assert.deepEqual([ok.trims.length, m.said.at(-1)], [4, 'machine:trim-actions.full']);
   m.a.end();
   assert.equal(m.shown.canTrim, false);
   ok.close();
@@ -1511,7 +1533,8 @@ test("the guest's trim (web/app/areas/trim-actions.ts): asks joined into one, th
   m = make(old.link);
   assert.ok(await old.link.hello(10_000), 'the HELLO');
   assert.equal(m.shown.canTrim, false);
-  await m.a.beforeExport();
+  await m.a.beforeExport(dialog());
+  assert.deepEqual(dialogs, [], 'no dialog without a trim');
   await m.a.full();
   await m.a.asked();
   assert.deepEqual([old.trims.length, m.compactions.length, m.said], [0, 0, ['machine:trim-actions.noAnswer']]);

@@ -71,11 +71,15 @@ const stillReads = (file: File) =>
 
 export class DiskExport {
   readonly #c: Core;
-  /** The running guest's trim, before the machine stops. */
-  readonly #trim: () => Promise<void>;
+  /** The running guest's trim, before the machine stops, with `dialog` shown meanwhile (its button skips the wait). */
+  readonly #trim: (dialog: () => { skipped: Promise<void>; close(): void }) => Promise<void>;
   /** A file disk's file checked before it's read (said, with Allow and Choose again, when it can't be). */
   readonly #files: Pick<FileActions, 'ready'>;
-  constructor(c: Core, trim: () => Promise<void>, files: Pick<FileActions, 'ready'>) {
+  constructor(
+    c: Core,
+    trim: (dialog: () => { skipped: Promise<void>; close(): void }) => Promise<void>,
+    files: Pick<FileActions, 'ready'>,
+  ) {
     this.#c = c;
     this.#trim = trim;
     this.#files = files;
@@ -200,8 +204,15 @@ export class DiskExport {
     await pw.exclusively(async () => {
       const was = power.stateText;
       if (running) {
+        // A dialog while the guest trims, whose button skips the wait (what the trim would have freed is then saved).
         messages.stateText(msg('disks:disk-export.trimming'));
-        await this.#trim();
+        await this.#trim(() =>
+          ask.wait(t('disks:disk-export.trimming.wait'), {
+            title: t('disks:disk-export.trimming.title'),
+            ok: t('disks:disk-export.trimming.skip'),
+            danger: false,
+          }),
+        );
       }
       // The guest shut down before its disk is saved (where its agent can): the file gets a clean disk. Kept running
       // (the guest refused, the user said no): no file.

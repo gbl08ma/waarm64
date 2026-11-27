@@ -963,6 +963,18 @@
     "message": "Freeing the guest's unused disk space",
     "note": "The machine's state in the status bar before a running machine stops for a disk's export: the guest agent has the guest trim its filesystems, so that what they no longer use isn't saved."
   },
+  "disk-export.trimming.title": {
+    "message": "Freeing unused disk space",
+    "note": "Title of the dialog shown before a running machine stops for a disk's export, while the guest agent (the page's program in the guest) has the guest trim its filesystems."
+  },
+  "disk-export.trimming.wait": {
+    "message": "The guest is freeing the disk space its files no longer use, so that the exported file doesn't hold it. On a large disk this can take a few minutes. The export goes on once it is done.",
+    "note": "Text of the dialog shown before a running machine stops for a disk's export, while the guest trims its filesystems. It closes by itself when the trim is done; its one button (disk-export.trimming.skip) goes on without waiting."
+  },
+  "disk-export.trimming.skip": {
+    "message": "Skip",
+    "note": "The one button of the dialog shown while the guest frees its unused disk space before a disk's export: the export goes on without waiting, and the file then also holds the space the guest no longer uses."
+  },
   "devices.ramdiskFull": {
     "message": "The ramdisk is out of memory, as this browser tab can't get any more. The guest's writes to it fail with I/O errors. Delete files on it and trim it (fstrim) to make room.",
     "note": "Error in the message bar (under the toolbar) while the machine runs, when a ramdisk can't grow (the tab has no more memory)."

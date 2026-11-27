@@ -66,13 +66,15 @@ try {
   await page.goto(`http://127.0.0.1:${port}/${args.page}?${qs}`);
   if (args.input) await page.setInputFiles('#bench-file', args.input);
   let seen = 0;
-  const poll = setInterval(async () => {
+  const printLog = async () => {
     const text = await page.locator('#log').textContent().catch(() => '');
     const lines = (text ?? '').split('\n').filter(Boolean);
     for (; seen < lines.length; seen++) console.error(lines[seen]);
-  }, 1000);
+  };
+  const poll = setInterval(printLog, 1000);
   const handle = await page.waitForFunction(() => (window as unknown as { benchResult?: unknown }).benchResult, null, { timeout: 60 * 60_000, polling: 250 });
   clearInterval(poll);
+  await printLog(); // the lines of the last second
   const data = (await handle.jsonValue()) as { error?: string; results: { name: string; unit: string; params?: object; samples: number[] }[]; crossOriginIsolated: boolean; userAgent: string };
   if (data.error) throw new Error(`benchmark failed in page: ${data.error}`);
   if (!data.crossOriginIsolated) throw new Error('page is not cross-origin isolated; timers and SharedArrayBuffer would be degraded');

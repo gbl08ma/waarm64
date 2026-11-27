@@ -324,10 +324,10 @@ struct Child {
     want: Option<(u32, u32)>,
     /// The graphical session's state last said (DESKTOP, `frame::desktop`).
     desktop: u8,
-    /// The page's layout (KEYMAP: the root sends it only where the session hasn't it), and whether this session's
-    /// compositor or X server was given it.
+    /// The page's layout (KEYMAP: the root sends it only where the session hasn't it), and the session given it (its
+    /// `frame::desktop`: NONE, none yet; its connection's end forgets it, so a new compositor or server gets it too).
     keymap: Option<keymap::Keymap>,
-    keyed: bool,
+    keyed: u8,
 }
 
 #[derive(Clone, Copy)]
@@ -466,7 +466,7 @@ pub fn serve_at(
         want: None,
         desktop: frame::desktop::NONE,
         keymap: None,
-        keyed: false,
+        keyed: frame::desktop::NONE,
     };
     c.connect(true);
     c.x_try(true, false);
@@ -723,6 +723,9 @@ impl Child {
     fn disconnect(&mut self, why: &str) {
         if let Some(wl) = self.wl.take() {
             log(&format!("session: {why}"), None);
+            if self.keyed == frame::desktop::WAYLAND {
+                self.keyed = frame::desktop::NONE;
+            }
             if wl.device.is_some() {
                 self.changed_hands();
                 self.host = None;
@@ -774,17 +777,13 @@ impl Child {
     /// The page's layout, given once to each session's compositor (sway's IPC) or X server (`setxkbmap`) as it comes.
     fn key_step(&mut self) {
         let now = self.desktop_now();
-        if now == frame::desktop::NONE {
-            self.keyed = false;
+        if !key_due(&mut self.keyed, now) {
             return;
         }
         let Some(k) = self.keymap.clone() else {
+            self.keyed = frame::desktop::NONE;
             return;
         };
-        if self.keyed {
-            return;
-        }
-        self.keyed = true;
         let done = if now == frame::desktop::WAYLAND {
             match keymap::sway_socket(&self.runtime, self.uid) {
                 Some(sock) => keymap::sway_run(&sock, &k.sway_commands())
@@ -868,6 +867,9 @@ impl Child {
     fn x_disconnect(&mut self, why: &str) {
         let Some(x) = self.x.take() else { return };
         log(&format!("session: {why} (:{})", x.display), None);
+        if self.keyed == frame::desktop::X11 {
+            self.keyed = frame::desktop::NONE;
+        }
         if x.ready {
             self.changed_hands();
             self.host = None;
@@ -1047,7 +1049,7 @@ impl Child {
             }
             frame::KEYMAP => {
                 self.keymap = keymap::Keymap::decode(p);
-                self.keyed = false;
+                self.keyed = frame::desktop::NONE;
             }
             frame::DISPLAY if self.jobs.resize => {
                 if let Some(size) = frame::decode_display(p) {
@@ -1824,6 +1826,15 @@ impl Child {
     }
 }
 
+/// Whether the session `now` (`frame::desktop`) is to be given the layout, the one `keyed` given it last (NONE: none,
+/// or its connection went): a session of another kind (a compositor that replaced an X11 session with no moment of
+/// none between) is given it too. `keyed` becomes `now`.
+fn key_due(keyed: &mut u8, now: u8) -> bool {
+    let due = now != frame::desktop::NONE && *keyed != now;
+    *keyed = now;
+    due
+}
+
 /// What an X connection is for: the child's jobs, but the screen's size only where no Wayland compositor is connected
 /// (an X11 session). Under a compositor (one without data-control, whose Xwayland shares the clipboard) the X server is
 /// Xwayland, whose screen is the compositor's; its outputs' names (the compositor's, since Xwayland 21.1) don't say so.
@@ -1851,6 +1862,23 @@ pub fn is_socket_name(n: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn each_session_is_given_the_layout_once() {
+        use frame::desktop::{NONE, WAYLAND, X11};
+        let mut keyed = NONE;
+        assert!(!key_due(&mut keyed, NONE), "no session");
+        assert!(key_due(&mut keyed, X11), "an X11 session");
+        assert!(!key_due(&mut keyed, X11), "once");
+        // A compositor that replaced the X server with no moment of none between (review: BETTERAGENT, #263).
+        assert!(
+            key_due(&mut keyed, WAYLAND),
+            "the compositor that replaced it"
+        );
+        assert!(!key_due(&mut keyed, WAYLAND));
+        assert!(!key_due(&mut keyed, NONE));
+        assert!(key_due(&mut keyed, WAYLAND), "a new session after none");
+    }
 
     #[test]
     fn an_x_server_under_a_compositor_is_xwaylands_and_its_screen_left_alone() {

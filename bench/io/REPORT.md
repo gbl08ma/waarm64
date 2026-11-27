@@ -659,3 +659,26 @@ a stored machine's reset deleting its overlay; the commit's check among the mach
 shown by its test failing on the base sources.
 
 **CI:** `scripts/ci.sh` OK (714 s), `scripts/ci-machines.sh` OK (230 s), `scripts/ci-debian.sh` OK (251 s), each on the first run.
+
+## The full compaction after a trim at a GiB (2026-11-27, #263)
+
+What the page's trim asks for once the agent trimmed (docs/devices.md "Disk space handed back": `Devices.compact`,
+each overlay's `compact()`) runs in one synchronous loop on the device worker, which holds its other devices (the
+network, the console, input) meanwhile. `bench/io/compact.ts` (`--only io_compact`): an overlay whose 1 GiB disk has
+every block written, 4 MiB of every 10 discarded (40%: under half free, so the discards compact nothing themselves),
+then `compact()` timed; the data file goes from 1,020 to 612 MiB. Chromium 155.0.8059.84 headless, dev VM, 3 rounds
+(`results/chromium-linux-arm64-dev-vm-compact-{before,after}.json`).
+
+| | full compaction | OPFS calls |
+|---|---|---|
+| a block at a time (before) | **52,535 ± 183 ms** | 62,976 reads (13.5 s), 62,976 writes (19.0 s), 62,976 map writes (18.8 s) |
+| a run at a time (after) | **574 ± 4 ms** | 82 reads (85 ms), 82 writes (447 ms), 82 map writes (26 ms) |
+
+Each OPFS call cost ~0.2–0.3 ms whatever its size (a 4 KiB block's read, write and 4-byte map entry each), so a
+block at a time spent the time in calls: 7.8 MiB/s of moves. The loop now pairs a batch's sources and holes as runs
+(contiguous sources into contiguous holes, both ascending) and copies each with one read and one write, then writes
+each run of adjacent map entries in one call; the order rules stay (the copies flushed before their entries move, a
+slot freed once its entry is written). The writes are bandwidth-bound now (~0.9 GB/s). Still synchronous: ~1.4 s a
+GiB moved, so a trim of several GiB holds the worker for seconds (filed as a follow-up). One run of the new code
+failed at its first round's writes ("a write failed", before any compaction); the next two runs (4 rounds) did not
+repeat it.

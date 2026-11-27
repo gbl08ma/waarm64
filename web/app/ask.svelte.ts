@@ -112,8 +112,8 @@ export const ask = {
     return { answer, close: () => takeDown(q) };
   },
   /**
-   * A wait the caller ends (`close`): its one button (`ok`, drawn as a warning, not focused) resolves `skipped`; Esc
-   * does nothing (Ask.svelte: taken down, it would leave no way to cut the wait short).
+   * A wait the caller ends (`close`): its one button (`ok`, drawn as a warning unless `danger` is false, not focused)
+   * resolves `skipped`; Esc does nothing (Ask.svelte: taken down, it would leave no way to cut the wait short).
    */
   wait(text: Words, o: Options = {}): { skipped: Promise<void>; close(): void } {
     let q: Question | undefined;
@@ -124,7 +124,7 @@ export const ask = {
         text,
         ok: o.ok ?? t('common:ask.ok'),
         cancel: '',
-        danger: true,
+        danger: o.danger ?? true,
         value: '',
       },
       (shown) => (q = shown),

@@ -7,7 +7,12 @@
 //!   itself resolves the link over netlink, which the unit's sandbox refuses). A renewal
 //!   keeps the address where the gateway's lease is the same (open connections live on), and the gateway's NAK of an
 //!   address it doesn't hold sends the client to ask afresh at once.
-//! - **NetworkManager** (running: `/run/NetworkManager`; `nmcli`): `nmcli device connect <link>` for each.
+//! - **NetworkManager** (running: `/run/NetworkManager`; `nmcli`): for each, `nmcli device modify <link>
+//!   ipv4.dhcp-timeout … ipv6.ra-timeout …` then `nmcli device reapply <link>`: a reapply restarts DHCP and IPv6's
+//!   autoconfiguration where the applied settings changed, keeping an address that is still right (measured on NM 1.56:
+//!   REQUEST/ACK, the address kept; a NAK, the new address in ~3.4 s), and refuses a device not activated (one the user
+//!   disconnected). `nmcli device connect` re-activated the device (its address deleted and added again ~0.2 s later)
+//!   and connected one the user had disconnected; a reapply with nothing changed sends nothing.
 //! - Else, card by card, the DHCP clients that run without a manager (Alpine's, through ifupdown), found among the processes (`/proc/<pid>/cmdline`):
 //!   - **udhcpc** (busybox's) for the card (its `-i`, else `eth0`, its default): SIGUSR1, busybox's "renew": a request
 //!     for its lease to the server it had, a NAK (or no answer, after three) and it asks afresh. The same for a
@@ -218,6 +223,9 @@ pub fn udhcpc_interface(args: &[String]) -> String {
     "eth0".into()
 }
 
+/// The timeouts NetworkManager's renewal sets for a moment (`commands`): seconds no profile is likely to hold.
+const NM_SENTINEL: &str = "2147483646";
+
 /// What renews the cards' leases with the network manager that runs here; None if none the agent knows.
 pub fn commands(p: &Paths, macs: &[[u8; 6]]) -> Option<Vec<Step>> {
     let cards = cards(&p.net, macs);
@@ -259,10 +267,29 @@ pub fn commands(p: &Paths, macs: &[[u8; 6]]) -> Option<Vec<Step>> {
     if rustix::fs::stat(p.nm.as_str()).is_ok()
         && let Some(tool) = found(&p.nmcli)
     {
+        // A reapply restarts DHCP (and IPv6's autoconfiguration) only where the device's applied settings changed: one
+        // changed (a timeout that matters only while no lease is held), then the profile's own put back, each a
+        // renewal that keeps an address still right. `device connect` would re-activate the device instead (its
+        // address down and up) and connect one the user disconnected; these refuse a device not activated.
         return Some(
             cards
                 .into_iter()
-                .map(|c| Step::Run(vec![tool.clone(), "device".into(), "connect".into(), c]))
+                .flat_map(|c| {
+                    [
+                        vec![
+                            tool.clone(),
+                            "device".into(),
+                            "modify".into(),
+                            c.clone(),
+                            "ipv4.dhcp-timeout".into(),
+                            NM_SENTINEL.into(),
+                            "ipv6.ra-timeout".into(),
+                            NM_SENTINEL.into(),
+                        ],
+                        vec![tool.clone(), "device".into(), "reapply".into(), c],
+                    ]
+                })
+                .map(Step::Run)
                 .collect(),
         );
     }

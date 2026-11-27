@@ -2307,7 +2307,9 @@ booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file
   **The machine stops while it's written** (confirmed; the overlay's OPFS handles
   and Web Lock belong to the writer, `web/app/export-worker.ts`, which also does the base image's
   synchronous reads): like pulling the plug, so the menu says to `poweroff` first; a machine that
-  was running starts again after. The page: `web/app/export.ts`; the format:
+  was running starts again after. A running guest whose agent trims has its filesystems trimmed first (devices.md
+  "Disk space handed back"), under a dialog, [Freeing unused disk space](ui:disks:disk-export.trimming.title), whose
+  [Skip](ui:disks:disk-export.trimming.skip) goes on to the stop without waiting. The page: `web/app/export.ts`; the format:
   `web/qcow2-write.ts` (4 KiB clusters = the overlay's blocks; data first, then the L2 tables, L1,
   refcount blocks and table, and the header written last with `sink(bytes, 0)`; qcow2 v3, 16-bit
   refcounts). **Compressed clusters** (`compress`): each 4 KiB cluster is deflated by the core's miniz_oxide at

@@ -238,7 +238,7 @@ const problems = new Problems({
   resetDisk: disks.resetAction,
   files,
 });
-const diskExport = new DiskExport(core, () => trimActions.beforeExport(), files);
+const diskExport = new DiskExport(core, (dialog) => trimActions.beforeExport(dialog), files);
 const snapshots = new SnapshotActions({
   ...core,
   emptyPorts: (r, what) => usbRun.emptyPorts(r, what),

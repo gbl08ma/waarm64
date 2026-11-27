@@ -119,8 +119,15 @@ export class TrimActions {
       this.#messages.notify(msg('machine:trim-actions.full', { before: r.before, after: r.after }));
   }
 
-  /** Before a disk's export stops the running machine: its trim, if its agent can (whatever came of it, the export goes on). */
-  async beforeExport() {
-    if (this.#shown.canTrim) await this.trim();
+  /**
+   * Before a disk's export stops the running machine: its trim, if its agent can (whatever came of it, the export goes
+   * on), with `dialog` shown meanwhile, whose button skips the wait (the trim and the compaction may take minutes on a
+   * large disk: `TRIM_WAIT_MS`, `COMPACT_WAIT_MS`). Skipped, the trim goes on in the guest until the machine stops.
+   */
+  async beforeExport(dialog: () => { skipped: Promise<void>; close(): void }) {
+    if (!this.#shown.canTrim) return;
+    const wait = dialog();
+    await Promise.race([this.trim(), wait.skipped]);
+    wait.close();
   }
 }

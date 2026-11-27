@@ -150,27 +150,37 @@ pub fn sway_socket(runtime: &str, uid: u32) -> Option<String> {
 /// i3's IPC (sway's): `i3-ipc`, the payload's length and the message's type (u32s in the host's order), the payload.
 const MAGIC: &[u8; 6] = b"i3-ipc";
 const RUN_COMMAND: u32 = 0;
-/// How long sway may take to answer.
-const IPC_WAIT_MS: i64 = 2000;
+/// How long sway may take with the whole exchange: the session child's one thread waits on it.
+const IPC_WAIT: core::time::Duration = core::time::Duration::from_secs(2);
 
-fn wait(fd: &OwnedFd, flags: rustix::event::PollFlags) -> Result<(), Errno> {
+/// Waits until `fd` is ready for `flags`, or `by` passes (TIMEDOUT).
+fn wait(
+    fd: &OwnedFd,
+    flags: rustix::event::PollFlags,
+    by: crate::rt::Instant,
+) -> Result<(), Errno> {
+    let left = by.saturating_duration_since(crate::rt::Instant::now());
     let t = rustix::event::Timespec {
-        tv_sec: IPC_WAIT_MS / 1000,
-        tv_nsec: 0,
+        tv_sec: left.as_secs() as i64,
+        tv_nsec: left.subsec_nanos() as i64,
     };
     let mut f = [rustix::event::PollFd::new(fd, flags)];
-    match rustix::event::poll(&mut f, Some(&t))? {
-        0 => Err(Errno::TIMEDOUT),
-        _ => Ok(()),
+    match rustix::event::poll(&mut f, Some(&t)) {
+        Ok(0) => Err(Errno::TIMEDOUT),
+        Ok(_) | Err(Errno::INTR) => Ok(()),
+        Err(e) => Err(e),
     }
 }
 
-/// Runs `commands` through sway's socket at `path`: whether each succeeded (its reply's `"success":true` each).
+/// Runs `commands` through sway's socket at `path`: whether each succeeded (its reply's `"success":true` each). Within
+/// `IPC_WAIT` all told, and nonblocking: a sway stopped (SIGSTOP, a debugger) or wedged with its backlog full refuses
+/// the connection (`AGAIN`) rather than holding the session child in `connect`.
 pub fn sway_run(path: &str, commands: &str) -> Result<bool, Errno> {
+    let by = crate::rt::Instant::now() + IPC_WAIT;
     let fd = rustix::net::socket_with(
         AddressFamily::UNIX,
         SocketType::STREAM,
-        SocketFlags::CLOEXEC,
+        SocketFlags::CLOEXEC | SocketFlags::NONBLOCK,
         None,
     )?;
     rustix::net::connect(&fd, &SocketAddrUnix::new(path)?)?;
@@ -180,8 +190,12 @@ pub fn sway_run(path: &str, commands: &str) -> Result<bool, Errno> {
     msg.extend_from_slice(commands.as_bytes());
     let mut sent = 0;
     while sent < msg.len() {
-        wait(&fd, rustix::event::PollFlags::OUT)?;
-        sent += rustix::io::write(fd.as_fd(), &msg[sent..])?;
+        wait(&fd, rustix::event::PollFlags::OUT, by)?;
+        match rustix::io::write(fd.as_fd(), &msg[sent..]) {
+            Ok(n) => sent += n,
+            Err(Errno::AGAIN) | Err(Errno::INTR) => {}
+            Err(e) => return Err(e),
+        }
     }
     let mut got = Vec::new();
     let mut buf = [0u8; 4096];
@@ -201,10 +215,12 @@ pub fn sway_run(path: &str, commands: &str) -> Result<bool, Errno> {
                 return Ok(body.contains("\"success\":true") && !body.contains("\"success\":false"));
             }
         }
-        wait(&fd, rustix::event::PollFlags::IN)?;
-        match rustix::io::read(&fd, &mut buf)? {
-            0 => return Err(Errno::PIPE),
-            n => got.extend_from_slice(&buf[..n]),
+        wait(&fd, rustix::event::PollFlags::IN, by)?;
+        match rustix::io::read(&fd, &mut buf) {
+            Ok(0) => return Err(Errno::PIPE),
+            Ok(n) => got.extend_from_slice(&buf[..n]),
+            Err(Errno::AGAIN) | Err(Errno::INTR) => {}
+            Err(e) => return Err(e),
         }
     }
 }
@@ -402,6 +418,52 @@ mod tests {
         assert!(
             c.take(&pt.encode(), dir.join("none").to_str().unwrap())
                 .is_some()
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A sway that is stopped (SIGSTOP, a debugger) or wedged: its socket's backlog full (`listen(0)`, one connection
+    /// never accepted), or a connection accepted (here: queued) and never answered.
+    #[test]
+    fn a_wedged_sway_holds_the_child_two_seconds_at_most() {
+        let dir =
+            std::env::temp_dir().join(format!("waarm64-agent-swayipc-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("sway-ipc.sock");
+        let p = path.to_str().unwrap();
+        let fd = rustix::net::socket_with(
+            AddressFamily::UNIX,
+            SocketType::STREAM,
+            SocketFlags::CLOEXEC,
+            None,
+        )
+        .unwrap();
+        rustix::net::bind(&fd, &SocketAddrUnix::new(p).unwrap()).unwrap();
+        rustix::net::listen(&fd, 0).unwrap();
+        // A connection queued and never answered: the exchange's one deadline.
+        let start = std::time::Instant::now();
+        assert_eq!(
+            sway_run(p, "input type:keyboard xkb_layout de"),
+            Err(Errno::TIMEDOUT)
+        );
+        let took = start.elapsed();
+        assert!(
+            took >= std::time::Duration::from_millis(1900)
+                && took < std::time::Duration::from_millis(3000),
+            "one deadline for the exchange: {took:?}"
+        );
+        // That connection still holds the backlog's one place (never accepted): full, refused at once rather than
+        // waited on in connect.
+        let start = std::time::Instant::now();
+        assert_eq!(
+            sway_run(p, "input type:keyboard xkb_layout de"),
+            Err(Errno::AGAIN)
+        );
+        assert!(
+            start.elapsed() < std::time::Duration::from_millis(500),
+            "{:?}",
+            start.elapsed()
         );
         std::fs::remove_dir_all(&dir).unwrap();
     }

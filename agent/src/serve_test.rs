@@ -1005,7 +1005,8 @@ fn renews_the_leases_with_the_network_manager_that_runs() {
         Some(&[status::NO_CLIENT][..])
     );
     assert_eq!(calls(), format!("{m} 3\n"), "none of the guest's");
-    // NetworkManager alone: each card connected again.
+    // NetworkManager alone: each card's applied settings changed and its profile's put back, a renewal in place (not
+    // `device connect`: a re-activation, which also connects a card the user disconnected).
     std::fs::remove_dir(r("netif-links")).unwrap();
     std::fs::remove_file(r("calls")).unwrap();
     h.page.send(frame::LEASE, &[]);
@@ -1013,7 +1014,12 @@ fn renews_the_leases_with_the_network_manager_that_runs() {
         h.page.next(frame::LEASED, 5000).as_deref(),
         Some(&[status::RENEWED][..])
     );
-    assert_eq!(calls(), "device connect enp0s1\ndevice connect eth1\n");
+    let modify = |c: &str| {
+        format!(
+            "device modify {c} ipv4.dhcp-timeout 2147483646 ipv6.ra-timeout 2147483646\ndevice reapply {c}\n"
+        )
+    };
+    assert_eq!(calls(), modify("enp0s1") + &modify("eth1"));
     // Its tool failing: FAILED.
     tool("nmcli", 4);
     h.page.send(frame::LEASE, &[]);

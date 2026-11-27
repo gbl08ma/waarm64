@@ -32,6 +32,8 @@ export type SyncFile = {
 const BLOCK = 4096;
 /** A map entry: the block reads as zeros and has no slot. */
 const ZERO = 0xffffffff;
+/** The most blocks a compaction's batch moves (its copies flushed once): 4 MiB. */
+const MOVES = 1024;
 /** The fewest free slots worth compacting `data` for. */
 const COMPACT_MIN = 64;
 /** Map entries in a leaf: a leaf covers 4 MiB of disk (a range). */
@@ -619,7 +621,7 @@ export function overlay(
    * Once half of `data` is free slots, the blocks in its highest slots move into the free ones
    * below them and the end is cut off: what the guest trimmed goes back to the browser's storage
    * (the moves are at most as many as the slots freed since the last time); with `force`, however
-   * few are free. Blocks are copied (256 at a time) before their map entries point to the copies
+   * few are free. Blocks are copied (`MOVES` at a time, a contiguous run in one read and one write) before their map entries point to the copies
    * (`ordered`: the holes' old entries durable before, the copies durable after). False on a failed
    * read or write: the moves made stay, the slots they freed free.
    */
@@ -635,46 +637,66 @@ export function overlay(
         if (recs[i] && recs[i] !== ZERO && recs[i] <= slots) owner[recs[i] - 1] = i + 1;
     }
     if (ordered) settle();
-    const buf = new Uint8Array(BLOCK);
     const holes = [...isFree].sort((x, y) => x - y);
     let hi = slots - 1;
     let ok = true;
+    let buf = new Uint8Array(0);
     for (let h = 0; ok && h < holes.length;) {
-      // A batch of moves: from the highest slot a block has into the lowest free one.
-      const moves: { from: number; to: number; p: number }[] = [];
-      for (; h < holes.length && moves.length < 256; h++) {
+      // A batch of moves, from the highest slots a block has into the lowest free ones, as runs: sources and holes
+      // each contiguous, paired in ascending order (every hole is below every source), one read and one write a run.
+      // Each storage call costs ~0.2 ms in Chromium's OPFS whatever its size: a block at a time, 1 GiB's full
+      // compaction took 52 s (bench/io/compact.ts, #263).
+      const runs: { from: number; to: number; n: number }[] = [];
+      for (let count = 0; h < holes.length && count < MOVES; h++, count++) {
         const hole = holes[h];
         while (hi > hole && isFree.has(hi)) hi--;
         if (hi <= hole) {
           h = holes.length;
           break;
         }
-        const p = owner[hi] - 1;
-        if (p < 0) {
+        if (!owner[hi]) {
           ok = false;
           break;
         } // a slot neither free nor a block's: none is
-        moves.push({ from: hi--, to: hole, p });
+        const last = runs.at(-1);
+        if (last?.from === hi + 1 && last.to + last.n === hole) {
+          last.from = hi;
+          last.n++;
+        } else runs.push({ from: hi, to: hole, n: 1 });
+        hi--;
       }
       let copied = 0;
-      while (
-        copied < moves.length &&
-        data.read(buf, { at: moves[copied].from * BLOCK }) === BLOCK &&
-        data.write(buf, { at: moves[copied].to * BLOCK }) === BLOCK
-      )
+      for (const r of runs) {
+        const len = r.n * BLOCK;
+        if (buf.length < len) buf = new Uint8Array(len);
+        const b = buf.subarray(0, len);
+        if (data.read(b, { at: r.from * BLOCK }) !== len || data.write(b, { at: r.to * BLOCK }) !== len) break;
         copied++;
-      if (copied < moves.length) ok = false;
+      }
+      if (copied < runs.length) ok = false;
       if (ordered && copied) data.flush();
-      for (const { from, to, p } of moves.slice(0, copied)) {
-        const old = recs.slice(p, p + 1);
-        recs[p] = to + 1;
-        if (!putMap(p, 1, old)) {
+      // The copies' map entries, by their place in `recs`: a run of adjacent ones in one write (a record's top entry
+      // sits between two leaves' entries, so a run stays in one leaf).
+      const moves: { from: number; to: number; p: number }[] = [];
+      for (const r of runs.slice(0, copied))
+        for (let j = 0; j < r.n; j++) moves.push({ from: r.from + j, to: r.to + j, p: owner[r.from + j] - 1 });
+      moves.sort((x, y) => x.p - y.p);
+      for (let k = 0; k < moves.length;) {
+        let e = k + 1;
+        while (e < moves.length && moves[e].p === moves[e - 1].p + 1) e++;
+        const p = moves[k].p;
+        const old = recs.slice(p, p + (e - k));
+        for (let j = k; j < e; j++) recs[moves[j].p] = moves[j].to + 1;
+        if (!putMap(p, e - k, old)) {
           ok = false;
           break;
         }
-        isFree.delete(to);
-        isFree.add(from);
+        for (let j = k; j < e; j++) {
+          isFree.delete(moves[j].to);
+          isFree.add(moves[j].from);
+        }
         unsettled = true;
+        k = e;
       }
     }
     // Failed or not: the end cut off, and every free slot (the moved blocks' old ones too) in `free` for `take`.

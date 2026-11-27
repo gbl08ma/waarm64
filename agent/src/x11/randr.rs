@@ -60,6 +60,9 @@ struct Mode {
 /// What a run has learnt so far.
 #[derive(Default)]
 struct Run {
+    /// Its number (`Randr::runs`): its requests' replies say it, so that one a run that ended (an error mid-run) left
+    /// awaited doesn't fill the next's.
+    id: u32,
     size: (u32, u32),
     /// GetScreenResources answered.
     resources: bool,
@@ -88,6 +91,8 @@ pub struct Randr {
     want: Option<(u32, u32)>,
     asked: Option<(u32, u32)>,
     run: Option<Run>,
+    /// The runs begun (the last one's `id`).
+    runs: u32,
     told: bool,
     /// Tries again of the size asked (`RETRIES`).
     tries: u8,
@@ -102,6 +107,16 @@ impl Randr {
             on,
             ..Default::default()
         }
+    }
+
+    /// The run under way's number (0: none).
+    fn run_id(&self) -> u32 {
+        self.run.as_ref().map_or(0, |r| r.id)
+    }
+
+    /// Whether a reply (or error) of `step` for run `run` is the run under way's (RandR's setup's are always taken).
+    fn current(&self, run: u32, step: Step) -> bool {
+        matches!(step, Step::Extension | Step::Version) || (run != 0 && run == self.run_id())
     }
 
     /// SetCrtcConfig answered `status` (not Success): true if the size is to be asked again (InvalidConfigTime or
@@ -131,7 +146,7 @@ impl X {
         self.req(
             op::QUERY_EXTENSION,
             0,
-            Some(Want::Randr(Step::Extension)),
+            Some(Want::Randr(0, Step::Extension)),
             |r| r.u16(5).u16(0).bytes(b"RANDR"),
         );
     }
@@ -158,19 +173,24 @@ impl X {
         }
         let root = self.root;
         self.randr.asked = Some(want);
+        self.randr.runs = self.randr.runs.wrapping_add(1).max(1);
         self.randr.run = Some(Run {
+            id: self.randr.runs,
             size: want,
             ..Run::default()
         });
         self.req(
             major,
             minor::GET_SCREEN_RESOURCES,
-            Some(Want::Randr(Step::Resources)),
+            Some(Want::Randr(self.randr.run_id(), Step::Resources)),
             |r| r.u32(root),
         );
-        self.req(GET_GEOMETRY, 0, Some(Want::Randr(Step::Geometry)), |r| {
-            r.u32(root)
-        });
+        self.req(
+            GET_GEOMETRY,
+            0,
+            Some(Want::Randr(self.randr.run_id(), Step::Geometry)),
+            |r| r.u32(root),
+        );
     }
 
     /// A run ends (done, refused, or an error): the next size, if one came meanwhile.
@@ -186,14 +206,20 @@ impl X {
         self.randr_go();
     }
 
-    pub(super) fn randr_error(&mut self, step: Step, code: u8) {
+    pub(super) fn randr_error(&mut self, run: u32, step: Step, code: u8) {
+        if !self.randr.current(run, step) {
+            return;
+        }
         match step {
             Step::Extension | Step::Version => self.randr.ok = false,
             _ => self.randr_end(Some(&format!("the X server's error {code}"))),
         }
     }
 
-    pub(super) fn randr_reply(&mut self, step: Step, r: &[u8]) {
+    pub(super) fn randr_reply(&mut self, run: u32, step: Step, r: &[u8]) {
+        if !self.randr.current(run, step) {
+            return;
+        }
         match step {
             Step::Extension => {
                 if r.len() < 12 || r[8] == 0 {
@@ -207,7 +233,7 @@ impl X {
                 self.req(
                     major,
                     minor::QUERY_VERSION,
-                    Some(Want::Randr(Step::Version)),
+                    Some(Want::Randr(0, Step::Version)),
                     |q| q.u32(1).u32(3),
                 );
             }
@@ -322,7 +348,7 @@ impl X {
             self.req(
                 major,
                 minor::GET_OUTPUT_INFO,
-                Some(Want::Randr(Step::Output(id))),
+                Some(Want::Randr(self.randr.run_id(), Step::Output(id))),
                 |q| q.u32(id).u32(config_time),
             );
         }
@@ -420,7 +446,7 @@ impl X {
                 self.req(
                     major,
                     minor::CREATE_MODE,
-                    Some(Want::Randr(Step::Created)),
+                    Some(Want::Randr(self.randr.run_id(), Step::Created)),
                     |q| {
                         let mut q = q.u32(root).u32(0).u16(w).u16(h).u32(clock);
                         for v in t {
@@ -478,7 +504,7 @@ impl X {
         self.req(
             major,
             minor::SET_CRTC_CONFIG,
-            Some(Want::Randr(Step::Crtc)),
+            Some(Want::Randr(self.randr.run_id(), Step::Crtc)),
             |q| {
                 q.u32(crtc)
                     .u32(0)
@@ -500,6 +526,86 @@ impl X {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An X on a listening socket of the test's own (nothing answers: the test hands it the replies), RandR known.
+    fn x_with_randr(name: &str) -> (X, std::os::unix::net::UnixListener, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!("waarm64-agent-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir(&dir).unwrap();
+        let l = std::os::unix::net::UnixListener::bind(dir.join("X6")).unwrap();
+        let jobs = crate::session::Jobs {
+            clip: false,
+            resize: true,
+            desktop: false,
+            keymap: false,
+        };
+        let me = rustix::process::getuid().as_raw();
+        let mut x = X::connect(dir.to_str().unwrap(), 6, None, me, jobs).unwrap();
+        (x.randr.major, x.randr.ok, x.root) = (Some(140), true, 0x3d1);
+        (x, l, dir)
+    }
+
+    /// The awaited RandR reply that `pick` takes (the last such): its run and step.
+    fn awaited(x: &X, pick: impl Fn(&Step) -> bool) -> (u32, Step) {
+        x.replies
+            .iter()
+            .rev()
+            .find_map(|(_, w)| match w {
+                Want::Randr(run, step) if pick(step) => Some((*run, *step)),
+                _ => None,
+            })
+            .expect("awaited")
+    }
+
+    /// GetScreenResources' reply: one CRTC, `outputs`, no modes.
+    fn resources(outputs: &[u32]) -> Vec<u8> {
+        let mut r = vec![0u8; 32];
+        r[16..18].copy_from_slice(&1u16.to_ne_bytes());
+        r[18..20].copy_from_slice(&(outputs.len() as u16).to_ne_bytes());
+        r.extend_from_slice(&0x60u32.to_ne_bytes());
+        for o in outputs {
+            r.extend_from_slice(&o.to_ne_bytes());
+        }
+        r
+    }
+
+    /// GetOutputInfo's reply: connected, on CRTC 0x60, no modes, no name.
+    fn output_info() -> Vec<u8> {
+        let mut r = vec![0u8; 36];
+        r[12..16].copy_from_slice(&0x60u32.to_ne_bytes());
+        r
+    }
+
+    #[test]
+    fn a_runs_late_replies_do_not_fill_the_next_run() {
+        let (mut x, _l, dir) = x_with_randr("randr-late");
+        x.resize((1024, 768));
+        let (run1, _) = awaited(&x, |s| matches!(s, Step::Resources));
+        let (_, geometry1) = awaited(&x, |s| matches!(s, Step::Geometry));
+        x.randr_reply(run1, Step::Resources, &resources(&[0x70, 0x71]));
+        // The first output's GetOutputInfo fails: the run ends, the second's reply and the root's still to come.
+        x.randr_error(run1, Step::Output(0x70), 3);
+        assert!(x.randr.run.is_none(), "the run ended");
+        // A new size: the next run, its own requests out.
+        x.resize((800, 600));
+        let run2 = x.randr.run.as_ref().map(|r| r.id).unwrap();
+        assert_ne!(run2, run1);
+        // The first run's late replies.
+        x.randr_reply(run1, Step::Output(0x71), &output_info());
+        let mut geometry = vec![0u8; 32];
+        geometry[16..18].copy_from_slice(&1024u16.to_ne_bytes());
+        geometry[18..20].copy_from_slice(&768u16.to_ne_bytes());
+        x.randr_reply(run1, geometry1, &geometry);
+        let run = x.randr.run.as_ref().expect("the second run goes on");
+        assert_eq!(run.size, (800, 600));
+        assert!(run.output.is_none(), "an output of the first run's");
+        assert!(run.screen.is_none(), "the root's size the first run asked");
+        assert!(!run.resources);
+        // Its own replies are taken.
+        x.randr_reply(run2, Step::Geometry, &geometry);
+        assert_eq!(x.randr.run.as_ref().unwrap().screen, Some((1024, 768)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn a_crtc_refused_for_a_stale_config_time_is_tried_again_a_few_times() {

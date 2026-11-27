@@ -364,7 +364,10 @@ test('a compaction moves blocks across leaves: their entries in each leaf follow
   for (let k = 0; k < 300; k++) assert.ok(await d.write(at(k) * BLOCK, new Uint8Array(BLOCK).fill(1 + (k % 250))));
   // The first 250 written trimmed: the 50 left are in the highest slots, and move down into the leaves' freed ones.
   for (let k = 0; k < 250; k++) assert.ok(d.discard(at(k) * BLOCK, BLOCK));
-  assert.ok(data.getSize() <= 64 * BLOCK, `${data.getSize() / BLOCK} slots for 50 blocks`);
+  // A change compacts past half free (which slots the later trims free depends on the order the moves left).
+  assert.ok(data.getSize() <= 100 * BLOCK, `${data.getSize() / BLOCK} slots for 50 blocks`);
+  assert.ok(d.compact!());
+  assert.equal(data.getSize(), 50 * BLOCK, 'a compaction asked for: the 50 in 50 slots');
   for (const disk of [d, overlay(base, data, map)]) {
     for (let k = 0; k < 300; k++) {
       const got = (await disk.read(at(k) * BLOCK, BLOCK))!;

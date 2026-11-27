@@ -96,7 +96,7 @@ branch kept). A worktree made with plain `git worktree add` gets the setup by ha
 From zypper (add what's missing with `sudo zypper in`, and note it here):
 - Node 26, Chromium 155 (`/usr/bin/chromium`: Tumbleweed's, the newest Chromium released for Linux arm64 there; keep
   it current with `sudo zypper in chromium`; Google builds no Chrome for Testing for Linux arm64), clang/lld/llvm, qemu (user, system, tools), podman (rootless), dtc,
-  capstone, tcpdump (checking packets on the wire), qemu-uefi-aarch64 (EDK2 for the UEFI oracle), mtools, dosfstools, dejavu-fonts (headless Chromium draws no
+  capstone, tcpdump (checking packets on the wire), dnsmasq (a DHCP server in a netns, against which the host's NetworkManager was measured for the agent's LEASE: devices.md "The network after a restore"), qemu-uefi-aarch64 (EDK2 for the UEFI oracle), mtools, dosfstools, dejavu-fonts (headless Chromium draws no
   page text without a font: screenshots of the page need it); Rust through rustup and `rust-toolchain.toml`.
 - **cargo-nextest** 0.9.152 (`cargo +stable install --locked cargo-nextest@0.9.152`, in `~/.cargo/bin`): `scripts/ci.sh`
   and `scripts/ci-fast.sh` run the Rust tests with it (`.config/nextest.toml`: every binary's tests at once, the

@@ -397,7 +397,13 @@ the guest's network manager through its own tool, where both are there: systemd-
 `/run/systemd/netif/links`) through `busctl call org.freedesktop.network1 … RenewLink i <ifindex>` for each of those
 cards (`/sys/class/net/<name>` with a `device`, its `address` one of LEASE's; each tried, past one that fails), what `networkctl renew` calls (networkctl resolves a link over netlink, even an index, which the unit's
 `RestrictAddressFamilies` refuses: seen on Debian 13), or NetworkManager (`/run/NetworkManager`) through `nmcli
-device connect <name>`; else, card by card, the DHCP clients that run without a manager (Alpine's, from ifupdown),
+device modify <name> ipv4.dhcp-timeout 2147483646 ipv6.ra-timeout 2147483646` then `nmcli device reapply <name>`: a
+reapply restarts DHCP and IPv6's autoconfiguration only where the device's applied settings changed, so one is changed
+for a moment and the profile's put back, two renewals in place (measured on NetworkManager 1.56 on a veth pair against
+dnsmasq, 2026-11-27: a REQUEST/ACK each, the address kept; the old address NAKed, the new one in ~3.4 s; a device the
+user disconnected refused, "Device is not activated"; a reapply with nothing changed sends nothing; `nmcli device
+connect` re-activates instead, the address deleted and added again ~0.2 s later, and connects a device the user
+disconnected); else, card by card, the DHCP clients that run without a manager (Alpine's, from ifupdown),
 found among the processes: the card's **udhcpc** (busybox's; its `-i`, else `eth0`) and **udhcpc6** (IPv6's, as the
 agent starts on a card nothing else manages, below) get SIGUSR1, busybox's renew (a request to the server it had; a
 NAK, or three unanswered, and it asks afresh), else where **dhcpcd** manages the card
@@ -432,7 +438,7 @@ became of a restore's leases as `body[data-lease]` (`agent`, `flap`, `none`, `go
 one that nothing in the guest manages, for a guest whose network is configured card by card: Alpine's ifupdown-ng
 configures only what `/etc/network/interfaces` lists (`eth0`), so a second adapter the page connected (a demo's room:
 [networking/rooms.md](networking/rooms.md) "A demo's room") would stay down. CARDS is a frame of its own rather than
-LEASE at every connection, which would have NetworkManager's `nmcli` reconnect a card the user disconnected. A card is the agent's only when the guest
+LEASE at every connection (a renewal each time a card connects). A card is the agent's only when the guest
 has no systemd (`/run/systemd/system`: there networkd, NetworkManager or the user owns the cards, and the unit is
 sandboxed), neither networkd nor NetworkManager runs, the card is down (IFF_UP clear in its sysfs `flags`; or up but marked as
 one the agent brought up before, `/run/waarm64-cards/<card>`, so a card whose udhcpc6 didn't start or died is brought
@@ -527,7 +533,10 @@ that says `CAP.TRIM`; its notice says what the disks' changes took before the tr
 first, since the trim's discards may compact an overlay already, past half free), when a disk's write found the
 browser's storage full (`isStorageFull`, at the storage-full notice, at most once a minute: what the guest freed makes
 room; said only if the overlays shrank), and before a disk's Export stops the running machine (the file then holds only
-what the guest still uses; whatever comes of it, the export goes on). The agent does what `fstrim -a` does, itself (no
+what the guest still uses; whatever comes of it, the export goes on), with a dialog meanwhile,
+[Freeing unused disk space](ui:disks:disk-export.trimming.title), whose
+[Skip](ui:disks:disk-export.trimming.skip) goes on without waiting (the trim and the compaction may take minutes on a
+large disk; skipped, the trim goes on in the guest until its shutdown, and the file holds what it would have freed). The agent does what `fstrim -a` does, itself (no
 guest tool): in a forked child polled by its pidfd, a `sync` (what was deleted and not yet written out is free on disk
 too), then FITRIM on one mount point of each filesystem whose source is under `/dev/` and whose superblock isn't
 read-only (`/proc/self/mountinfo`; the first of its mount points that opens: ProtectSystem's read-only binds take it
@@ -537,7 +546,10 @@ the page joins asks into one. Then, if anything was trimmed, the page asks the m
 in full (`compact` → `Vm.compact` → the device worker → `Devices.compact`, which with `measure` only reports the sizes: each overlay's `compact()`, however few
 slots are free, once none of its disk's requests is in flight; a change compacts only past half free, so after a trim
 of a fifth of a disk the file wouldn't shrink): the disk's I/O waits while the blocks above the free slots are copied
-down (at most as many as were freed). Measured on Debian (`tests/page-agent.test.ts`, 2026-11-13): 96 MiB kept and a
+down (at most as many as were freed), and so do the device worker's other devices (the loop is synchronous):
+contiguous blocks a run at a time (each OPFS call costs ~0.2–0.3 ms whatever its size), which takes a GiB's overlay
+with 40% trimmed (408 MiB freed) 574 ms in Chromium on the dev VM; a block at a time took 52.5 s (bench/io/REPORT.md,
+2026-11-27). Measured on Debian (`tests/page-agent.test.ts`, 2026-11-13): 96 MiB kept and a
 48 MiB file deleted (a change's compaction leaves a third free), then the button: the overlay's files went from 153 MiB to
 106 MiB; the agent's idle cost stays 0 ticks and 0 wakeups. Tests: the mount table's rules and
 the root loop's (fake FITRIM: once per filesystem, a disk that doesn't discard, one that fails; `agent/src/trim.rs`,
@@ -1180,7 +1192,8 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   a backing file; blocks it doesn't hold stay the base's), a `WRITE_ZEROES`'s whole blocks too,
   held or not. Slots no block maps (those, and leaked ones) are found at open and taken by the
   next first writes; free slots at the end of `data` are cut off, and once half of `data` is free
-  the blocks in its highest slots are copied down (copy, then the map entry, 256 at a time) and the file shrinks (a
+  the blocks in its highest slots are copied down (the copies, then their map entries, 1,024 blocks at a time; a
+  contiguous run in one read and one write, a run of adjacent entries in one write) and the file shrinks (a
   compaction that fails part way keeps the moves it made, and the slots they freed are free).
   Measured on Buildroot: an 8 MiB file written and deleted leaves 8.3 MiB of `data`; after
   `fstrim`, 132 KiB. A changes file carries the zero blocks as zero clusters (no data), and

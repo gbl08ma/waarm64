@@ -326,22 +326,46 @@ test('a compaction that fails part way keeps the slots its moves freed: the next
   const base = openDisk((off, len) => new Uint8Array(len).fill(7), size);
   const [data, inner] = [memFile(), memFile()];
   let refuseIn = Infinity; // the map write that is refused, counted down
-  const map = { ...inner, write: (b: Uint8Array, o: { at: number }) => (--refuseIn === 0 ? 0 : inner.write(b, o)) };
+  let mapWrites = 0;
+  const map = { ...inner, write: (b: Uint8Array, o: { at: number }) => (mapWrites++, --refuseIn === 0 ? 0 : inner.write(b, o)) };
   const d = overlay(base, data, map);
-  for (let b = 0; b < 100; b++) assert.ok(await d.write(b * 4096, new Uint8Array(4096).fill(b + 1)));
-  assert.ok(d.discard(0, 50 * 4096)); // 50 free slots: below what a change compacts for
+  // Slots 0-99 by turns blocks 0-49 and 300-349: the upper half's blocks are 25-49 and 325-349, two runs of entries.
+  const blockAt = (s: number) => (s % 2 ? 300 : 0) + (s >> 1);
+  for (let s = 0; s < 100; s++) assert.ok(await d.write(blockAt(s) * 4096, new Uint8Array(4096).fill(s + 1)));
+  for (let s = 0; s < 50; s++) assert.ok(d.discard(blockAt(s) * 4096, 4096)); // 50 free slots: below what a change compacts for
   assert.equal(data.getSize(), 100 * 4096);
-  refuseIn = 3; // the third move's entry (its write back after it lands)
+  mapWrites = 0;
+  refuseIn = 2; // the second run's entries (the first run's moves made)
   assert.equal(d.compact!(), false, 'refused');
+  assert.equal(mapWrites, 3, 'a write a run of entries, and the second put back');
   refuseIn = Infinity;
-  for (let b = 0; b < 100; b++) {
-    const want = b < 50 ? 0 : b + 1;
-    for (const disk of [d, overlay(base, data, map)]) assert.equal((await disk.read(b * 4096, 1))![0], want, `block ${b}`);
+  for (let s = 0; s < 100; s++) {
+    const want = s < 50 ? 0 : s + 1;
+    for (const disk of [d, overlay(base, data, map)]) assert.equal((await disk.read(blockAt(s) * 4096, 1))![0], want, `slot ${s}'s block`);
   }
-  // 98 blocks are held in 100 slots: 50 fresh writes fill the free ones and two more.
+  // 50 blocks are held in 100 slots (25 moved down, their old slots free): 50 fresh writes fill the free ones.
   for (let b = 200; b < 250; b++) assert.ok(await d.write(b * 4096, new Uint8Array(4096).fill(b - 100)));
   assert.equal(data.getSize(), 100 * 4096, `${data.getSize() / 4096} slots for 100 blocks`);
   for (let b = 200; b < 250; b++) assert.equal((await overlay(base, data, map).read(b * 4096, 1))![0], b - 100);
+});
+
+test('a full compaction moves contiguous blocks a run at a time: a few storage calls, not three a block', async () => {
+  const size = 4096 * 4096;
+  const base = openDisk((off, len) => new Uint8Array(len), size);
+  const count = (f: ReturnType<typeof memFile>) => {
+    const c = { read: 0, write: 0 };
+    return { c, f: { ...f, read: (b: Uint8Array, o: { at: number }) => (c.read++, f.read(b, o)), write: (b: Uint8Array, o: { at: number }) => (c.write++, f.write(b, o)) } };
+  };
+  const [data, map] = [count(memFile()), count(memFile())];
+  const d = overlay(base, data.f, map.f);
+  assert.ok(await d.write(0, new Uint8Array(size).fill(1)));
+  for (let b = 0; b < 4096; b += 10) assert.ok(d.discard(b * 4096, 4 * 4096)); // 40% in runs of 4: no compaction by itself
+  const before = { ...data.c, map: map.c.write };
+  assert.ok(d.compact!());
+  const calls = data.c.read - before.read + data.c.write - before.write + map.c.write - before.map;
+  assert.ok(calls < 1500, `${calls} storage calls for the moves of ~1,600 blocks`);
+  const got = (await d.read(0, size))!;
+  for (let b = 0; b < 4096; b++) assert.equal(got[b * 4096], b % 10 < 4 ? 0 : 1, `block ${b}`);
 });
 
 /**
