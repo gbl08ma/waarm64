@@ -281,9 +281,12 @@ export async function withGrownOverlay(store: Store, d: DiskRecord, a: Attachmen
     size,
     grow: { from: d.size, to: size },
   };
-  await writeOwnSize(overlayDir(o.id), size);
-  await store.put('overlays', o);
-  return { ...a, overlay: o.id };
+  // Inside `writing`: the sweep (another tab's) would take a meta without its record.
+  return store.writing(async () => {
+    await writeOwnSize(overlayDir(o.id), size);
+    await store.put('overlays', o);
+    return { ...a, overlay: o.id };
+  });
 }
 
 /** The grow `t` has pending in its guest, if any. */

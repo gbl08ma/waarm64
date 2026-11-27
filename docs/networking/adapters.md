@@ -21,7 +21,8 @@ code's comments still cite; machines had first left several adapters for later: 
    (decisions.md "Network"): the demo network's (the user, 2026-11-18), made when a demo's definition asks for it
    (web/app/net-demo.ts `attachDemoNetwork`, `withDemoNetwork`), which holds no secret; and **a demo's room** (the user,
    2026-11-19), a room connection of the demo machine's own on the global public room, on its second adapter, made
-   with the machine (`withDemoRoom`, its record's `forMachine`) and deleted with it (`deleteOwnConnections`), its key
+   with the machine (`withDemoRoom`, its record's `forMachine`) and deleted with it (`deleteOwnConnections`; one left
+   by a deletion or an import cut off part way, at the next start by the store's sweep: machines.md §2), its key
    made at the machine's first start ([rooms.md](rooms.md) "A demo's room").
 3. **An adapter with no connection is allowed:** a card with no cable.
 4. **One running machine holds a connection at a time**, through a Web Lock per connection (§2.3), **except the demo

@@ -84,12 +84,19 @@ Since decided (the user, 2026-10-17):
 
 - **IndexedDB for records, OPFS for bytes** (`web/app/store.ts`, IndexedDB `waarm64`, ids of 12 hex digits). A record
   is written after its bytes and deleted before them, so a crash leaves unreferenced files, never a record without
-  its files. `Store.sweep` removes id-named files under `overlays/`, `machines/*/snapshots/`, `disks/` and
-  `folders/` without a record, and waits for writers first (`Store.writing`, a shared Web Lock); the page doesn't call
-  it yet ([#155](https://github.com/gbl08ma/waarm64/issues/155)), so those files stay. What the page's start does remove
-  (`Store.dropCutFills`) is a cut-off import's or Import changes' `disks/<id>` or `overlays/<id>`: one still marked
-  as filling (devices.md "blk"), checked under its own lock taken only if free (a running job holds it, and clears
-  the mark before it lets go) and with no record naming it, which is safe beside other tabs and their jobs.
+  its files. At the page's start, `Store.dropCutFills` removes a cut-off import's or Import changes' `disks/<id>` or
+  `overlays/<id>`: one still marked as filling (devices.md "blk"), checked under its own lock taken only if free (a
+  running job holds it, and clears the mark before it lets go) and with no record naming it. Then `Store.sweep` removes
+  the rest no record owns: id-named files under `overlays/`, `disks/`, `folders/`, `machines/` and
+  `machines/*/snapshots/`, and the room connections the page made for a machine that is gone (`forMachine`, which no
+  machine attaches: through the page's connections, with their state). Writers that make bytes before their record do
+  it inside `Store.writing` (a shared Web Lock: a template's whole import, an overlay's meta and its record, a snapshot
+  kept, an import, a merge), and the sweep takes the lock exclusive **only if it is free**: beside a writer in any tab
+  it does nothing (the next start sweeps). It never queues for the lock, since Web Locks grant in order: a queued sweep
+  would hold up a writer's own nested `writing` (a deadlock) and every tab's writes behind a long import. Each path's
+  record is read again just before it goes (an empty overlay's record is written before the machine's worker makes its
+  files), and an overlay's or a stored disk's files go only under their lock, taken if free. Tests:
+  tests/store.test.ts (the sweep's runs, a writer beside it, the import's and a grown overlay's writes).
 - **Without OPFS** (Firefox's private windows, where `getDirectory` throws a SecurityError; Node): `hasOpfs`
   (`web/overlay.ts`, one probe per context) sends the store to memory (records and files, for the page's life) and the
   overlays, variable stores and suspended copies to the memory of the context that opens them (the machine's worker,
@@ -857,7 +864,7 @@ failure aborts the others; `signal` aborts them all: the demo's pane on the stor
 card asks (`withDemoNetwork`, web/app/net-demo.ts), its second on a room of its own when it asks (`withDemoRoom`). The snapshot is kept under the machine's id before its record is
 stored, and the record is stored once with all its marks (`importDefinition`'s `finish`, which runs before any record
 is written: the disks, overlays and machine are written after it, at once, so a tab closed during the snapshot's copy
-leaves only files the store's sweep takes): any failure (the download,
+leaves only files the store's sweep takes; the whole import is inside `Store.writing`, so no sweep runs during it): any failure (the download,
 the storage full, the demo connection) leaves no machine and none of the disks or overlays the import made, so trying
 again makes one machine. `demoMachines` finds this browser's machines from a card (`mine`: "started
 before", the most recently changed first) and from the versions it replaces (`older`). `fromDemo` isn't in the shape or

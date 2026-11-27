@@ -4,10 +4,10 @@
 // `disks/<id>/`, `machines/<id>/` with its `flash`, `suspend` and `snapshots/<id>`). **A record is
 // written after its bytes and deleted before them**, so a crash leaves files without a record,
 // never a record without its files; `sweep` removes those at the start. Writers that make bytes
-// before their record do it inside `writing`, which the sweep waits out (a Web Lock, shared by
+// before their record do it inside `writing`, beside which the sweep does nothing (a Web Lock, shared by
 // every tab). Other tabs hear of every change through a BroadcastChannel (`onChange`): their
 // views reread. DOM-free: Node's tests run it over memory (`memoryRecords`, `memoryFiles`).
-import { dropCutFill, hasOpfs, lockOverlay } from '../overlay.ts';
+import { dropCutFill, hasOpfs, ifOverlayFree, lockOverlay } from '../overlay.ts';
 import { MsgError } from '../msg.ts';
 import type { Connection } from './connections.ts';
 import type { Folder } from './folders.ts';
@@ -154,7 +154,7 @@ async function removeLocked(files: Files, path: string) {
   }
 }
 
-/** The lock writers share and the sweep takes alone (machines.md §2). */
+/** The lock writers share and the sweep takes alone, if free (machines.md §2). */
 const WRITE_LOCK = 'waarm64-store';
 const CHANNEL = 'waarm64-store';
 
@@ -347,20 +347,44 @@ export class Store {
     n: string,
     machines: Set<string>,
     snapshots: Set<string>,
-    gone: (path: string) => Promise<void>,
+    gone: (path: string, kind: Kind, id: string) => Promise<void>,
   ) {
-    if (!machines.has(n)) return gone(machineDir(n));
+    if (!machines.has(n)) return gone(machineDir(n), 'machines', n);
     for (const s of await this.files.list(`${machineDir(n)}/snapshots`))
-      if (isId(s) && !snapshots.has(s)) await gone(snapshotPath(n, s));
+      if (isId(s) && !snapshots.has(s)) await gone(snapshotPath(n, s), 'snapshots', s);
+  }
+
+  /** The connections made for a machine that is gone (`forMachine`) that no machine attaches, dropped (`drop`). */
+  private async sweepRooms(drop: (id: string) => Promise<void>) {
+    const all = await this.all('machines');
+    const attached = new Set(all.flatMap((m) => (m.adapters ?? []).flatMap((a) => a.connection ?? [])));
+    const named = new Set(all.map((m) => m.id));
+    const removed: string[] = [];
+    for (const c of await this.all('connections'))
+      if (c.forMachine && !named.has(c.forMachine) && !attached.has(c.id)) {
+        await drop(c.id);
+        removed.push(`connections/${c.id}`);
+      }
+    return removed;
+  }
+
+  /**
+   * The page's start (machines.md §2): what an import or Import changes cut off part way left (`dropCutFills`), then
+   * what else no record owns (`sweep`, its rooms through `dropConnection`). Failures are logged, never thrown.
+   */
+  async tidy(dropConnection: (id: string) => Promise<void>) {
+    await this.dropCutFills().catch((e: unknown) => console.warn('waarm64: a cut-off import could not be removed:', e));
+    await this.sweep({ dropConnection }).catch((e: unknown) =>
+      console.warn('waarm64: the leftovers could not be swept:', e),
+    );
   }
 
   /**
    * Removes what an import or Import changes cut off part way left (machines.md §2): a `disks/<id>` or `overlays/<id>`
    * whose fill was cut off (still marked as filling, its lock free: web/overlay.ts `dropCutFill`) and that no record
    * names, checked under its lock (a job's record comes only after its fill's mark is cleared). Safe beside other tabs
-   * and their jobs, unlike `sweep`, which nothing calls
-   * (https://github.com/gbl08ma/waarm64/issues/155). The paths removed; one it can't remove (a closing worker's handles still on it) is left for the next start, the rest removed all the
-   * same, and the first such failure thrown at the end.
+   * and their jobs; `sweep` takes the rest. The paths removed; one it can't remove (a closing worker's handles still on
+   * it) is left for the next start, the rest removed all the same, and the first such failure thrown at the end.
    */
   async dropCutFills(): Promise<string[]> {
     const removed: string[] = [];
@@ -382,19 +406,29 @@ export class Store {
   }
 
   /**
-   * Removes the bytes no record owns (machines.md §2): `overlays/<id>`, `disks/<id>`, `folders/<id>`,
-   * `machines/<id>` and `machines/<id>/snapshots/<id>` left by a crash between bytes and record
-   * (or between a record's deletion and its files'). Only names that are ids (`isId`): a
-   * transient machine's files are named otherwise, and kept. Waits for writers in every tab;
-   * returns the paths it removed.
+   * Removes the bytes no record owns (machines.md §2): id-named `overlays/`, `disks/`, `folders/`, `machines/` and
+   * `machines/<id>/snapshots/` (a transient machine's are named otherwise), each record read again before its path goes
+   * and an overlay's or stored disk's files only under their lock if free; and the rooms made for machines gone
+   * (`sweepRooms`, through `dropConnection`). Never waits: beside a writer in any tab (`writing`) it does nothing and
+   * returns undefined, since a sweep queued for the lock would hold up a writer's nested `writing` (a deadlock). What it
+   * removed; a path it can't remove (a worker's handles on it) stays for the next start, its failure thrown at the end.
    */
-  async sweep(): Promise<string[]> {
+  async sweep(o: { dropConnection?: (id: string) => Promise<void> } = {}): Promise<string[] | undefined> {
+    const drop = o.dropConnection ?? ((id: string) => this.forget('connections', id));
     const run = async () => {
       const removed: string[] = [];
-      const gone = async (path: string) => {
-        await this.files.remove(path);
-        removed.push(path);
+      let failed: { e: unknown } | undefined;
+      const gone = async (path: string, kind: Kind, id: string) => {
+        try {
+          if (await this.get(kind, id)) return;
+          await this.files.remove(path);
+          removed.push(path);
+        } catch (e) {
+          failed ??= { e };
+        }
       };
+      const goneLocked = (path: string, kind: 'overlays' | 'disks', id: string) =>
+        ifOverlayFree(path, () => gone(path, kind, id));
       const ids = async (kind: Kind) => new Set((await this.all(kind)).map((r) => r.id));
       const [overlays, disks, machines, snapshots, folders] = await Promise.all([
         ids('overlays'),
@@ -403,15 +437,22 @@ export class Store {
         ids('snapshots'),
         ids('folders'),
       ]);
-      for (const n of await this.files.list('folders')) if (isId(n) && !folders.has(n)) await gone(folderDir(n));
-      for (const n of await this.files.list('overlays')) if (isId(n) && !overlays.has(n)) await gone(overlayDir(n));
-      for (const n of await this.files.list('disks')) if (isId(n) && !disks.has(n)) await gone(diskDir(n));
+      for (const n of await this.files.list('folders'))
+        if (isId(n) && !folders.has(n)) await gone(folderDir(n), 'folders', n);
+      for (const n of await this.files.list('overlays'))
+        if (isId(n) && !overlays.has(n)) await goneLocked(overlayDir(n), 'overlays', n);
+      for (const n of await this.files.list('disks'))
+        if (isId(n) && !disks.has(n)) await goneLocked(diskDir(n), 'disks', n);
       for (const n of await this.files.list('machines'))
         if (isId(n)) await this.sweepMachine(n, machines, snapshots, gone);
+      removed.push(...(await this.sweepRooms(drop)));
+      if (failed) throw failed.e;
       return removed;
     };
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a probe: no Web Locks in Node's tests
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a probe: no Web Locks in some contexts
     if (typeof navigator === 'undefined' || !navigator.locks) return run();
-    return navigator.locks.request(WRITE_LOCK, { mode: 'exclusive' }, run);
+    return navigator.locks.request(WRITE_LOCK, { mode: 'exclusive', ifAvailable: true }, (lock) =>
+      lock ? run() : undefined,
+    );
   }
 }

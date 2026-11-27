@@ -9,6 +9,7 @@ import { startServer } from '../tools/serve.ts';
 import { canonical, DEFAULT_MAC, generateName, isMac, MAX_ADAPTERS, MAX_DISKS, newId, newMac, serialOf, shapeHash, shapeOf, slots, uniqueName, type DiskRecord, type MachineRecord, type Shape } from '../web/app/shape.ts';
 import { shapeDiff } from '../web/app/shape-diff.ts';
 import { Store, type SnapshotRecord } from '../web/app/store.ts';
+import type { Connection } from '../web/app/connections.ts';
 import { memoryFiles, memoryRecords } from '../web/app/store-backends.ts';
 import { overlayLock } from '../web/overlay.ts';
 import { t, text } from '../web/i18n.ts';
@@ -217,7 +218,7 @@ async function storeFlows(make: () => Promise<{ a: Store; b: Store; write(path: 
   await write(`machines/${m.id}/snapshots/b0000000000f`, 100);
   // A transient machine's files (named otherwise) are never the sweep's.
   await write('overlays/t-debian/data', 4096);
-  const swept = (await b.sweep()).sort();
+  const swept = (await b.sweep())?.sort();
   const reread = { machines: (await b.all('machines')).map((r) => r.name), overlays: (await b.overlaysOf(d.id)).map((r) => r.id), users: (await b.machinesWith(d.id)).map((r) => r.id), snapshots: (await b.snapshotsOf(m.id)).map((r) => r.id) };
   const sizes = { overlay: await b.files.size('overlays/c00000000001'), machine: await b.files.size('machines/aaaaaaaaaaaa'), transient: await b.files.size('overlays/t-debian') };
   let refused: unknown;
@@ -290,7 +291,7 @@ test('the store in Chromium: IndexedDB and OPFS, two tabs', async () => {
   assert.deepEqual(r, expected);
 });
 
-test("the sweep waits for a writer between its bytes and its record (another tab's, through the lock)", async () => {
+test("the sweep skips while a writer is between its bytes and its record (another tab's, through the lock), and never queues before the writer's nested writes", async () => {
   const [records, files] = [memoryRecords(), memoryFiles()];
   const [a, b] = [new Store(records, files, { channel: false }), new Store(records, files, { channel: false })];
   let recorded!: () => void;
@@ -298,15 +299,75 @@ test("the sweep waits for a writer between its bytes and its record (another tab
   const writer = a.writing(async () => {
     files.write('overlays/c00000000002/data', 4096);
     await gate;
-    await a.put('overlays', { id: 'c00000000002', name: 'Changes', disk: 'd00000000001', identity: { kind: 'blank', id: 'd00000000001', bytes: 4096 }, generation: 0, bytes: 4096, created: 0, modified: 0 }); // i18n-ignore: a name the test gives
+    // A nested write (an import's overlay): granted although a sweep was asked meanwhile.
+    await a.writing(() => a.put('overlays', { id: 'c00000000002', name: 'Changes', disk: 'd00000000001', identity: { kind: 'blank', id: 'd00000000001', bytes: 4096 }, generation: 0, bytes: 4096, created: 0, modified: 0 })); // i18n-ignore: a name the test gives
   });
   await new Promise((r) => setTimeout(r, 10));
-  const swept = b.sweep();
-  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(await b.sweep(), undefined, 'skipped: a writer holds the lock');
   recorded();
   await writer;
-  assert.deepEqual(await swept, []);
   assert.deepEqual(files.paths(), ['overlays/c00000000002/data']);
+  assert.deepEqual(await b.sweep(), []);
+});
+
+test("the sweep reads each path's record again before it goes, takes an overlay's files only when their lock is free, and drops the rooms made for a machine that is gone", async () => {
+  const [records, files] = [memoryRecords(), memoryFiles()];
+  const s = new Store(records, files, { channel: false });
+  const o = (id: string) => ({ id, name: 'Changes', disk: 'd00000000001', identity: { kind: 'blank' as const, id: 'd00000000001', bytes: 4096 }, generation: 0, bytes: 0, created: 0, modified: 0 }); // i18n-ignore: a name the test gives
+  files.write('overlays/c00000000004/data', 4096); // its record comes after the sweep's first read (a stored machine's empty overlay, its files made by the worker)
+  files.write('overlays/c00000000005/data', 4096); // a job has it open, its record to come
+  files.write('overlays/c00000000006/data', 4096); // a leftover
+  const list = files.list.bind(files);
+  files.list = async (dir: string) => {
+    if (dir === 'overlays') await s.put('overlays', o('c00000000004'));
+    return list(dir);
+  };
+  const room = (id: string, forMachine?: string) => ({ id, kind: 'room' as const, name: id, created: 0, ...(forMachine ? { forMachine } : {}), room: { link: 'waarm64-room:x', incoming: true, relayOnly: false } }) as unknown as Connection;
+  await s.put('machines', machine({ attachments: [], adapters: [{ id: 'e00000000001', mac: '52:54:00:00:00:01', connection: 'f00000000003' }] }));
+  await s.put('connections', room('f00000000001', 'bbbbbbbbbbbb')); // its machine gone: dropped
+  await s.put('connections', room('f00000000002', 'aaaaaaaaaaaa')); // its machine's
+  await s.put('connections', room('f00000000003', 'bbbbbbbbbbbb')); // another machine attached it since: the user's
+  await s.put('connections', room('f00000000004')); // the user's
+  const dropped: string[] = [];
+  let release!: () => void;
+  const held = new Promise<void>((r) => { release = r; });
+  let granted!: () => void;
+  const holding = new Promise<void>((r) => { granted = r; });
+  const job = navigator.locks.request(overlayLock('overlays/c00000000005'), () => { granted(); return held; });
+  await holding;
+  const swept = await s.sweep({ dropConnection: async (id) => { dropped.push(id); await s.forget('connections', id); } });
+  release();
+  await job;
+  assert.deepEqual(swept, ['overlays/c00000000006', 'connections/f00000000001']);
+  assert.deepEqual(dropped, ['f00000000001']);
+  assert.deepEqual(files.paths().sort(), ['overlays/c00000000004/data', 'overlays/c00000000005/data']);
+  assert.deepEqual((await s.all('connections')).map((c) => c.id).sort(), ['f00000000002', 'f00000000003', 'f00000000004']);
+});
+
+test("a template's import and a grown overlay write inside `writing`: another tab's sweep between their bytes and their records does nothing", async () => {
+  const { importDefinition, parseDefinition, exportDefinition } = await import('../web/app/definitions.ts');
+  const { createOverlay } = await import('../web/app/disks.ts');
+  const [records, files] = [memoryRecords(), memoryFiles()];
+  const [a, b] = [new Store(records, files, { channel: false }), new Store(records, files, { channel: false })];
+  // Another tab's sweep tried at each record's write (the bytes before it are there by then).
+  const tried: string[] = [];
+  const put = a.put.bind(a);
+  a.put = async (kind, value) => {
+    tried.push(`${kind}:${(await b.sweep()) === undefined ? 'skipped' : 'swept'}`);
+    return put(kind, value);
+  };
+  const d = disk('d00000000001', { kind: 'blank', size: 1 << 20, identity: { kind: 'blank', id: 'd00000000001', bytes: 1 << 20 } });
+  await put('disks', d);
+  await createOverlay(a, d, 'Grown', undefined, 2 << 20); // i18n-ignore: a name the test gives
+  await put('machines', machine({ attachments: [{ id: 'a00000000001', disk: d.id, readOnly: false }] }));
+  const def = parseDefinition(JSON.stringify(await exportDefinition(a, 'aaaaaaaaaaaa')));
+  // A template's `finish` keeps its snapshot under the machine's id before the machine's record.
+  const { machine: made } = await importDefinition(a, def, async (m) => {
+    files.write(`machines/${m.id}/snapshots/b00000000009`, 100);
+    return m;
+  });
+  assert.deepEqual(tried, ['overlays:skipped', 'machines:skipped']);
+  assert.deepEqual(files.paths(), [`machines/${made.id}/snapshots/b00000000009`], 'the kept snapshot stays');
 });
 
 test("a deletion removes an overlay's and a disk's files under their lock: a reader that has them open (the disk surface's job) closes them first", async () => {

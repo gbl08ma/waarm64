@@ -65,9 +65,9 @@ export async function inUse(path: string) {
 
 /**
  * A new, empty overlay of disk `d` (its files are made when a machine first opens it). `size`: its own size where it is
- * larger than the disk's (a grown overlay's fork, §4.5), written into its meta first (the record after its bytes: an
- * export or a device opening it before the restore's worker fills it sees it too); `grow`: its grow mark; `id`: the id
- * a restore's commit gave it in the machine's record before making it (web/app/snapshots.ts).
+ * larger than the disk's (a grown overlay's fork, §4.5), written into its meta first (the record after its bytes, both
+ * inside `writing`: an export or a device opening it before the restore's worker fills it sees it too); `grow`: its
+ * grow mark; `id`: the id a restore's commit gave it in the machine's record before making it (web/app/snapshots.ts).
  */
 export async function createOverlay(
   store: Store,
@@ -93,9 +93,12 @@ export async function createOverlay(
     ...(own ? { size } : {}),
     ...(own && grow ? { grow } : {}),
   };
-  if (own) await writeOwnSize(overlayDir(o.id), size);
-  await store.put('overlays', o);
-  return o;
+  // Inside `writing`: the sweep (another tab's) would take a meta without its record.
+  return store.writing(async () => {
+    if (own) await writeOwnSize(overlayDir(o.id), size);
+    await store.put('overlays', o);
+    return o;
+  });
 }
 
 /**

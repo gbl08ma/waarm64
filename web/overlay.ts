@@ -1321,6 +1321,13 @@ export async function dropCutFill(name: string, unowned: () => Promise<boolean>)
   });
 }
 
+/** Runs `f` holding overlay (or stored disk) `name`'s lock if it is free (no machine or job has it open), else nothing. */
+export async function ifOverlayFree(name: string, f: () => Promise<void>) {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a probe: no Web Locks in some contexts
+  if (typeof navigator === 'undefined' || !navigator.locks) return f();
+  await navigator.locks.request(overlayLock(name), { ifAvailable: true }, (lock) => (lock ? f() : undefined));
+}
+
 /** Node has no OPFS: files written by `fileWriter` (suspended machines) live in memory there, by path. */
 const inMemoryFiles = new Map<string, Uint8Array[]>();
 const SUSPEND = 'suspend';

@@ -92,7 +92,7 @@ test('a folder is one record per directory, and the sweep takes the files of one
   assert.equal(b.id, a.id, 'the same directory dropped twice');
   // A crash between the files and the record: the sweep takes them.
   files.write('folders/aaaaaaaaaaaa/f', 10);
-  assert.ok((await store.sweep()).includes(folderDir('aaaaaaaaaaaa')));
+  assert.ok((await store.sweep())?.includes(folderDir('aaaaaaaaaaaa')));
   store.close();
 });
 

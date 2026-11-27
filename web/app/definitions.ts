@@ -294,7 +294,8 @@ function machineFrom(def: Definition, name: string, attachments: Attachment[], n
  * start (files, and stored disks this browser doesn't have, which come back as files: their bytes aren't in it).
  * `finish`: what the record needs before it's stored (a template's snapshot kept under its id, its marks), given the
  * record; the machine is stored once, as it returns it (its attachments are this import's). `finish` runs before any
- * record is written (its files are the machine's: without its record, the store's sweep takes them), and the disks,
+ * record is written (its files are the machine's: the whole import is inside `writing`, as the store's sweep would take
+ * them without the record), and the disks,
  * overlays and machine are written after it, at once: a tab closed during a template's long import leaves no disk record
  * behind. `last`: records the machine needs made just before its own (a demo's room connection, `forMachine` its id),
  * given the record with its attachments. When anything throws (or a disk can't be made) nothing is left: the disks and
@@ -333,34 +334,39 @@ export async function importDefinition(
     planned.map((p) => p.a),
     now,
   );
-  const attachments: Attachment[] = [];
-  const made: string[] = [];
-  try {
-    if (finish) machine = await finish(machine);
-    for (const { x, d, same, a } of planned) {
-      if (!same) {
-        await store.put('disks', d);
-        made.push(d.id);
+  // All inside `writing`: the sweep (in any tab) does nothing meanwhile, or it would take the kept snapshot and the room
+  // connection before the machine's record names them. The nested `writing`s of what it calls are granted beside it
+  // (the sweep never queues for the lock).
+  return store.writing(async () => {
+    const attachments: Attachment[] = [];
+    const made: string[] = [];
+    try {
+      if (finish) machine = await finish(machine);
+      for (const { x, d, same, a } of planned) {
+        if (!same) {
+          await store.put('disks', d);
+          made.push(d.id);
+        }
+        attachments.push(await withGrownOverlay(store, d, a, x.overlaySize));
       }
-      attachments.push(await withGrownOverlay(store, d, a, x.overlaySize));
+      machine = { ...machine, attachments };
+      if (last) machine = await last(machine);
+      await store.put('machines', machine);
+      return { machine, toPick };
+    } catch (e) {
+      // Tidying up: the failure thrown is the one to report. The machine's files (and a snapshot's record) first, then the
+      // grown overlays it made on disks it found, then the disks it made (their overlays with them).
+      const tidy = (f: Promise<unknown>) => f.catch(() => undefined);
+      await tidy(store.deleteMachine(machine.id));
+      // The connections made for it (`last`'s: a demo's room).
+      for (const c of await store.all('connections'))
+        if (c.forMachine === machine.id) await tidy(store.forget('connections', c.id));
+      for (const { overlay, disk } of attachments)
+        if (overlay && !made.includes(disk)) await tidy(store.deleteOverlay(overlay));
+      for (const id of made) await tidy(store.deleteDisk(id));
+      throw e;
     }
-    machine = { ...machine, attachments };
-    if (last) machine = await last(machine);
-    await store.put('machines', machine);
-    return { machine, toPick };
-  } catch (e) {
-    // Tidying up: the failure thrown is the one to report. The machine's files (and a snapshot's record) first, then the
-    // grown overlays it made on disks it found, then the disks it made (their overlays with them).
-    const tidy = (f: Promise<unknown>) => f.catch(() => undefined);
-    await tidy(store.deleteMachine(machine.id));
-    // The connections made for it (`last`'s: a demo's room).
-    for (const c of await store.all('connections'))
-      if (c.forMachine === machine.id) await tidy(store.forget('connections', c.id));
-    for (const { overlay, disk } of attachments)
-      if (overlay && !made.includes(disk)) await tidy(store.deleteOverlay(overlay));
-    for (const id of made) await tidy(store.deleteDisk(id));
-    throw e;
-  }
+  });
 }
 
 /**
