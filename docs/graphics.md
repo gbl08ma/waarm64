@@ -86,7 +86,11 @@ gfxstream driver is Vulkan only.
   every renderer object is gone with it, so the GPU worker answers fences, reads and snapshots' questions and drops
   virgl's calls (Venus's go on), and the device turns 3D off as a restore that can't back it does (`off3d`: no new
   context; a snapshot saves the machine without the renderer's state and its restore keeps 3D off) until the guest
-  starts again. The screen stops updating ([#52](https://github.com/gbl08ma/waarm64/issues/52)). A 2D machine's WebGL2
+  starts again. The screen stops updating. 3D isn't brought back on a restored context: the guest's Mesa uploads
+  textures through staging (a texture's backing is 1 byte), so only CPU copies of every upload could rebuild them, and
+  sway redraws only damage; letting the guest's programs recover needs a reset status from Mesa's virgl
+  ([#319](https://github.com/gbl08ma/waarm64/issues/319); [#52](https://github.com/gbl08ma/waarm64/issues/52) has the
+  counts). A 2D machine's WebGL2
   screen draws again when its context comes back.
 - **The switches:** the Machine menu's Graphics (3D or 2D, a restart applies it); on the query, `?gpu=2d`, `virgl`,
   `virgl-null` (the null renderer: streams walked and counted, nothing drawn, fences at once), `nopace` and `q<N>`
