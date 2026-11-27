@@ -12,6 +12,14 @@ interface Window {
   showOpenFilePicker?(o?: { types?: FilePickerAcceptType[]; multiple?: boolean }): Promise<FileSystemFileHandle[]>;
   showSaveFilePicker?(o?: { suggestedName?: string; types?: FilePickerAcceptType[] }): Promise<FileSystemFileHandle>;
   showDirectoryPicker?(o?: { mode?: 'read' | 'readwrite' }): Promise<FileSystemDirectoryHandle>;
+  /** The File Handling API's launches (Chromium, an installed app): the files the OS opened it with (web/app/launch.ts). */
+  launchQueue?: { setConsumer(consumer: (params: LaunchParams) => void): void };
+}
+
+/** A launch of the installed app: its URL and, for a file the OS opened with it, the files' handles. */
+interface LaunchParams {
+  readonly targetURL?: string;
+  readonly files: readonly FileSystemHandle[];
 }
 
 interface FileSystemHandle {

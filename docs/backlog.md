@@ -1237,6 +1237,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## The page (M8 phase A; [frontend.md](frontend.md))
 
+- **The installed app** (frontend.md "Installing the page", 2026-11-27): the Window Controls Overlay
+  (`display_override`), the toolbar in the title bar, needs the toolbar to keep out of `env(titlebar-area-*)`'s window
+  buttons first; working offline needs a service worker that caches the copy and sends COOP and COEP with every answer
+  (or the page loses cross-origin isolation); manifest `shortcuts` (Open disk…, the demo store) are untried. A real
+  install's file launch is checked by hand only (headless Chromium installs nothing).
 - **A host folder whose grant Chromium doesn't answer** ([shares.md](shares.md) §1, 2026-11-26): a start no longer
   waits for it (web/app/grants.ts) and Choose again… picks its directory anew. Not reproduced headless (seen on the
   user's Linux Chromium after a restart, where Allow access, `requestPermission` on the handle, did nothing visible), so no page test

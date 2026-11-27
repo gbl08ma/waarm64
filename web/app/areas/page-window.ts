@@ -24,6 +24,7 @@ import { screen, splitShare, type View } from './screen.svelte.ts';
 import type { ScreenElements, ScreenView } from './screen-view.ts';
 import type { SerialTerminal } from './serial-terminal.ts';
 import { status } from './status.svelte.ts';
+import { takeLaunches } from '../launch.ts';
 
 /** What App.svelte gives the page: the machine's elements as it renders them, and the window's and document's events. */
 export type PageView = {
@@ -76,7 +77,10 @@ export type WindowDeps = {
   connections: () => readonly Known[];
   /** What the Home page's closing reads again (a stored machine's record, while nothing runs or switches). */
   reloadStored(): Promise<unknown>;
-  /** A file dropped: a disk image, a snapshot or a changes file; a directory: a folder. */
+  /**
+   * A file dropped, or one the installed app was launched with (web/app/launch.ts): a disk image, a snapshot or a
+   * changes file; a directory: a folder.
+   */
   dropped(file: File, handle?: FileSystemFileHandle): Promise<void>;
   droppedFolder(handle: FileSystemDirectoryHandle): Promise<void>;
   notify(e: unknown): void;
@@ -364,6 +368,18 @@ export class PageWindow {
         return void this.#d.droppedFolder(h as FileSystemDirectoryHandle).catch((err: unknown) => this.#d.notify(err));
       void this.#d.dropped(file, h?.kind === 'file' ? (h as FileSystemFileHandle) : undefined);
     })();
+  }
+
+  /**
+   * The page's machine booted (`boot`, told whether it runs in another tab), then a file the OS opened the installed
+   * app with taken as one dropped on the page (web/app/launch.ts).
+   */
+  start(boot: (elsewhere: boolean) => void) {
+    boot(this.elsewhere());
+    takeLaunches(
+      (file, handle) => this.#d.dropped(file, handle),
+      (err) => this.#d.notify(err),
+    );
   }
 
   /** The local helper's pairing link in the address, if any (web/app/areas/pairing.ts). */

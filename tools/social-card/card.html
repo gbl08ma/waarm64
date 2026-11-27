@@ -1,6 +1,8 @@
 <!doctype html>
 <!-- The picture a link to the page shows where it is shared (web/app/index.html's og:image), and the page's icon as a
-     PNG for what takes no SVG (`?icon`). Drawn with the panel's colors (web/app/theme/tokens.css, written out) and
+     PNG for what takes no SVG (`?icon`: a phone's home screen, the installed app's manifest), and the installed app's
+     maskable icon (`?icon&maskable`: more room around it, so its steam stays in the circle a mask keeps, 40% of its
+     width from the middle). Drawn with the panel's colors (web/app/theme/tokens.css, written out) and
      its typeface; tools/social-card.ts renders it to web/app/public/. -->
 <html lang="en">
 <meta charset="utf-8">
@@ -19,13 +21,14 @@
   .machine { flex: none; width: 420px; padding: 14px; background: #1e1e1c; border: 1px solid #0a0a09; border-radius: 4px; box-shadow: 0 8px 28px #000a, inset 0 1px 0 #ffffff12; }
   .screen { display: block; width: 100%; height: 250px; background: #000; }
   pre { margin: 14px 0 0; padding: 12px 14px; background: #0c0c0b; font: 19px/1.35 ui-monospace, 'DejaVu Sans Mono', monospace; color: #e6e3db; }
-  /* The icon alone, filling the picture. */
-  body.icon { width: 180px; height: 180px; display: block; }
+  /* The icon alone, filling the picture, at the viewport's size (180, 192, 512). */
+  body.icon { width: 100vw; height: 100vh; display: block; }
+  svg.icon { width: 100vw; height: 100vh; }
   body.icon > :not(.icon) { display: none; }
   body:not(.icon) > .icon { display: none; }
 </style>
 <svg class="icon" viewBox="-2 -2 20 20" width="180" height="180">
-  <rect x="-2" y="-2" width="20" height="20" fill="#262624"/>
+  <rect x="-4" y="-4" width="24" height="24" fill="#262624"/>
   <path shape-rendering="crispEdges" fill="#fa6432" d="M3 7h2v5h2V7h2v5h2V7h2v7H3z"/>
   <path fill="none" stroke="#6e6e67" stroke-width="1.1" stroke-linecap="round" d="M6 5.6C7.6 4 4.4 2.5 6 .9M10 5.6C8.4 4 11.6 2.5 10 .9"/>
 </svg>
@@ -49,7 +52,9 @@ Linux 6.18.54 aarch64</pre>
   </div>
 </main>
 <script>
-  if (new URLSearchParams(location.search).has('icon')) document.body.className = 'icon';
+  const q = new URLSearchParams(location.search);
+  if (q.has('icon')) document.body.className = 'icon';
+  if (q.has('maskable')) document.querySelector('svg.icon').setAttribute('viewBox', '-4 -4 24 24');
   // The screen's trace: an ellipse that turns as it is drawn, as the introduction's small program draws one.
   let d = '';
   for (let i = 0; i <= 1500; i++) {

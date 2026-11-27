@@ -1,6 +1,6 @@
 // tools/dist.ts: the page as a static copy, Vite's build. It is a few bundled files, and in Chromium, served as plain
-// files (Vite's preview server over the copy, tools/serve.ts: headers and ranges), the page opens idle and boots
-// Buildroot (its images linked into the copy for the test: the copy itself has none).
+// files (Vite's preview server over the copy, tools/serve.ts: headers and ranges), the page is installable, opens
+// idle and boots Buildroot (its images linked into the copy for the test: the copy itself has none).
 import assert from 'node:assert/strict';
 import { gunzipSync } from 'node:zlib';
 import { execFileSync } from 'node:child_process';
@@ -118,6 +118,43 @@ test("the static copy's page logs its commit and opens the Machines modal", { sk
   await page.locator('.machines section.machine[data-selected]').waitFor();
   assert.deepEqual(errors, []);
   await context.close();
+});
+
+test('the static copy installs as an app: Chromium reads its manifest, finds no installability error, and its icons are as named', { skip: skipCopy }, async () => {
+  const manifest = JSON.parse(readFileSync(join(out, 'manifest.webmanifest'), 'utf8')) as {
+    icons: { src: string; sizes: string; purpose: string }[];
+    file_handlers: { action: string; accept: Record<string, string[]> }[];
+    launch_handler: { client_mode: string };
+  };
+  // Each icon a PNG of its size (its IHDR's width and height), and a maskable one among them.
+  for (const icon of manifest.icons) {
+    const png = readFileSync(join(out, icon.src));
+    const size = `${png.readUInt32BE(16)}x${png.readUInt32BE(20)}`;
+    assert.equal(size, icon.sizes, `${icon.src} is ${size}`);
+  }
+  assert.ok(manifest.icons.some((i) => i.purpose === 'maskable'), 'no maskable icon');
+  // The files the OS may open with it: what Open disk… takes, and a snapshot (web/app/launch.ts).
+  const extensions = manifest.file_handlers.flatMap((h) => Object.values(h.accept).flat()).sort();
+  assert.deepEqual(extensions, ['.img', '.iso', '.qcow2', '.raw', '.waarm64snap']);
+  assert.equal(manifest.launch_handler.client_mode, 'focus-existing');
+
+  // An on-disk profile: off the record, Chromium installs nothing (`in-incognito`).
+  const profile = mkdtempSync(join(tmpdir(), 'waarm64-dist-profile-'));
+  const context = await chromium.launchPersistentContext(profile, { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
+  try {
+    const page = context.pages()[0] ?? (await context.newPage());
+    await page.goto(`${base}/`);
+    await page.waitForFunction(() => document.body.dataset.state === 'idle', null, { timeout: 10_000 });
+    const cdp = await context.newCDPSession(page);
+    const read = (await cdp.send('Page.getAppManifest')) as { url: string; errors: { message: string }[] };
+    assert.equal(read.url, `${base}/manifest.webmanifest`);
+    assert.deepEqual(read.errors, [], "the manifest's errors");
+    const { installabilityErrors } = (await cdp.send('Page.getInstallabilityErrors')) as { installabilityErrors: { errorId: string }[] };
+    assert.deepEqual(installabilityErrors.map((e) => e.errorId), [], 'not installable');
+  } finally {
+    await context.close();
+    rmSync(profile, { recursive: true, force: true });
+  }
 });
 
 test('the static copy opens idle and boots Buildroot in Chromium', { skip }, async () => {

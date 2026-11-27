@@ -3,6 +3,7 @@ Header always set Cross-Origin-Opener-Policy "same-origin"
 Header always set Cross-Origin-Embedder-Policy "require-corp"
 AddType application/wasm .wasm
 AddType text/javascript .js .mjs
+AddType application/manifest+json .webmanifest
 # The guest agent's gzip (assets/waarm64-agent-<hash>.gz) as the bytes it is: no Content-Encoding (the page hands it
 # to the guest compressed).
 RemoveEncoding .gz

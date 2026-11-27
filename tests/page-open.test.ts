@@ -4,7 +4,9 @@
 //   (`OVERLAY_WAIT_MS`). The "other tab" is another page of the profile holding the lock, as a running machine's does;
 // - Open disk… (the first-run message's, the Home page's From a disk image…) through the browser's file picker,
 //   so the machine's file disk keeps its handle. Headless Chromium's picker can't be answered (Playwright aborts it),
-//   so the page's `showOpenFilePicker` gives a file in OPFS, as a picked file's handle.
+//   so the page's `showOpenFilePicker` gives a file in OPFS, as a picked file's handle;
+// - a disk image the OS opens with the installed app (web/app/launch.ts): headless Chromium installs nothing, so the
+//   page's `launchQueue` is a stand-in that hands its consumer a file in OPFS, as a launch's handle.
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -138,3 +140,54 @@ test('Open disk… and From a disk image… pick through the file picker: the ma
     await context.close();
   }
 });
+
+test("a file the OS opens with the installed app: a machine named after it, its disk with the file's handle", { timeout: 120_000 }, async () => {
+  // An on-disk profile, as above: the handle is kept in IndexedDB.
+  const context = await chromium.launchPersistentContext(mkdtempSync(join(dir, 'profile-')), { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
+  try {
+    const page = context.pages()[0] ?? await context.newPage();
+    // The File Handling API's queue: `window.launch(names)` launches with those OPFS files (the fixture's bytes).
+    await page.addInitScript(() => {
+      const w = window as unknown as { launch: (names: string[]) => Promise<void> };
+      let consumer: ((p: { files: FileSystemHandle[] }) => void) | undefined;
+      Object.defineProperty(window, 'launchQueue', { value: { setConsumer: (c: typeof consumer) => (consumer = c) } });
+      w.launch = async (names) => {
+        const files: FileSystemHandle[] = [];
+        for (const name of names) {
+          const h = await (await navigator.storage.getDirectory()).getFileHandle(name, { create: true });
+          const out = await h.createWritable();
+          await out.write(await (await fetch('/tests/qcow2/data.raw')).arrayBuffer());
+          await out.close();
+          files.push(h);
+        }
+        consumer!({ files });
+      };
+    });
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    await answerAsks(page);
+    await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}`);
+    await page.waitForFunction((src) => document.body.dataset.state === 'idle' && new RegExp(src).test(document.getElementById('message-text')?.textContent ?? ''), words('machine:power-actions.openDisk.prompt').source, { timeout: 30_000 });
+
+    // A launch without a file (the app's icon): nothing happens.
+    await page.evaluate(() => (window as unknown as { launch: (n: string[]) => Promise<void> }).launch([]));
+    await page.waitForTimeout(300);
+    assert.equal(await page.locator('#machine').textContent(), t('machine:page-disks.title.noDisk', { machine: t('machines:machine.uefi') }));
+
+    // With files: the first is the machine's, as a drop of several.
+    await page.evaluate(() => (window as unknown as { launch: (n: string[]) => Promise<void> }).launch(['launched.qcow2', 'other.raw']));
+    await page.waitForFunction(() => (document.getElementById('machine')?.textContent ?? '') === 'launched', null, { timeout: 10_000 });
+    const disks = await page.evaluate(async () => {
+      const { Store } = await import('/web/app/store.ts' as string);
+      const store = await Store.open();
+      const out = (await store.all('disks')).map((d: { name: string; kind: string; handle?: unknown }) => ({ name: d.name, kind: d.kind, handle: d.handle instanceof FileSystemFileHandle }));
+      store.close();
+      return out;
+    });
+    assert.deepEqual(disks, [{ name: 'launched.qcow2', kind: 'file', handle: true }]);
+    assert.deepEqual(errors, []);
+  } finally {
+    await context.close();
+  }
+});
+

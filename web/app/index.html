@@ -29,6 +29,10 @@
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='2' fill='%23262624'/%3E%3Cpath shape-rendering='crispEdges' fill='%23fa6432' d='M3 7h2v5h2V7h2v5h2V7h2v7H3z'/%3E%3Cpath fill='none' stroke='%236e6e67' stroke-width='1.1' stroke-linecap='round' d='M6 5.6C7.6 4 4.4 2.5 6 .9M10 5.6C8.4 4 11.6 2.5 10 .9'/%3E%3C/svg%3E">
 <!-- The same icon as a PNG (tools/social-card.ts), for what takes no SVG: a phone's home screen, some previews. -->
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<!-- What installing the page as an app takes (docs/frontend.md "Installing the page"): its name, icons, the window it
+     opens in, and the disk images and snapshots the OS may open with it (web/app/launch.ts). Not the catalog's words,
+     as the head's above: the browser reads them, not the page. -->
+<link rel="manifest" href="/manifest.webmanifest">
 <link rel="stylesheet" href="./theme/tokens.css">
 <link rel="stylesheet" href="./theme/base.css">
 <!-- The page's look is the theme's (tokens, element defaults) and its components'. These rules are the fallback's

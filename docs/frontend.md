@@ -19,6 +19,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/app/statusbar.ts` (`statusbar-kinds.ts`, `-metrics`, `-graphics`, `-traffic`, `-piece`, `-render`, `-sample`), `StatusBar.svelte`, `StatusPiece.svelte`, `StatusEditor.svelte` (`StatusChip.svelte`, `StatusPalette.svelte`, `StatusOptions.svelte`, `status-drag.svelte.ts`), `areas/status-live.ts` | the status bar, its elements and the Preferences' editor (below, "The status bar") |
 | `web/app/icons.ts` | the icons (Tabler's, below, "Icons") |
 | `web/app/main.ts` | the composition root: opens the store and the page's machine, builds the areas' modules, assembles `page`, mounts the components, boots |
+| `web/app/launch.ts`, `web/app/public/manifest.webmanifest` | the installed app: its manifest, and a file the OS opens with it (below, "Installing the page") |
 | `web/app/run/` (`page-machine.svelte.ts`, `page-disks.ts`, `knobs.ts`, `config.ts`, `dev-knobs.ts`, `runner.ts`, `run.ts`, `worker-messages.ts`, `start-message.ts`, `machine-lock.ts`, `messages.ts`, `problems.ts`, `power-actions.ts`, `size-actions.ts`, `memory-signal.ts`, `replies.ts`, `bench-hooks.ts`, `core.ts`) | the machine's run (below, "The page's code"): the page's machine (the owner the areas share), the address's knobs and what a machine is resolved to, a start and a stop, the workers' messages by type, the state and the message bar, power and size, the memory signal |
 | `web/app/areas/*-actions.ts`, `screen-view.ts`, `serial-terminal.ts`, `page-window.ts`, `disk-changes.ts`, `disk-export.ts`, `snapshot-restore.ts`, `usb-view.ts`, `usb-attach.ts`, `usb-entries.ts`, `held.ts`, `hooks.ts`, `browser.d.ts` | each area's actions next to its state: the screen and the terminal, the views and the window, disks, snapshots, network, USB, folders, clipboard, keys; the held-by-another-tab flow; the test hooks' and the missing browser APIs' types |
 | `web/app/worker.ts` (`worker-start.ts`, `-devices`, `-header`, `-fetch`, `-errors`, `-snapshot`, `-status`, `-profile`, `-post`, `-flash`) | the machine worker: boots a machine with `bootVm` and drives it with `runAsync`; what a start fetches and makes (the page's machine or a snapshot's, its devices, `bootVm`'s options), a snapshot's header, what stops a start, snapshots and suspension, the status, the benchmarks' profilers, its messages, the firmware's variable store |
@@ -2907,7 +2908,7 @@ stops if a binary is missing, Vulkan's renderer among them), then builds the pag
   a server that decodes it all the same costs only the page's own gzip of the ELF it gets), `.nojekyll`, the head's pictures under names
   without a hash (`social-card.png`, 1200x630, the picture of a shared link; `apple-touch-icon.png`, the icon for what
   takes no SVG; both rendered from `tools/social-card/card.html` by `node tools/social-card.ts` and committed: run it
-  after changing the card), and `web/app/index.html`, which redirects to the root with
+  after changing the card), the installed app's manifest and icons (below, "Installing the page"), and `web/app/index.html`, which redirects to the root with
   the query and fragment (the page was there until 2026-10-23).
 - `THIRD-PARTY-LICENSES.md` (the bundled packages' licenses: Vite's `build.license`), `EDK2-LICENSES.txt` (the
   firmware's), `VENUS-LICENSES.txt` (Vulkan's renderer's: virglrenderer, Mesa, wasi-sdk's libraries; vk/build.sh
@@ -2978,3 +2979,32 @@ What it gives: `_headers` applies (COOP, COEP on every file), `.wasm` is `applic
 plan). Disks aren't hosted with the page (above). The dev VM's resolver may cache a
 new name's absence for a while after a DNS change: Chromium's `--host-resolver-rules=MAP waarm64.com <ip>` (the
 script's `MAP=`) checks the real site meanwhile.
+
+## Installing the page
+
+The copy is an installable web app: `web/app/index.html` links `/manifest.webmanifest` (from `web/app/public/`, so
+the copy has it and the dev server doesn't), and Chromium offers to install it (no service worker: Chromium doesn't
+need one to install, and the page doesn't work offline). The manifest:
+
+- `id`, `start_url` and `scope` the site's root; `display: standalone`, a window of its own without the browser's
+  bar or tabs (so fewer of the browser's shortcuts take keys before the guest gets them; the Keyboard Lock still
+  needs full screen); the panel's bar color as its theme and background.
+- Icons rendered from `tools/social-card/card.html` by `node tools/social-card.ts` and committed: `icon-192.png`,
+  `icon-512.png`, and `icon-maskable-512.png` with more room around the w, so its steam stays in the circle an OS's
+  mask keeps (the middle 80%).
+- **`file_handlers`**: the OS may open a disk image (`.qcow2`, `.img`, `.raw`, `.iso`) or a snapshot
+  (`.waarm64snap`) with the installed app (Chromium asks the user the first time a file type is opened so). The page
+  takes such a launch through the File Handling API's `launchQueue` (`web/app/launch.ts`, from `PageWindow`'s
+  `start`, once the page's machine has booted) as a file dropped on the page: its first file and its handle to `disks.choose` (above, "Your own disk"),
+  so the machine made for it keeps the handle.
+- **`launch_handler: focus-existing`**: a launch, with a file or without, goes to the app's window already open, not a
+  new one; with a file, the drop's questions ask before a running machine stops. A machine opened in a new tab from
+  the Home page opens in a new window of the app.
+
+What installing changes for a machine besides the window: Chromium grants `navigator.storage.persist()` to an
+installed app (the storage bar's [Protect from automatic deletion](ui:machines:StorageBar.storage.persist) then
+isn't offered, machines.md), and keeps its file and folder grants across sessions, so a file disk or a host folder
+asks less often to be allowed again. Nothing else differs: memory, cross-origin isolation, WebGPU, USB and the quota
+are a tab's. `tests/dist.test.ts` checks the manifest and its icons in the copy; `tests/page-open.test.ts` a
+launch's file through a stand-in `launchQueue` (headless Chromium installs nothing).
+

@@ -326,4 +326,4 @@ pageWindow.firstView();
 pageWindow.openFromAddress((await store.all('machines')).length);
 messages.note = standingNote(await hasOpfs());
 await disks.fromAddress();
-powerActions.boot(pageWindow.elsewhere());
+pageWindow.start((elsewhere) => powerActions.boot(elsewhere));
