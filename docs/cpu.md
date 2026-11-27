@@ -214,7 +214,7 @@ match it step for step.
   NOT_REQUIRED, [platform.md](platform.md) "PSCI"); v4 has no other way here (no SSBS, MIDR 0 is on no safe
   list). **Spectre-BHB stays "Vulnerable"**, so `spectre_v2` reads "Mitigation: CSV2, but not BHB": Linux
   clears BHB only with CSV2_3 (needs `SCXTNUM_ELx`), ECBHB (reads "Mitigated") or a MIDR on its list;
-  an SMCCC answer can't (found by reading `proton-pack.c`, 6.18; backlog).
+  an SMCCC answer can't (found by reading `proton-pack.c`, 6.18; [#7](https://github.com/gbl08ma/waarm64/issues/7)).
 
 ## Privilege and exceptions
 
@@ -233,7 +233,7 @@ match it step for step.
   page-crossing one never is (`Mmu::miss`, after the walk and its permission check; instruction fetches and cache
   maintenance aren't checked, though maintenance that fills a Device page's TLB entry fills it as Device, so the
   accesses after it are). With the MMU off, where everything is Device, it isn't checked: the flat bus
-  exists to have no such test, and correct firmware doesn't notice (backlog). Exclusives,
+  exists to have no such test, and correct firmware doesn't notice ([#8](https://github.com/gbl08ma/waarm64/issues/8)). Exclusives,
   LDAR/STLR and LSE atomics need natural alignment (v8.0 rules; we don't advertise LSE2, which the
   M4 and QEMU implement: see [testing.md](testing.md) "Known oracle behavior").
 - `Cpu::default()` is a Linux user process at EL0; `Cpu::reset()` the EL1 boot state.
@@ -309,7 +309,7 @@ dispatcher does, and what it tests costs what `SCTLR_EL1.A`'s test cost before:
   the step interpreter's speed while it's on the CPU, the kernel and other tasks in the JIT. Linux
   arms only then (MDSCR's SS on the return to a stepped task, MDE and a comparator's E while a task
   that has one runs; a boot writes zeros and `TDCC`). Breakpoints and watchpoints at JIT speed are
-  in [backlog.md](backlog.md) "CPU".
+  [#6](https://github.com/gbl08ma/waarm64/issues/6).
 
 Checked by kvm-unit-tests' `debug-bp`, `debug-wp`, `debug-sstep` and their migration variants
 (through snapshots), the bare-metal `debug` test (the step machine's edges, breakpoint and
@@ -544,11 +544,14 @@ SHA512H/H2/SU0/SU1, EOR3, RAX1, XAR, BCAX (FEAT_SHA512, FEAT_SHA3).
 - Should-be-one fields are relaxed to match the M4, except in CAS/CASP, where the M4 raises
   UNDEFINED.
 - Checked exhaustively against Capstone 5.0 ([testing.md](testing.md) "Decoder sweep").
+- Arm's AARCHMRS JSON (`THIRD_PARTY.json`) isn't used: its in-package notice is unread; read it before generating
+  decoder tables or coverage checks from it.
 
 ## The block interpreter (`core/src/interp/block.rs`)
 
 The interpreter has two forms. `interp::steps` fetches, decodes and runs one instruction at a time:
-the reference, and what `VmConfig.jit` 0 runs. **The block interpreter** runs what the JIT's
+the reference, and what `VmConfig.jit` 0 runs (its MMU copy 35% slower than the flat one; only the interpreter-only
+tests and benchmarks run it). **The block interpreter** runs what the JIT's
 dispatcher hasn't compiled (`jit::steps`; [jit.md](jit.md) "Dispatch"): every block the first
 `threshold` times, and natively everything (no wasm engine), so the native boots with `jit` ≠ 0
 test it against `tests/steps.txt`.
@@ -799,6 +802,9 @@ In `bench/interp/REPORT.md` "M8-INTERP loop 2" unless said, the variants' diffs 
     FMINNM/FMAXNM 0.44 M; FCVTZS/U ~0.4 M; FRINTx ~0.4 M; FMADD 0.17 M): under ~0.05% each. They matter to the FP
     guest (its exits are 21% of its steps: FMLA by element 7.4 M, LDR (register) 10 M a placement), not to a browser.
   - *Literal loads in the lean copy:* 2.5 M, ~0.1%; inline they lost (above), and choosing the rich copy ran even.
+  - *Decoding,* the interpreter's own: `Cache::miss` and its closure were 1.64% of busy ticks (`bench/interp/REPORT.md`
+    "The block interpreter on the Mac, loop 3"), 19% faster natively since loop 4 (no allocation a block); what's left
+    is compute, the decoder, `pack_into` and `uop_op`'s matches.
 - **One TLB probe for a pair of LdOs or StOs off one base** (of one kind and size, the first not loading the base,
   spanning at most 256 bytes): lost in the dev VM (−19.5% on the flat guest, 2026-10-30) and again on the Mac (PERF
   loop 70: −0.5 to −1.8% on the small guests, −0.35% on Alpine's boot; `hot` ~760 bytes larger a copy). Such pairs

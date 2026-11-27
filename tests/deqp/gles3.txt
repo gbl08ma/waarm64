@@ -2,7 +2,7 @@
 # passes on the page, every one expected to pass. The census of 2026-11-09 (bench/gpu/REPORT.md "dEQP-GLES's census"):
 # every case of the mustpass list that passed on the dev VM's SwiftShader, in the list's order (bench/gpu/deqp-census.ts
 # --lists); what's left out didn't pass there (not supported, or a warning), by cause in that report. A case that
-# fails is looked into at once, or filed in docs/backlog.md and taken out of the list.
+# fails is looked into at once, or filed as an issue and taken out of the list.
 dEQP-GLES3.info.vendor
 dEQP-GLES3.info.renderer
 dEQP-GLES3.info.version

@@ -7,7 +7,7 @@ configuration's devices"), its ABI in [abi.md](abi.md) ("M8 phase B"), the build
 [images.md](images.md) (`edk2`), the page's side in [frontend.md](frontend.md) ("Debian through
 UEFI", "Your own disk", "The serial terminal"), the tests and the UEFI oracle in
 [testing.md](testing.md), the numbers in `bench/boot/REPORT.md` ("M8 phase B loop 3", "M8: the
-firmware on the screen"). Loose ends: [backlog.md](backlog.md) "Platform and devices".
+firmware on the screen"). Loose ends: [the firmware issues](https://github.com/gbl08ma/waarm64/issues?q=is%3Aissue+state%3Aopen+label%3Afirmware).
 
 ## Which EDK2, and what it needs of the machine
 
@@ -47,7 +47,7 @@ our direct boot unchanged. Found on QEMU 11.1.1 (TCG, `virt`, GICv3) before anyt
   (`CSI 8;56;240 t`), which xterm.js ignores, so on the page's 80-column terminal only GRUB's
   countdown line showed. Teaching xterm.js the sequence (a CSI handler, gated behind
   `windowOptions.setWinSizeChars`) and scaling the font worked but was the wrong fix; configuring
-  the firmware was the right one (the user's). When it can go: backlog "EDK2's terminal modes".
+  the firmware was the right one (the user's). When it can go: [#20](https://github.com/gbl08ma/waarm64/issues/20).
 - **`virtio-gpu-console.patch`** (`OvmfPkg/Library/PlatformBootManagerLibLight`): the boot manager
   connects display devices before the console exists and puts their GOPs in ConOut, but looked
   only for PCI ones. Ours is on virtio-mmio, so `VirtioGpuDxe` was bound only by the later
@@ -79,7 +79,7 @@ What the screen shows: the TianoCore logo, the progress bar, BdsDxe's lines and 
 console (boot manager, setup screens, the Shell), then GRUB (`gfxterm`) and "Loading Linux…". Keys
 come from the built-in USB keyboard on a machine with the USB controller (docs/usb.md "The keyboard"), and
 otherwise only from the serial terminal (EDK2 has no virtio-input driver). **The kernel's first seconds
-stay dark** (backlog "The screen is dark from the EFI stub"): the GOP has no linear framebuffer, so
+stay dark** ([#19](https://github.com/gbl08ma/waarm64/issues/19)): the GOP has no linear framebuffer, so
 Linux has no `efifb`. **ramfb is not the fix:** it would give `efifb`/`simpledrm` a framebuffer, but
 `virtio_gpu` removes a conflicting firmware framebuffer only on PCI (`virtgpu_drv.c`,
 `virtio_gpu_pci_quirk`), so on virtio-mmio it would stay as card0/fb0 for the whole session, where
@@ -100,7 +100,7 @@ desktops would pick it. That is also why fw_cfg has no DMA interface.
 - **The firmware's own boot cost** on the page's Debian (bench/boot/REPORT.md "M8 phase B loop 3"):
   ~9 s from EDK2 to the kernel, GRUB's 5 s menu, and a few seconds of userspace the old direct
   boot's command line skipped. Between the boot manager and GRUB's menu Debian retires 5.4G steps
-  in ~3 s: not a busy wait but an LZMA range decoder, most likely GRUB unpacking its core image.
+  in ~3 s (Alpine 0.2G): not a busy wait but an LZMA range decoder, most likely GRUB unpacking its core image.
 
 ## DT or ACPI (decided 2026-09-30: the DT)
 
@@ -121,7 +121,7 @@ oracle"). The DT gives `tty0` and `ttyAMA0` (fbcon and `stdout-path`); ACPI's SP
 - **virtio-pci behind an ECAM host bridge** lets devices enumerate themselves (and hot-plug), but
   costs a PCI host bridge and config space in the core and still needs a DT or ACPI.
 - Only an ACPI-only guest needs it (Windows, which needs much more: PCIe, SBSA; an enterprise distro
-  that won't boot from a DT). None is in scope; the path then is backlog "ACPI".
+  that won't boot from a DT). None is in scope; the path then is [#21](https://github.com/gbl08ma/waarm64/issues/21).
 
 ## The guests
 

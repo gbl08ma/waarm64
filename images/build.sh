@@ -788,8 +788,8 @@ build_edk2() {
   for p in images/edk2/*.patch; do git apply --directory="$b" "$p"; done
   # The serial console offers text modes up to 240x56 and GRUB takes the largest, asking the terminal
   # to resize itself (xterm's CSI 8;r;c t). The page's terminal is 80 columns, where the menu is lost:
-  # offer the 80x25 mode alone (docs/firmware.md "Our patches"). When it can go: docs/backlog.md
-  # "EDK2's terminal modes" (a virtio-gpu machine's GRUB draws on the screen already).
+  # offer the 80x25 mode alone (docs/firmware.md "Our patches"). When it can go:
+  # https://github.com/gbl08ma/waarm64/issues/20 (a virtio-gpu machine's GRUB draws on the screen already).
   sed -i -E '/^  \{ (80, +50|100, 31|128, 40|160, 42|240, 56) \}/d' "$b/MdeModulePkg/Universal/Console/TerminalDxe/Terminal.c"
   [ "$(grep -c -E '^  \{ [0-9]+, +[0-9]+ \}' "$b/MdeModulePkg/Universal/Console/TerminalDxe/Terminal.c")" = 1 ] || { echo "edk2: the terminal's mode table changed" >&2; exit 1; }
   podman run --rm -v "$root:$root:z" -w "$root/$b" -e SOURCE_DATE_EPOCH "$EDK2_CONTAINER" bash -ec '

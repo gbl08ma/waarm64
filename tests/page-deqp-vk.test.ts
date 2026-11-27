@@ -7,7 +7,7 @@
 // The direct list is sampled unless WAARM64_DEQP_VK_FULL=1 (`ci-deqp-vk.sh --full`): every STRIDE-th case of each group
 // (the name's first three parts) from an offset of its own drawn from a seed, at least one a group, in the list's
 // order, so runs together cover the list; the seed is printed, and WAARM64_DEQP_VK_SEED=<n> runs that sample again. A
-// case that fails in a sample is looked into at once, or filed in docs/backlog.md and taken out of the list.
+// case that fails in a sample is looked into at once, or filed as an issue and taken out of the list.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';

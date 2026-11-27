@@ -7,8 +7,8 @@ snapshots checked by the machine's shape and restored without destroying a disk'
 What the Home page shows and does is [frontend.md](frontend.md) "Machines in the browser", "The Home page" and
 "A stored machine's snapshots"; the block device, the overlay's format and stored disks' code are
 [devices.md](devices.md) "blk"; network adapters and connections are [networking/adapters.md](networking/adapters.md), USB
-[usb.md](usb.md) "The page", shared folders [shares.md](shares.md). Loose ends are in [backlog.md](backlog.md)
-"Machines as the unit, loose ends". The section numbers are the ones the code's comments cite.
+[usb.md](usb.md) "The page", shared folders [shares.md](shares.md). Loose ends are
+[the machines issues](https://github.com/gbl08ma/waarm64/issues?q=is%3Aissue+state%3Aopen+label%3Amachines). The section numbers are the ones the code's comments cite.
 
 ## 1. The rules (the user's, 2026-10-17)
 
@@ -86,7 +86,7 @@ Since decided (the user, 2026-10-17):
   is written after its bytes and deleted before them, so a crash leaves unreferenced files, never a record without
   its files. `Store.sweep` removes id-named files under `overlays/`, `machines/*/snapshots/`, `disks/` and
   `folders/` without a record, and waits for writers first (`Store.writing`, a shared Web Lock); the page doesn't call
-  it yet (backlog.md "The store's sweep never runs"), so those files stay. What the page's start does remove
+  it yet ([#155](https://github.com/gbl08ma/waarm64/issues/155)), so those files stay. What the page's start does remove
   (`Store.dropCutFills`) is a cut-off import's or Import changes' `disks/<id>` or `overlays/<id>`: one still marked
   as filling (devices.md "blk"), checked under its own lock taken only if free (a running job holds it, and clears
   the mark before it lets go) and with no record naming it, which is safe beside other tabs and their jobs.
@@ -578,7 +578,7 @@ The file's format, what the core saves and the page's toolbar and header fields:
 - **Keep or download:** a kept snapshot is the same file as a downloaded one (self-contained: the overlays' blocks
   are in it), written by the worker into `machines/<id>/snapshots/<id>`, its record written after. So a kept snapshot
   downloads as it is. Keeping many snapshots of a machine with a big overlay costs that overlay each time; sharing
-  blocks between them isn't built (backlog, if the sizes measured ask for it).
+  blocks between them isn't built ([#175](https://github.com/gbl08ma/waarm64/issues/175), if the sizes measured ask for it).
 - **Restore** (a kept snapshot, or a file restored at once): refused before anything is touched when the shape hash
   differs (the notice points to Create a machine like it). Then per writable disk (`planRestore`, web/app/snapshots.ts; the page
   passes the plan to the worker as `start.plan`): the attached overlay is the pinned one at the pinned generation →
@@ -915,7 +915,7 @@ snapshots, forks and a Suspend beside the URL disk's block cache) doesn't either
 (`launchPersistentContext`), as a user's browser is. tests/page-incognito.test.ts is the off-the-record case on
 purpose: the cache filled with the whole image (385 MiB), then a kept snapshot, a Restore's fork and a Suspend, which
 the cache's room given back lets through (before it, the Suspend was refused). Definitions' tests use on-disk profiles too (Chromium 153 crashes
-reading a file handle back from IndexedDB off the record: backlog).
+reading a file handle back from IndexedDB off the record: [#172](https://github.com/gbl08ma/waarm64/issues/172)).
 
 ## 10. Ahead
 
@@ -924,4 +924,4 @@ reading a file handle back from IndexedDB off the record: backlog).
 - **A catalog** of hosted images would be a list of such machine definitions.
 - **The embedding API**'s VM configuration would start from the machine definition and its shape.
 - **Exporting a whole machine** (a bundle: the definition, its overlays as changes files, its kept snapshots and,
-  optionally, its stored disks) isn't built (backlog).
+  optionally, its stored disks) isn't built ([#174](https://github.com/gbl08ma/waarm64/issues/174)).

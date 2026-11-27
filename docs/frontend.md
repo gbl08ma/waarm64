@@ -255,7 +255,13 @@ tools/lint`, which `scripts/ci.sh` and `scripts/cloud-setup.sh` run when it's st
 Svelte, to the root's): they need the compiler API TypeScript 7 doesn't have, and a package linked from the root's
 had its dependencies hoisted next to the root's TypeScript 7, where they loaded it. ESLint runs under
 `tools/lint/ts6.ts`, a module hook that makes every `typescript` import the package's (eslint-plugin-svelte loads it
-from the working directory).
+from the working directory). The 4 suppressions left in `tools/lint/eslint-suppressions.json` (130 before the frontend
+refactor's phases 7 and 8) are kept: the `vm!` of the machine worker's status and keyboard timers and its JIT limit
+(worker.ts, `no-non-null-assertion`), where the module's `vm` is set before they start and they stop with the run,
+beside the hot run loop, so a check that can't fail is a branch for nothing (passing them the booted `vm` is the fix
+if the run's code is ever reworked). Settled with a disable that says why: environment probes (`navigator`,
+`location`, `document`, Web Locks: absent in Node's tests), flags that change across an `await` or in a callback, the
+effects' tracking reads, and the data tables (keymaps.ts, keyboard.ts's layouts, osk-layout.ts's builders).
 
 **Screenshots:** `node tools/screens.ts --label <name>` (headless Chromium on the dev server, ~1 min; `--only <part>`
 for the states whose names contain it) seeds a profile through the page's own modules (two machines, disks with
@@ -840,7 +846,9 @@ over the machine and the Home page.
   stop, or for another machine. A pass (web/ram-scan.ts `RamScan`) reads every page: a zero page whole, a page with
   data whole for its fingerprint (four lanes of sums and sums of sums, 4 bytes a page kept for the next pass). Its
   cost is the reading: ~0.1 s a GiB never written (untouched memory reads the host's zero page and isn't committed by
-  being read: docs/backlog.md's measurement), ~0.35 s a GiB with data (Node on a cloud container's x86_64; a Debian
+  being read: a worker's scan of an untouched 4 GiB shared wasm memory took the browser's processes' resident memory
+  from 372 to 381 MiB, where writing 512 MiB of it added 512 MiB, and a zero-or-not pass per 4 KiB page over it took
+  0.46–1.0 s; Chromium 153 on x86_64 Linux, one run, 2026-11-15), ~0.35 s a GiB with data (Node on a cloud container's x86_64; a Debian
   guest's 1 GiB took ~0.2 s). Nothing touches the vCPUs, the machine worker or the devices.
 - **When it asks**: once a second at most, stretched so the passes take under 1/8 of the time (`ramDelay`: the next
   ask ≥ 8 × the pass's `cost`), only while the page is visible; the window says how often ([Updated every 2
@@ -902,7 +910,7 @@ and the floating windows don't show, and the machine, Home or the store's page s
     typed out on the terminal that say what drew the picture and start two more, and at ~59 s a shell that is the
     visitor's. A key typed in the terminal ends the tour at once. The terminal takes keys only once clicked: it is out
     of the Tab order (a terminal keeps every key it is given, Tab among them), so the keyboard's way down the page
-    passes it by (backlog: a way in for a keyboard alone). The
+    passes it by ([#147](https://github.com/gbl08ma/waarm64/issues/147): a way in for a keyboard alone). The
     guest prints only commands and their output: **the words are the page's**, the line under the screen, chosen by
     the tour's marks (`guest-protocol.ts` `MARKS`; an OSC 777 `waarm64;<mark>`, which xterm.js hands to a handler in
     the order of the text around it): the first picture's, the reveal, the two other pictures', and the shell's.
@@ -1761,7 +1769,7 @@ never set leaves the page's own pointer (EDK2's screens and a console with no mo
 `none`; a virtio reset goes back to never set (`GpuHooks.cursorReset`), and so does the machine stopping (off, suspended,
 crashed: the page's pointer is back over its last screen); a restored snapshot sends its cursor again.
 The image is smoothed only when the scale isn't whole; Chromium normalizes `-webkit-image-set(...)` to `image-set(...)`.
-A guest that warps its cursor (`MOVE_CURSOR` away from the pointer) isn't shown: none seen (backlog).
+A guest that warps its cursor (`MOVE_CURSOR` away from the pointer) isn't shown: none seen ([#58](https://github.com/gbl08ma/waarm64/issues/58)).
 
 ## Sound
 
@@ -2121,7 +2129,7 @@ With Debian's screen on virtio-gpu (`node bench/gpu/page.ts`, 2026-10-02, anothe
 reads the canvas back, so its numbers compare with each other only; bench/gpu/REPORT.md "G1 exit"): the terminal is
 where it was (10.8 ms; 11.6 with `?display=simple`), the screen takes 52.8 ms against the simple framebuffer's 39.2.
 The device isn't the difference (the guest's flush arrives 12 ms after the key and is drawn within 1 ms); what
-happens to a canvas drawn in the device worker after that is the backlog's item. The first pixel is on the screen
+happens to a canvas drawn in the device worker after that is [#57](https://github.com/gbl08ma/waarm64/issues/57). The first pixel is on the screen
 7.5 s after the page's load (EDK2's graphics output) instead of 18.7 s (the kernel's console), and `running` comes
 at the same ~52 s.
 
@@ -2134,7 +2142,7 @@ run's end): the PL011 has no size
 negotiation, so a Linux guest assumes 80×24 unless `stty` says otherwise, and the firmware's
 console is 80×25 (our EDK2 offers no other text mode: `images/build.sh edk2` patches the
 terminal driver's mode table, because GRUB takes the largest mode and asks the terminal to resize
-itself with `CSI 8;r;c t`, which xterm.js doesn't do; docs/backlog.md "EDK2's terminal modes"). `onData` sends what a
+itself with `CSI 8;r;c t`, which xterm.js doesn't do; [#20](https://github.com/gbl08ma/waarm64/issues/20)). `onData` sends what a
 terminal would (`\r` for Enter, escape sequences) to the `serial` port. One addon: the fit. The dev server
 **The firmware and GRUB through it** (`tests/page-disk.test.ts`, which drives them end to
 end): arrows, Enter, Esc, F2, Ctrl-N/P/E/X, Home/End and typing all arrive. Two things about
@@ -2272,9 +2280,9 @@ booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file
   of the file's name, size and modification time, or of the URL's path), with the variable store
   (`flash`) beside it, and the overlay's `base` file records the same identity
   (`diskIdentity`, devices.ts), so a mismatch is `disk-mismatch`. Choosing the same file again,
-  later or in another tab, finds its changes. The page doesn't remember the file itself (a `File`
-  can't be kept; a `FileSystemFileHandle` in IndexedDB could, with a permission prompt each
-  session: backlog). **Reset disk** resets the chosen disk's overlay.
+  later or in another tab, finds its changes. A dropped file isn't remembered (a `File`
+  can't be kept); a picked file's `FileSystemFileHandle` is, in IndexedDB, with a permission prompt each
+  session ([machines.md](machines.md) §3.2). **Reset disk** resets the chosen disk's overlay.
 - The disk is identified by name, size and modification time, not by content (a hash of a
   multi-GB file would block the boot): two different files with all three equal share an overlay.
 - Saving the disk (loop 5): a disk's [Export…](ui:machines:PagePane.export) on the Home page's Disks tab opens the Export wizard:
@@ -2684,7 +2692,7 @@ Home shows, a connection gone under its page, machines linked by id),
 tests/page-domains.test.ts (the Domains pane with no machine: its explainers, register, a card's states, the backup, the
 links; the new key kept after New name, New name's question on a connection that holds domains (pointed at the new key, or let go), `member` failing and read again, an overtaken read dropped), tests/room-link.test.ts (the link as link.rs writes it, a private room's ID, what a link may not be).
   Not tested: a real interactive login and the menu's login states in a browser (they need a
-  control server that serves one; the docs/backlog.md "Network" entry says what's missing).
+  control server that serves one; [#217](https://github.com/gbl08ma/waarm64/issues/217) says what's missing).
 
 ## The end-to-end test
 
@@ -2700,7 +2708,7 @@ as a closed tab), and Reset disk (the dialog accepted) boots a disk without it. 
 ~178 s alone (running at ~55 s, logged in on both at ~62 s, reloaded and running at ~112 s, reset
 and running at ~172 s); `WAARM64_PAGE_RUNS=N` repeats it. It and the `npm start` test take turns (`tests/debian-lock.ts`, a lock
 directory in the temp directory): two Debian page boots at once beside the rest of `npm test`
-loaded the host enough to fail a realtime bare-metal test (docs/backlog.md). In CI it takes ~3 min
+loaded the host enough to fail a realtime bare-metal test ([#290](https://github.com/gbl08ma/waarm64/issues/290)). In CI it takes ~3 min
 (the host is shared with the other test files); `npm test` went from ~253 to ~290 s.
 
 How it types, and why:

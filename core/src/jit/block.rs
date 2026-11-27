@@ -40,7 +40,8 @@ pub enum End {
 /// [`crate::interp::sys::msr_continues`].
 // ponytail: still conservative for the other system instructions (other MSRs,
 // SYS, CLREX, the other DC); relax each with a profile that shows it (M6
-// loop 1 did MRS, the barriers and DC ZVA; loop 7 the MSRs above).
+// loop 1 did MRS, the barriers and DC ZVA; loop 7 the MSRs above):
+// https://github.com/gbl08ma/waarm64/issues/315.
 pub fn end(w: u32) -> End {
     end_op(decode(w), w)
 }

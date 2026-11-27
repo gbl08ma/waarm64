@@ -3,8 +3,8 @@
 **Status: VK0 to VK3 done (2026-10-25 to 10-29); VK4 started 2026-10-29 as tasks the user starts
 ([VK4-KICKOFF.md](../../VK4-KICKOFF.md)).** What exists, how it fits together, what it backs and what it found are
 [docs/graphics.md](../graphics.md) "Vulkan through Venus" (the renderer's code: [vk/README.md](../../vk/README.md));
-each phase's measurements are bench/vulkan/REPORT.md; its loose ends are in [backlog.md](../backlog.md) "Platform and
-devices". This page is what binds the work ahead: **Vulkan for unmodified guests, through Mesa's Venus driver,
+each phase's measurements are bench/vulkan/REPORT.md; its loose ends are
+[the Vulkan issues](https://github.com/gbl08ma/waarm64/issues?q=is%3Aissue+state%3Aopen+label%3Avulkan). This page is what binds the work ahead: **Vulkan for unmodified guests, through Mesa's Venus driver,
 translated onto WebGPU on the host**, the bar it must meet, the decisions, and VK4.
 
 Why: programs that need Vulkan and ignore our GLES (native Vulkan games, Vulkan-only tools and toolkits) run on the

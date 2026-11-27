@@ -150,7 +150,7 @@ Layered, cheapest first:
   its 293 s of network tests: the slots stayed full); before them, 2 slots 551 s (7.1 GiB), one 795 s (4.1 GiB).
 - **`scripts/ci-audio.sh`** (~1 min) runs the realtime sound tests on the page (`audio-browser`: the snd guest's
   tone heard, the microphone, snapshots while it plays). They time the sound against the clock, so they run alone:
-  beside `npm test`'s other files a starved guest failed their timing now and then (backlog).
+  beside `npm test`'s other files a starved guest failed their timing now and then ([#55](https://github.com/gbl08ma/waarm64/issues/55)).
 - **`scripts/ci-deqp.sh`** (~11 min; `--full` ~49 min) runs dEQP on the page (`page-deqp`: GLES2's and GLES3's pass lists in
   `tests/deqp/`, every case expected to pass, a machine each, both at once). It needs `images/deqp/build.sh`'s disk and guest (on demand, ~15 min once). The lists are every
   case of dEQP's mustpass lists that passed on SwiftShader in the census of 2026-11-09 (17,027 and 44,399:
@@ -158,7 +158,7 @@ Layered, cheapest first:
   By default a sample of each, as `ci-deqp-vk.sh`'s: every 8th case of each group (a name's second to fourth parts)
   from an offset per group a seed draws, at least one case a group, in the list's order (`tests/deqp-lists.ts`), so
   runs together cover the lists; each run prints its seed (`WAARM64_DEQP_SEED=<n>` runs that sample again). **A case
-  that fails in a sample is looked into at once, or filed in docs/backlog.md and taken out of the list** until it's
+  that fails in a sample is looked into at once, or filed as an issue ([issues.md](issues.md)) and taken out of the list** until it's
   fixed, flaky or not. `--full` (`WAARM64_DEQP_FULL=1`) runs the whole lists: at a graphics track's end and for a change
   that cuts across groups (the translator, the renderer's state). A machine runs four dEQP processes
   (`WAARM64_DEQP_JOBS`), the list dealt to them in blocks of 16 (`deqp-run.ts`'s `JOBS_BLOCK`: in quarters, GLES3's
@@ -175,7 +175,7 @@ Layered, cheapest first:
   three parts) from an offset per group a seed draws, at least one case a group, in the list's order: ~5,600 of
   40,166, so runs together cover the list (40 seeds cover 99.9% of it). Each run prints its seed
   (`WAARM64_DEQP_VK_SEED=<n>` runs that sample again). **A case that fails in a sample is looked into at once, or filed in
-  docs/backlog.md and taken out of the list** until it's fixed, flaky or not. `--full` (`WAARM64_DEQP_VK_FULL=1`) runs the whole
+  as an issue ([issues.md](issues.md)) and taken out of the list** until it's fixed, flaky or not. `--full` (`WAARM64_DEQP_VK_FULL=1`) runs the whole
   list: at a Vulkan track's end, before the user's NVIDIA runs, after a phase of tasks (VK4's census tasks), and for a
   change that cuts across groups (the replay, the pipeline key, descriptors); `--full --phases M [DIR]` runs it in M slices of the list, a boot each (cut at whole rounds of the shards' blocks, so a case keeps its shard and neighbours), each slice's result (counts, the cases that didn't pass, their detail) a checkpoint `DIR/phase-N.json` (default `bench/results/local/deqp-vk-full`): a run that dies resumes at the first slice without one, and a slice that fails doesn't stop the next (VK4's full run: three slices of ~27,000); a task proves its own new cases with runs
   of its own (bench/gpu/deqp-run.ts `CASES`) before they join the list; then `tests/deqp/vk-ycbcr.txt` (YCbCr conversions, VK3 L7.2), a
@@ -187,7 +187,7 @@ Layered, cheapest first:
   `bench/gpu/deqp-run.ts vk`, `PASSED=1`), and since VK4 T1 of a census's (every 100th case of the whole list, `STRIDE=400`
   at four offsets, `DETAIL` for every case that didn't pass, classed by `bench/vulkan/census.ts`: bench/vulkan/REPORT.md
   "VK4 T1"; with `DETAIL_NOTSUPPORTED=1` too, `census.ts --reasons` counts why the rest aren't supported: "VK4: the
-  census again"; on the M4 through `bench/gpu/sway-mac.sh`, `VIRGL_GPU=virgl,vulkan`); what fails is in docs/backlog.md "The Vulkan driver's gaps", by cause. A case
+  census again"; on the M4 through `bench/gpu/sway-mac.sh`, `VIRGL_GPU=virgl,vulkan`); what fails is in [the Vulkan issues](https://github.com/gbl08ma/waarm64/issues?q=is%3Aissue+state%3Aopen+label%3Avulkan), by cause. A case
   that crashes deqp-vk is recorded as `Crash` and the run goes on with the cases not recorded yet (also when deqp-vk
   dies between cases); deqp-vk's other lines (an assertion's, its watchdog's) are kept in
   `results.output`, and `WATCHDOG=disable` lifts its 30 s limit on a case's steps to time a slow one. Dawn zeroes
@@ -475,7 +475,7 @@ x1 = 0; `power_off` also prints `exit <code>`. `oracle.sh` runs the `-DORACLE` b
 (implementation-specific checks left out) on QEMU TCG, `oracle.sh --hvf` the `-DORACLE -DHVF`
 builds on the Mac (`gic-version=3`: Apple's in-kernel vGIC); every test runs on both but `watch` (a `// window`
 test, whose phases the host drives), and passes on both but three: on TCG `xblock` and `isb` (QEMU's, "System-level
-oracles"), on hvf `debug` (QEMU's model of the debug registers there: docs/backlog.md). Where TCG and the M4 disagree
+oracles"), on hvf `debug` (QEMU's model of the debug registers there: [#282](https://github.com/gbl08ma/waarm64/issues/282)). Where TCG and the M4 disagree
 the M4 wins. Left out
 of the HVF build: two `gicv3` checks that are ours and QEMU's but not Apple's
 (`ID_AA64PFR0_EL1.GIC`, `GICR_ICFGR0`: [platform.md](platform.md) "The GIC"), and `smp`'s second
@@ -1108,9 +1108,9 @@ Loops review their own work with a context full of their own theory; a fresh rea
 - **The output:** one Markdown file on a `review/<area>` branch, findings ranked, each with file:line, the defect,
   the condition or interleaving that triggers it, and a test that would confirm it; plus what was checked and found
   fine.
-- **After:** the supervisor (or the session) triages each finding into a fix loop or the backlog. A fix starts with
-  its confirming test, failing first (as a planted bug for a JIT rule). The findings move into docs/backlog as they
-  are fixed or filed; the branch is deleted.
+- **After:** the supervisor (or the session) triages each finding into a fix loop or an issue. A fix starts with
+  its confirming test, failing first (as a planted bug for a JIT rule). The findings are fixed or filed as issues
+  ([issues.md](issues.md)); the branch is deleted.
 - **The core's review (2026-11-03)**, the whole of `core/src` in eight areas: 14 correctness findings and 7
   performance ones, all fixed (the commits that say "REVIEW"). What it checked and found clean, so a next one can
   aim elsewhere: the corpus generators at 2-3× their counts and every `a64.inc` pattern with random fields against

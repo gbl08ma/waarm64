@@ -783,7 +783,7 @@ test('the I/O counters: blk counts the bytes of completed reads and writes, net 
 
 test('serve ends on a close that lands while it yields to the event loop', async () => {
   // `serve` yields through a MessageChannel after 2 ms of work; a listening port keeps Node's process alive, so a
-  // close it missed there left the process up for good once the tests ended (docs/backlog.md, tests/pause.test.ts).
+  // close it missed there left the process up for good once the tests ended (tests/pause.test.ts).
   const memory = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
   const d = await Devices.open({ memory, shared: [], ram: 0, ramSize: 0, signal: 0, specs: [], deterministic: false }, () => {});
   const bell = new Int32Array(memory.buffer, 64, 2);

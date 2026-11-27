@@ -28,7 +28,7 @@ after(async () => { close?.(); if (dir) rmSync(dir, { recursive: true }); });
 
 /**
  * A fresh profile on disk: Chromium 153 crashes (SIGTRAP) reading a file handle back from IndexedDB in an
- * off-the-record context (docs/backlog.md), and the store keeps file disks' handles.
+ * off-the-record context (https://github.com/gbl08ma/waarm64/issues/172), and the store keeps file disks' handles.
  */
 const profile = () => chromium.launchPersistentContext(mkdtempSync(join(dir, 'profile-')), { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
 

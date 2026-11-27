@@ -27,6 +27,7 @@ group "typecheck::npx tsc --noEmit" \
   "i18n::${node[*]} tools/i18n-check.ts" \
   "third-party::${node[*]} tools/third-party.ts" \
   "labels::${node[*]} tools/issue.ts labels --lint" \
+  "backlog-refs::${node[*]} tools/backlog-refs.ts" \
   "harness-imports::${node[*]} tools/harness-imports.ts" \
   "areas::${node[*]} tools/ci-select.ts --check" \
   "clippy::cargo clippy --all-targets -q -- -D warnings"

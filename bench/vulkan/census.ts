@@ -1,6 +1,6 @@
 // VK4 T1's census of dEQP-VK (bench/vulkan/REPORT.md "VK4 T1"): every case that didn't pass in bench/gpu/deqp-run.ts's
 // results (a sample of the mustpass list, run with DETAIL for dEQP's messages) classed by cause, the causes those of
-// docs/backlog.md's "The Vulkan driver's gaps" (and the VK4 task that takes each), counted per host; the first rule
+// the Vulkan issues (https://github.com/gbl08ma/waarm64/issues?q=is%3Aissue+state%3Aopen+label%3Avulkan) (and the VK4 task that takes each), counted per host; the first rule
 // that matches a case's name (and, where given, its messages) wins, so the rules go from the most specific.
 //   node bench/vulkan/census.ts <host>=<dir of deqp-run.ts's results.json files (any *.json), searched recursively>... [--cases <cause>] [--json <out>]
 // T1's: node bench/vulkan/census.ts swiftshader=bench/vulkan/results/vk4/t1/swiftshader m4=bench/vulkan/results/vk4/t1/m4
@@ -10,7 +10,7 @@
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-/** A cause: its rule, the backlog's entry and the VK4 task. `tier` ranks by consequence (kickoff "How the tasks are
+/** A cause: its rule, its issue's subject and the VK4 task. `tier` ranks by consequence (kickoff "How the tasks are
  * ranked"): 1 a crash or a lost device, 2 work dropped (WebGPU refuses it), 3 wrong results. */
 interface Cause { id: string; what: string; task: string; tier: 1 | 2 | 3; name?: RegExp; detail?: RegExp; status?: RegExp; test?: (n: string) => boolean }
 

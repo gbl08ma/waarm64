@@ -1191,7 +1191,8 @@ for (const [name, { pool, helpers, aes, sha, vec }] of Object.entries(SEQUENCES)
 // compiles each program as a region, so edges inside it are wasm branches with
 // registers kept in locals; runs of a random length stop anywhere, mid-block or
 // at the step budget before an edge. (A pass-2 register state collected as
-// `Option`s was miscompiled with simd128; this class caught it: docs/backlog.md.)
+// `Option`s was miscompiled with simd128; this class caught it:
+// https://github.com/gbl08ma/waarm64/issues/16.)
 const PROG = 48; // words per program slot
 function branchTo(k: number, to: number) {
   const off = to - k; // in words

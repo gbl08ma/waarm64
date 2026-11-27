@@ -171,7 +171,7 @@ for (const [scenario, what] of [
   ['watch', 'a page one device wrote reaches its GPU buffer though another device submitted first'],
   ['serials', 'two devices\' submits with the same count behind them each complete their own'],
   ['odd', 'every byte of an odd-sized host-visible memory is uploaded, whole and by page'],
-  // VK4 backlog easy wins: Godot's refused bind group once froze every window (docs/backlog.md "Godot on Venus").
+  // VK4 backlog easy wins: Godot's refused bind group once froze every window (https://github.com/gbl08ma/waarm64/issues/67).
   ['refused', 'a device whose bind groups WebGPU refuses leaves the others\' submits and fences alone'],
 ] as const) {
   test(`two devices: ${what}`, { skip, timeout: 60_000 }, async (t) => {

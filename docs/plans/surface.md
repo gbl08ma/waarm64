@@ -136,7 +136,7 @@ paths (`{ stored?, overlay?, size, … }`) instead of a device.
   arrows move a cursor cell, Enter pins.
 - `web/app/ui/FloatingWindow.svelte` (+ `floating-frame.svelte.ts`): a movable, resizable window over the page that
   never takes the focus from the screen, kept in the window, its place remembered under a settings key. The on-screen
-  keyboard keeps its own frame (its sizes follow its layout); moving it onto this one is a backlog line.
+  keyboard keeps its own frame (its sizes follow its layout); moving it onto this one isn't built ([the page issues](https://github.com/gbl08ma/waarm64/issues?q=is%3Aissue+state%3Aopen+label%3Apage)).
 - `web/app/SurfaceWindow.svelte` and small parts (the legend, the details): the disk's name, the overlay picker, the
   grid, "1 square = …", live or not (Refresh), the hover line, the pinned range.
 - `web/app/surface-look.ts` (counts → looks), `web/app/surface-source.ts` (`SurfaceSource`: `surface(cells)`,
@@ -159,7 +159,7 @@ paths (`{ stored?, overlay?, size, … }`) instead of a device.
    (a stored disk and overlays of other sizes made in the store) and one with Debian (the overlay's cells appear and
    flash as the guest writes); docs.
 4. **Images:** a qcow2's allocated clusters; a URL disk's kept blocks. Each only if it's cheap and needs no prompt;
-   otherwise a backlog line.
+   otherwise an issue.
 5. An out-of-context review, its fixes, the CI layers, PLAN.md.
 
 ## 5. Validation

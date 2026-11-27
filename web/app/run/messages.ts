@@ -41,7 +41,7 @@ export function inUse(e: unknown) {
   return false;
 }
 
-/** The standing note: other browsers may work in part (their pass is in docs/backlog.md); Firefox's private windows refuse OPFS (`hasOpfs`: the store and the overlays are in memory). */
+/** The standing note: other browsers may work in part (their pass is in https://github.com/gbl08ma/waarm64/issues/167 and https://github.com/gbl08ma/waarm64/issues/168); Firefox's private windows refuse OPFS (`hasOpfs`: the store and the overlays are in memory). */
 export function standingNote(opfs: boolean): Said {
   if (!opfs) return msg('machine:messages.noStorage');
   const brands = navigator.userAgentData?.brands ?? [];

@@ -1743,7 +1743,8 @@ impl Server {
                 ..
             } => {
                 // Twice a session, four a minute from everyone: past them an empty `items`, so the checker hears at
-                // once that this server can't say (final review, finding 7; not closed: docs/backlog.md).
+                // once that this server can't say (final review, finding 7; not closed:
+                // https://github.com/gbl08ma/waarm64/issues/223).
                 let n = self.ids_asked.entry(from).or_default();
                 while (self.ids_answered.front())
                     .is_some_and(|t| now.saturating_duration_since(*t) >= IDS_WINDOW)

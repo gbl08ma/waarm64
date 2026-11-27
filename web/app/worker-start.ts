@@ -232,7 +232,8 @@ export const ioOf = (plan: Plan, m: StartMessage, machine: Machine, devices: Dev
 /**
  * Firefox's engine (its `InternalError`, which V8 lacks). The compile worker only pays off through V8's
  * process-wide module cache; SpiderMonkey has none, so there it would add a copy of every module, and its
- * process holds ~16K modules' code at most (it throws "out of memory": docs/backlog.md).
+ * process holds ~16K modules' code at most (it throws "out of memory":
+ * https://github.com/gbl08ma/waarm64/issues/168).
  */
 const spiderMonkey = 'InternalError' in globalThis;
 

@@ -388,11 +388,13 @@ configuration (ABI 30, [abi.md](abi.md) "M8 phase C: snapshots"). The host copie
   steps; Alpine's userspace benchmark takes 1.1 M fewer of its 10.8 G, exactly the steps of a run
   whose TLBs are only flushed at the same points (`Vm::flush_tlbs`; `alpine-user-snapshots` in
   `tests/steps.txt`). Saving the TLBs instead was not tried: their entries hold host addresses,
-  which a file must not supply.
+  which a file must not supply, so each would be re-validated against the page tables at restore, most of a walk.
 - **Buffers the backends hold** (receive buffers of net and console, input's event buffers) are
   in flight when the state is saved. Each queue keeps the heads of its in-flight chains in the
   order they were posted; a restore walks them again in the restored RAM and posts them to the
-  request ring, so new backends hold them as the old ones did and need no state for it.
+  request ring, so new backends hold them as the old ones did and need no state for it. A held chain the guest
+  overwrote (it changed a buffer it had given a device) makes the machine unsaveable until that queue is reset
+  (`vm_snapshot_size` = `u64::MAX`): only a broken guest does it.
 - **Time:** deterministic, the step count and skipped ticks continue. Realtime, the clock
   continues from its saved reading (`Clock::base`), so the counter doesn't jump and timers that
   were due fire at once; it **stands at that reading until a vCPU first runs** (`Clock::start`, in
@@ -545,19 +547,24 @@ container is streamed both ways (RAM is up to GiBs) and knows nothing of the cor
   snapshot when restored and a suspended machine at its start (dropped, the machine booting, with the note
   [Couldn't resume the suspended machine](ui:machine:worker.notResumed)).
   A state of this version must name the machine's devices exactly (`slotsOf`) and its vCPU features (`cpu`).
-- **Out:** `showSaveFilePicker` (called on the click), else a Blob download: the machine worker posts the frames to
-  the page as they are written (`snapshot-chunk`, each copied into a buffer the page gave back, `snapshot-spare`), the
-  page copies each into a Blob at once and gives the buffer back. For the desktop's 679 MB file the
-  renderer holds ~600 MiB more until the save ends and the browser's blob storage the file (~685 MiB) until the URL
-  is revoked 60 s later (the SNAPZ track's loop 4, staging through OPFS, is to replace both: docs/backlog.md): a big
-  snapshot taken every few seconds piles up in the browser's blob storage (tools space them out:
-  `bench/gpu/snapshot-3d.ts`). **In:** a `File` (a Blob) read in 4 MiB slices, four ahead; a stream as it comes.
+- **Out:** a file save is staged through OPFS during the pause, then copied into the picked file
+  (`showSaveFilePicker`, called on the click) or downloaded as the staging file itself ([frontend.md](frontend.md)
+  "Snapshots"). The copy after the resume took 1.4 s for the desktop's 680 MB beside the running guest, 0.7 s on an
+  idle browser: Blob slices written by the browser, file to file; nothing faster was found from the page. A desktop
+  save adds ~190-240 MiB while it runs (the pool's six instances and, for a 3D machine, its read-back state: 109 MB of
+  BLOB contents held through the save), and a picked file's copy ~310 MiB (its Blob writes in the renderer's
+  accounting; bench/boot/REPORT.md "SNAPZ loop 4"). Without room or OPFS the save writes directly: to the picked
+  file's stream, or a Blob download, the machine worker posting the frames to the page as they are written
+  (`snapshot-chunk`, each copied into a buffer the page gave back, `snapshot-spare`), the page copying each into a
+  Blob at once and giving the buffer back. That way, for the desktop's 679 MB file the renderer holds ~600 MiB more
+  until the save ends and the browser's blob storage the file (~685 MiB) until the URL is revoked 60 s later.
+  **In:** a `File` (a Blob) read in 4 MiB slices, four ahead; a stream as it comes.
 - **Versions** (the user's call, 2026-10-01): the core's state has a format version of its own (`snapshot::VERSION`,
   [abi.md](abi.md) "M8 phase C"), bumped when a saved field changes and pinned by a unit test of a fixed machine's
   bytes, **not the wasm's input hash**: that would void every snapshot at every core change, the JIT's too, which
   never changes what is saved. The header's `abi` is recorded, not checked. A restore reads its own version only
   (`snapshot_version`; ABI 69 removed `snapshot_version_min` and the older versions' readers): another is refused;
-  there is no migration (backlog "Snapshots"). So a file loads into another build of the core with
+  there is no migration ([#215](https://github.com/gbl08ma/waarm64/issues/215)). So a file loads into another build of the core with
   the same state version, which is what benchmarks start from ([benchmarking.md](benchmarking.md) "Starting from a
   snapshot"; `tests/snapshot.test.ts` "a snapshot loads into another build of the core…").
 - **The base's identity** (on the disk pins above): a chosen file's name, size and modification time, a URL's path,
@@ -647,7 +654,8 @@ from it at boot (`hctosys`).
   4, two interleaved x16 chips: commands in both 16-bit halves, status and identifiers read
   back in both), with the commands [abi.md](abi.md) lists; operations complete at once, and
   programming stores the data as QEMU does. Every access, array-mode reads included, goes
-  through `vm::Io` (a boot reads the store a few times). The host copies the saved bytes in
+  through `vm::Io` (a boot reads the store a few times; a guest reading it in a loop would need measuring). There is
+  no lock state: every block is unlocked. The host copies the saved bytes in
   and out through `vm_flash`. The bare-metal `flash` test checks it on QEMU and hvf too.
 - **fw_cfg** (`0x0902_0000`): QEMU's MMIO interface without DMA: the signature, the ID, the
   file directory and the host's named files. Linux's `qemu_fw_cfg` shows them under

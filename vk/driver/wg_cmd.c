@@ -3057,7 +3057,7 @@ wg_CmdBlitImage2(VkCommandBuffer commandBuffer, const VkBlitImageInfo2 *info)
    VK_FROM_HANDLE(wg_image, src, info->srcImage);
    VK_FROM_HANDLE(wg_image, dst, info->dstImage);
    if ((src->fmt->flags | dst->fmt->flags) & (WG_FMT_DEPTH | WG_FMT_STENCIL))
-      return; /* depth blits: not yet (docs/backlog.md) */
+      return; /* depth blits: not yet (https://github.com/gbl08ma/waarm64/issues/109) */
    const bool s3 = src->vk.image_type == VK_IMAGE_TYPE_3D, d3 = dst->vk.image_type == VK_IMAGE_TYPE_3D;
    for (uint32_t i = 0; i < info->regionCount; i++) {
       const VkImageBlit2 *r = &info->pRegions[i];

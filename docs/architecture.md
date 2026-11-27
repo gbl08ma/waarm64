@@ -117,7 +117,7 @@ wasm64 core was free there), B +31–40%, D +26–32%.
 - **The core is built without `simd128`**: with it, the pinned nightly miscompiled the JIT's
   register-mask code three times (LLVM's wasm backend combines `<32|64 x i1>` bitcasts in the
   wrong order, llvm/llvm-project#226741). Nothing needs it: the JIT's SIMD128 comes from our own
-  encoder. How to turn it on safely is in [backlog.md](backlog.md).
+  encoder. How to turn it on safely is in [#16](https://github.com/gbl08ma/waarm64/issues/16).
 - TypeScript runs without a build step in Node (Node runs `.ts` directly): erasable syntax only. The browser gets it
   through Vite (the dev server compiles per request; `npm run dist` bundles; docs/frontend.md "The build").
 
@@ -131,7 +131,7 @@ What could still bound the design, each with where it's measured or handled:
   one code cache, so each module is compiled once ([jit.md](jit.md) "Sharing").
 - **The host's core topology bounds parallel SMP:** past the host's performance cores (4 on the M4), vCPU workers that
   sleep and wake land on efficiency cores and scaling flattens. The default vCPU count has to account for it
-  ([backlog.md](backlog.md)).
+  ([#136](https://github.com/gbl08ma/waarm64/issues/136)).
 - **FP exactness** costing more than expected: it is confined to slow paths, and TestFloat and the differential test
   catch regressions ([cpu.md](cpu.md)).
 - **The guest RAM ceiling:** memory 0 holds at most 3 GiB of RAM. Past it, spill memories serve as NUMA nodes

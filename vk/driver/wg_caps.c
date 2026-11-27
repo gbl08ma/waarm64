@@ -477,7 +477,8 @@ wg_caps_properties(struct vk_properties *p)
    p->maxComputeWorkGroupSize[1] = L->max_compute_workgroup_size_y;
    p->maxComputeWorkGroupSize[2] = L->max_compute_workgroup_size_z;
    p->subPixelPrecisionBits = 4;
-   /* Vulkan's minimums with sampleRateShading (interpolation at an offset isn't translated: docs/backlog.md). */
+   /* Vulkan's minimums with sampleRateShading (interpolation at an offset isn't translated:
+      https://github.com/gbl08ma/waarm64/issues/71). */
    p->minInterpolationOffset = -0.5f;
    p->maxInterpolationOffset = 0.4375f;
    p->subPixelInterpolationOffsetBits = 4;
@@ -594,8 +595,9 @@ wg_caps_properties(struct vk_properties *p)
     * `runXfb`). */
    p->transformFeedbackQueries = true;
 
-   /* maintenance5 (VK4 T24): no early fragment tests (docs/backlog.md "Rendering"), no points as polygons, lines of
-    * one pixel by WebGPU's rule (not a parallelogram); a swizzle of ONE on depth reads 1 (the view's mapping). */
+   /* maintenance5 (VK4 T24): no early fragment tests (https://github.com/gbl08ma/waarm64/issues/109), no points
+    * as polygons, lines of one pixel by WebGPU's rule (not a parallelogram); a swizzle of ONE on depth reads 1
+    * (the view's mapping). */
    p->earlyFragmentMultisampleCoverageAfterSampleCounting = false;
    p->earlyFragmentSampleMaskTestBeforeSampleCounting = false;
    p->depthStencilSwizzleOneSupport = true;

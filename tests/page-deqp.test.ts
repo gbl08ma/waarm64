@@ -5,7 +5,7 @@
 // The lists are sampled unless WAARM64_DEQP_FULL=1 (`ci-deqp.sh --full`): every STRIDE-th case of each group (the name's
 // second to fourth parts) from an offset of its own drawn from a seed, at least one a group, in the list's order, so
 // runs together cover the lists; the seed is printed, and WAARM64_DEQP_SEED=<n> runs that sample again. A case that
-// fails in a sample is looked into at once, or filed in docs/backlog.md and taken out of the list.
+// fails in a sample is looked into at once, or filed as an issue and taken out of the list.
 // Timing cases (TIMING: `flush_finish`, whose calibration's draw times jump on a busy host) are taken out of the lists,
 // every one run (a group of its own each, a sample takes them all anyway) after the list, alone: one dEQP process, once
 // no other machine runs (deqp-run.ts LATE, LATE_GO=stdin).

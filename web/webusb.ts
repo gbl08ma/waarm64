@@ -514,7 +514,7 @@ export class WebUsbPassthrough implements UsbDevice {
       return;
     }
     if (t.type === 'isoch') {
-      // Isochronous transfers aren't passed through (docs/backlog.md "USB").
+      // Isochronous transfers aren't passed through (https://github.com/gbl08ma/waarm64/issues/254).
       const o = this.outOrder(t.ep);
       o.add(td);
       o.finish(td, { code: 'error', actual: 0 });

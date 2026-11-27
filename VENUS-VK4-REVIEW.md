@@ -5,26 +5,26 @@ made, its pointers null), B1, B5 (slots past WebGPU's never set as vertex buffer
 (a one-level depth cube), B3 (the import freed first), B6 (what any stage compares is depth in all), B7 (host-visible memory
 past its heap with the arena's room is had, a blob that can't be mapped reads zeros), C1, C2, C3, D1, D2, D3, D5, D6 (six times a
 stage's, as Vulkan's table), and the refusal half of B4; A1, B1 to B3, B5 to B7, C1 and C2 with a test seen failing, B3 through
-the patch alone. B8, D4 and the rest of B4 are in the backlog ("What R7's limits leave"); D7's test export stays beside the
-module's other `wgt_` ones.
+the patch alone. B8, D4 and the rest of B4 are in [#121](https://github.com/gbl08ma/waarm64/issues/121); D7's test
+export stays beside the module's other `wgt_` ones.
 
 **The review of R1 to R4 itself** (a fresh agent, static, on the local branch `review/vk4-r1-r4`, 16 findings): fixed C1 (a crop of
-a 3D image's slices), C2 narrowed (entries come back only from a full, stalled queue, one at a time; what's left is in the
-backlog), D1 (attachments have the copies a crop needs), D2 (each dummy binding its own range), D3, D4 (a fan's room apart from its
-range), D5, D6, D7, D8, W1, W3, M1 (its comment) and M2. D1, D2, D3, D8 and W3 with a test seen failing; C1, D4 to D7, W1 and M2's
-context half without one of their own. W2 and M3 are in the backlog ("Usage scopes' leftovers").
+a 3D image's slices), C2 narrowed (entries come back only from a full, stalled queue, one at a time; what's left is in
+docs/devices.md "Venus"), D1 (attachments have the copies a crop needs), D2 (each dummy binding its own range), D3,
+D4 (a fan's room apart from its range), D5, D6, D7, D8, W1, W3, M1 (its comment) and M2. D1, D2, D3, D8 and W3 with a test seen failing; C1, D4 to D7, W1 and M2's
+context half without one of their own. W2 and M3 are in [#111](https://github.com/gbl08ma/waarm64/issues/111).
 
 Five fresh agents, each given only the repo, an area and its entry points, and docs/testing.md's neutral brief ("a
 careful static review for real defects: ..."), with no theories and no handover. The area was what VK4 changed after
 T1 (`9730e991..174b870`: T2–T12, T18, T19). It was static only: no reviewer built or ran anything. The findings below
 are the reviewers' own, lightly edited, each with an id (area letter and number). The kickoff's tasks R1–R5 cite
-these ids (VK4-KICKOFF.md "Tier 2b"). A finding moves to docs/backlog.md or a fix's commit as it is handled, and this
+these ids (VK4-KICKOFF.md "Tier 2b"). A finding moves to an issue or a fix's commit as it is handled, and this
 file goes when the last one does.
 
 **Fixed in the review's own commits** (each with its test, failing first): H2 (`Mem::ram_pa`), H3 (splits checked
 with Vulkan's reserve: definitions and the worker), O4 (`maxPushDescriptors`).
 **Fixed by VK4's tier 2b** (its row in VK4-KICKOFF.md): H1 (R1); R1, R4 (R2); R2, R3, R5 to R10, O7, O10 (R3; R9 and R10 without a test of their own, R10 warned rather than
-drawn); X1, X3 to X8 (R4; X6 and X7 without a test of their own, X6's clamp to the image's texels left in the backlog). C1 to C7 (R5; C7's `wg_compute_based` left in the backlog, "Samplers' leftovers"; the shader store's bounds without a corrupt store's test, only the check itself). O1 to O3, O8's pad, O11, O12, O14 to O17, H4 (R6; O15 and O17 without a test of their own, and O2's placeholder path, past what a test can drive of vkr, through `wgt_memory` on the driver alone). O5, O6, O8, O9 (R7; O9 where the adapter has the room). X2 didn't
+drawn); X1, X3 to X8 (R4; X6 and X7 without a test of their own, X6's clamp to the image's texels left in [#92](https://github.com/gbl08ma/waarm64/issues/92)). C1 to C7 (R5; C7's `wg_compute_based` left in [#103](https://github.com/gbl08ma/waarm64/issues/103); the shader store's bounds without a corrupt store's test, only the check itself). O1 to O3, O8's pad, O11, O12, O14 to O17, H4 (R6; O15 and O17 without a test of their own, and O2's placeholder path, past what a test can drive of vkr, through `wgt_memory` on the driver alone). O5, O6, O8, O9 (R7; O9 where the adapter has the room). X2 didn't
 reproduce (a drawn resolve into an sRGB view passes without the fix, its test kept); the worker now views both ends in the views' formats.
 
 | Id | Area |
@@ -373,7 +373,7 @@ or run. Ranked by severity: lost submit, then dropped work, then wrong pixels, t
   their old contents, and there is no warning.
 - **Trigger:** `vkCmdCopyImage2` between 4-sample 2D-array images with `layerCount >= 2`. dEQP-VK's
   `copy_and_blit.*.resolve_image.*copy_before_resolving*` on array images would meet it. It may also be behind the
-  backlog's "Multisampled image clears ... `multiple_layers`, `remaining_array_layers` read 0" if those cases copy
+  multisampled image clears whose `multiple_layers`, `remaining_array_layers` read 0 if those cases copy
   before reading back. Check before assuming.
 - **Fix:** loop the layers in `gpu_copy_tt` (or in `copyMultisampled`), `sz + l` and `dz + l`.
 - **Test:** extend `msCopyWithin` (`wgt_misc`, `t10_misc`) with a 2-layer 4-sample image: clear layer 0 to A and
@@ -389,7 +389,7 @@ or run. Ranked by severity: lost submit, then dropped work, then wrong pixels, t
   The comment says "Formats must match but for sRGB (bit patterns can't cross a draw)", but this is exactly the case
   where they don't cross.
 - **Trigger:** `vkCmdCopyImage2` between a 4-sample `*_SRGB` image and a 4-sample image of its UNORM twin, or a part
-  of either. The backlog's "3 sRGB-twin resolves not understood"
+  of either. The 3 sRGB-twin resolves VK4 T4 didn't understand
   (`image.mutable.*.b8g8r8a8_srgb_b8g8r8a8_unorm_draw_copy_resolve_mutable_color_att`: green and blue off by about
   0.26, no WebGPU error) fits this. A mid-grey channel of 0.5 decoded is 0.214, about 0.29 off, while channels at 0
   or 1 don't change.
@@ -806,8 +806,8 @@ When `vk_queue_init` fails (wg_device.c:626-629), `mem_cache` (made at :615) is 
   - Format list checks, EXTENDED_USAGE features, sample counts against `format_multisamples`, and multi-planar
     restrictions (2D, optimal, no external memory).
 - **Caps:** the Vulkan 1.2 and 1.3 required features are all set. The descriptor-limit shortfalls under Vulkan's
-  minimums are known and documented (docs/backlog.md:965). Address memory capped at `maxStorageBufferBindingSize` is
-  documented (vk/README.md "Device addresses").
+  minimums are known and documented ([#121](https://github.com/gbl08ma/waarm64/issues/121)). Address memory capped at
+  `maxStorageBufferBindingSize` is documented (vk/README.md "Device addresses").
 - **glue.c:** the exports pass sizes and ids through. `venus_resource_texture` handles a freed memory (VK_NULL_HANDLE).
 
 ## C: The translator and pipelines (vk/compiler/, wg_shader.c)

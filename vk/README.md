@@ -17,7 +17,7 @@ node --test tests/venus-share.test.ts      # presentation: a WebGPU texture into
                                            # (imports, the reverse: tests/venus-driver.test.ts's second test)
 node --test tests/page-venus.test.ts       # vkcube on the page, and the captures' frames (images/debian-vulkan/build.sh, images/vkframes/build.sh)
 scripts/ci-deqp-vk.sh                      # dEQP-VK's pass list on the page (images/deqp/build.sh vk)
-node bench/vulkan/dawn-frames.ts guest     # WebGPU samples in the desktop guest's Chromium (Dawn; not yet on Venus: docs/backlog.md)
+node bench/vulkan/dawn-frames.ts guest     # WebGPU samples in the desktop guest's Chromium (Dawn; not yet on Venus: https://github.com/gbl08ma/waarm64/issues/80)
 ```
 
 A failed build prints only the last lines of `target/vk/wasm-build.log`, which can be the protocol headers' warnings:
@@ -289,7 +289,7 @@ anchored one right (the M4), the translator anchors (`WGSL_SUBGROUP_ANCHOR`, wgs
 subgroup in the three's operands, `(subgroupAdd(1u) != 0u)`, which keeps Metal from hoisting them, and the shuffles as
 `subgroupShuffle` by the invocation's own index); where both are wrong, subgroups of one invocation (bench/vulkan/REPORT.md
 "VK3 L5", "VK4 backlog easy wins"). Anchored, the M4 passes 1,955 of the 2,081 subgroup and non-uniform derivative
-cases SwiftShader passes; the 94 left are float arithmetic (docs/backlog.md "What the device advertises").
+cases SwiftShader passes; the 94 left are float arithmetic ([#71](https://github.com/gbl08ma/waarm64/issues/71)).
 
 ## The parts
 
@@ -357,7 +357,7 @@ a guest through Mesa 26.3's Venus on: 26.2's leaves it out). Two memory types, e
   memory's bytes are in the arena (1,280 MiB of memory 1 with the module's own heap), which backs its heap (VK4 T19). An allocation past
   its heap, the largest GPUBuffer or the arena is refused; Venus's guest doesn't wait for that answer, imports' included, and an object vkr
   didn't make would end the context at its first use, so through vkr it is an empty memory (`memory_refused`, VK4 R6;
-  docs/backlog.md "Memory"), while host-visible memory past its heap with the arena's room is simply had. Three queue
+  [#124](https://github.com/gbl08ma/waarm64/issues/124)), while host-visible memory past its heap with the arena's room is simply had. Three queue
   families (VK4 T22; `wg_queue_families`, `?gpu=vkqueues=1` for the first alone): graphics, compute and transfer;
   compute and transfer; transfer, a queue each, every queue the WebGPU device's one: one order of submits, so
   ownership transfers between families are no-ops (barriers ignore family indices) and a semaphore between queues is
@@ -393,7 +393,7 @@ a guest through Mesa 26.3's Venus on: 26.2's leaves it out). Two memory types, e
   keys). The translator runs Mesa's `nir_vk_lower_ycbcr_tex` first (`wgsl_lower_ycbcr`): a sample through such a
   sampler becomes one sample of each plane (a cosited chroma's coordinate moved half a chroma texel, the sampler
   filtering it: implicit reconstruction), the plane's swizzle, the conversion's mapping, range and model; a plane past
-  the first is the binding's plane slot. Gaps: docs/backlog.md "YCbCr's gaps". The modifiers stay: Venus's WSI needs
+  the first is the binding's plane slot. Gaps: [#72](https://github.com/gbl08ma/waarm64/issues/72). The modifiers stay: Venus's WSI needs
   them.
 - **Memory**: a `VkDeviceMemory` is one `GPUBuffer` with every buffer usage (made at its first buffer bind; buffers
   are ranges of it, so they alias); an image is a `GPUTexture` of its own (its memory only says where its bytes would
@@ -553,7 +553,7 @@ a guest through Mesa 26.3's Venus on: 26.2's leaves it out). Two memory types, e
   before, `WAIT_BIT` too: the host can't wait for a completion; Venus's guest driver reads its feedback buffers, which
   the copies fill, instead). **Timestamps** are the GPU's where the adapter has `timestamp-query` (VK4 T46; the device
   asks for it), but on Apple's GPUs, where they are held (web/venus-host.ts: with them the M4 lost its device in 3 of
-  6 runs of dEQP's query cases, docs/backlog.md "Queries"): outside a render pass the end write of a compute pass of one invocation that does nothing (Metal writes none
+  6 runs of dEQP's query cases, [#108](https://github.com/gbl08ma/waarm64/issues/108)): outside a render pass the end write of a compute pass of one invocation that does nothing (Metal writes none
   for an empty pass) into the device's timestamp set; inside one the
   end of the WebGPU pass's part it is in (each part of a Vulkan pass whose commands write timestamps ends with a write:
   `begin_pass`), so every timestamp of a part reads its end, later than the commands before it, as Vulkan allows. A
@@ -815,7 +815,7 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   the key's `view`, a pipeline per layer as per view) outside the clip volume (x = 2w), so each layer's draw keeps that
   layer's primitives; a fragment stage reads `gl_Layer` as `wg_layer`. In the later layers an indirect draw that needs
   what only the first layer's pass prepares (a count's or a fan's tickets, draw parameters' places) isn't drawn (said
-  once), nor is a storing vertex stage's (its pre-pass ignores `gl_Layer`: docs/backlog.md "Rendering").
+  once), nor is a storing vertex stage's (its pre-pass ignores `gl_Layer`: [#109](https://github.com/gbl08ma/waarm64/issues/109)).
 - **Feedback loops** (VK4 T12; `feedback_copies` in wg_cmd.c): Vulkan lets an input attachment read an attachment of its
   own pass, and WebGPU refuses a texture written and sampled in one pass. Where a pass's attachment can be an input
   attachment (`OP_PASS_ATTS`, none otherwise: ordinary passes pay nothing), a draw reading one reads a copy (the input view's
@@ -994,12 +994,10 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   as for a padded image ("Compressed images that aren't whole blocks"); its own fetches are decoded too. Nothing is
   copied. `?gpu=vkskip=rgb9e5` makes views made after it the old way (A/B).
   `VK_IMAGE_CREATE_EXTENDED_USAGE_BIT`'s usage comes from the formats its views can have (`wg_view_formats_features`), and a
-  sampled image takes samples where its format renders. Not backed (docs/backlog.md "Views in another format's
-  leftovers"): shared and linear images, a block-size change, a multisampled copy between formats, a view format
+  sampled image takes samples where its format renders. Not backed ([#94](https://github.com/gbl08ma/waarm64/issues/94)): shared and linear images, a block-size change, a multisampled copy between formats, a view format
   WebGPU can't multisample, and within one render pass a write in one texture read in another.
 - **What Vulkan requires and isn't offered** (VK4 R7; `api.info.*`): `R32G32_SFLOAT` and `R32G32B32A32_SFLOAT` multisampled
-  (WebGPU multisamples neither, and they're mandatory attachments: docs/backlog.md "Sample counts Vulkan wants but WebGPU
-  lacks"); `textureCompressionBC` needs `texture-component-swizzle` (BC1's RGB formats read alpha 1 through a view's swizzle)
+  (WebGPU multisamples neither, and they're mandatory attachments: [#112](https://github.com/gbl08ma/waarm64/issues/112)); `textureCompressionBC` needs `texture-component-swizzle` (BC1's RGB formats read alpha 1 through a view's swizzle)
   and `shaderStorageImageExtendedFormats` needs `texture-formats-tier1` (its list has the 16-bit normalized formats): each
   off without them. `maxMemoryAllocationSize` is the adapter's `maxBufferSize` (a memory that large has what room is left
   for its pad): under Vulkan 1.3's 1 GiB on an adapter of WebGPU's default 256 MiB, as nothing can back more. Multi-planar
@@ -1223,11 +1221,14 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   asynchronously and backs sync-file ones itself, so a semaphore vkr's create refused would be a handle vkr never had,
   and the guest's next submit naming it killed its context ("failed to look up object … of type 5"). Chromium's own
   Vulkan device exports opaque fds though Venus offers none (its properties say 0): the guest's Mesa then hands back
-  fd 0, then -1 (`bench/vulkan/semfd.ts`; docs/backlog.md "Dawn in the guest's Chromium on Venus").
+  fd 0, then -1 (`bench/vulkan/semfd.ts`; [#80](https://github.com/gbl08ma/waarm64/issues/80)).
 - **Waits before their signal** (VK3 L6a): syncs are advertised as waiting before their signal, so Mesa's runtime
   hands every submit to the driver at once (no submit thread: vkr has one); a submit with a timeline wait that isn't
   met, by the value or by a submit already replayed that will signal it, is held, with every later submit of its
-  queue, and each queue's replayed in order once their waits are met: at the host's signal (`vkSignalSemaphore`), after
+  queue, and each queue's replayed in order once their waits are met (of dEQP-VK's `synchronization*.timeline_semaphore.
+  wait_before_signal.*`, 928 without geometry and tessellation in their names, the 26 that run since VK4 T33 offered
+  `vertexPipelineStoresAndAtomics` pass; the rest ask for tessellation whatever their stages):
+  at the host's signal (`vkSignalSemaphore`), after
   a submit that ran (it may signal another queue's wait: VK4 T22) or at the end of a completion. Binary waits are met in
   the queues' order, or held with a held submit that signals them. A submit of signals alone is held with the rest of its queue: Mesa's
   vkQueueWaitIdle and vkDeviceWaitIdle are such submits, and so is vkr's fence that retires a guest's ring fence, through
@@ -1238,7 +1239,7 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   that doesn't wait) is dropped from the submit's signals and waits (`wg_sync_finish`; VK4 T2): its completion called
   the freed sync's type through a stale pointer, a trap (`tests/venus-renderer.test.ts`: "function signature
   mismatch"; NVIDIA's "table index is out of bounds" in `wg_complete`, VK3 L9b, was likely it).
-- **Not yet** (docs/backlog.md "The Vulkan driver's gaps", with what dEQP-VK found): depth blits.
+- **Not yet** ([the Vulkan issues](https://github.com/gbl08ma/waarm64/issues?q=is%3Aissue+state%3Aopen+label%3Avulkan), with what dEQP-VK found): depth blits.
 
 ## Pipelines made asynchronously
 
@@ -1255,7 +1256,7 @@ compositor's submit that samples a Vulkan image waits until no submit is held (w
 `VenusGpu.idle`), so a frame isn't copied before the submits that draw it. A pipeline WebGPU refuses is made again
 at once for its error (an invalid pipeline, as before); one a command needs before it's ready without a held submit
 (made after its submit's encoder began: the driver never does) is made at once (`syncPipelines` counts them; 0 in the
-tests). `?gpu=vkpipelines=sync` makes them at once, as before, for A/B; `?gpu=vkpipedelay=<ms>` makes each one ready that much
+tests, never seen in a program). `?gpu=vkpipelines=sync` makes them at once, as before, for A/B; `?gpu=vkpipedelay=<ms>` makes each one ready that much
 later than WebGPU says (VK3 L4e: a cold compile on a host whose GPU cache is warm, e.g. the M4's Metal, whose cache
 outlives Chrome's profiles). tests/venus-gpu.test.ts checks the order on a
 stand-in device; tests/venus-driver.test.ts that the driver's program draws right with them held.
@@ -1272,7 +1273,13 @@ for (its rendering formats or subpass); the key is then `draw_key`'s, as a draw'
 program's variant without bound sets. A pipeline whose key a draw's dynamic state decides (extended dynamic state:
 topology, cull, depth and stencil tests, blending or vertex strides dynamic, as DXVK's, Zink's), or of tessellation or
 geometry, is made at its draw only. A draw that differs makes its own, as before; the worker counts those made so and
-those a draw set (`premade`, `premadeUsed` in `venusPipelines`).
+those a draw set (`premade`, `premadeUsed` in `venusPipelines`). Godot's editor (VK4 T49) makes 51 so and draws with
+24: with Metal's cache emptied its submits wait half as long for pipelines (13.9 → 8.3 s held, medians of 3) but its
+start ends no sooner (the last held submit at 44.8 → 47.6 s, rounds overlapping), the guest's own work being the
+start's length; with Metal's cache warm, 44.7 → 42.7 s, overlapping. So a count kept per program, to premake only for
+one that draws most of what it makes, would pay for neither. Of vkQuake's 18 drawn pipelines, 10 have keys the
+creation's guesses miss (not looked into: the sampler variant, a dynamic state's default, a read-only depth layout),
+which matters only if premaking ever wins.
 
 ## The shader cache
 

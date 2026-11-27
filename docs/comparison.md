@@ -39,7 +39,7 @@ still to measure. No number goes in without a run behind it
 | Guest | **AArch64 (arm64), whole machine** | aarch64 user space on a wasm kernel (riscv64 until 2026-11-19) | i386 user space, syscalls emulated | i686 PC | x86_64 / i686 / riscv64 |
 | Kernel | **The distribution's own, unmodified**, through UEFI (EDK2) or direct | unkernel's own wasm build | none (CheerpX is the "kernel") | the guest's own | the guest's own |
 | Drivers | Upstream: virtio, xHCI, PL011, GICv3 (no custom guest drivers) | custom paravirtual (kwblk, kwnet, kwfb…) | n/a | legacy PC + virtio | virtio |
-| Unmodified binaries of the ecosystem | **arm64**: the platform of phones, Macs, Raspberry Pis and cloud servers; proprietary arm64 builds (Steam's official aarch64 client starts; its CEF UI has glitches: backlog) | arm64 user programs, as packaged by Alpine and Debian (no kernel modules, no other kernel) | i386 only | i386 only | yes, per ISA |
+| Unmodified binaries of the ecosystem | **arm64**: the platform of phones, Macs, Raspberry Pis and cloud servers; proprietary arm64 builds (Steam's official aarch64 client starts; its CEF UI has glitches: [#40](https://github.com/gbl08ma/waarm64/issues/40)) | arm64 user programs, as packaged by Alpine and Debian (no kernel modules, no other kernel) | i386 only | i386 only | yes, per ISA |
 | CPU | JIT to wasm (blocks, regions), interpreter and block interpreter tiers; crypto extensions | interpreter + block JIT, user code only; atomics and system instructions interpreted | interpreter + JIT | JIT | interpreter (*unverified*) |
 | SMP | **up to 8 vCPUs, a worker each, real atomics** | up to 4 CPUs on the page by default (`?cpus=`), a worker each; one in the SDK and CLI | *unverified* | no | not stated |
 | RAM | up to 16 GiB (past 3 GiB as NUMA nodes) | 48 MiB default | — | — | — |
@@ -88,8 +88,7 @@ The measured rows (the prompt, the bytes, `apk`, the memory): [bench/demo/REPORT
 155 headless, a fresh profile per run, medians of 3; `node bench/demo/run.ts`). They are the demos as shipped: ours
 is the deployed Desktop Demo (Arch with sway, a first boot from a remote disk). The Alpine demo's numbers are
 "DEMO loop 3" (a local build served offline through a modelled link) and "DEMO's end" (the deployed demos, single runs
-of an ad-hoc check, not the bench's medians: so the rows aren't like for like with the peers' yet; backlog "A bench
-target for the deployed demos").
+of an ad-hoc check, not the bench's medians: so the rows aren't like for like with the peers' yet; [#152](https://github.com/gbl08ma/waarm64/issues/152)).
 
 The demos' goal (the DEMO track's, 2026-11-18): a `#` prompt within ~5 s of the click, at most ~30 MB with the page's
 code; a target, not a gate (Alpine shipped either way). Buildroot was ruled out as the networked demo: it has no
@@ -107,7 +106,7 @@ AES-128-GCM 232 MB/s with the crypto extensions.
   store") now starts the Alpine demo from a template snapshot, with the same install-as-you-type and the demo network
   (its numbers in §3).
 - **Browsers:** unkernel runs on Firefox, Safari and iOS; we are Chromium first (decisions.md): Firefox runs smaller
-  guests, more slowly and without some features (WebUSB), and making it steadier is in the backlog ("Firefox").
+  guests, more slowly and without some features (WebUSB), and making it steadier is [#168](https://github.com/gbl08ma/waarm64/issues/168).
 - **Memory:** a 48 MiB guest on a native-wasm kernel is smaller than any whole machine. Not a goal for us.
 - **Syscall-heavy work:** unkernel's kernel is native wasm, so a syscall is a call, not an exception; WebVM's
   CheerpX has no guest kernel and answers Linux syscalls in its engine, likely cheaper than ours too (not measured). They claim fork
@@ -156,4 +155,4 @@ out". Always with a date and a link to this page's sources.
 - container2wasm: https://github.com/container2wasm/container2wasm; qemu-wasm: https://github.com/ktock/qemu-wasm
 - Wisp: https://github.com/MercuryWorkshop/wisp-protocol (CC-BY-4.0)
 - Ours: [graphics.md](graphics.md) "Testing" (dEQP), [benchmarking.md](benchmarking.md), [networking/](networking/adapters.md),
-  [usb.md](usb.md), [machines.md](machines.md), backlog.md (Steam)
+  [usb.md](usb.md), [machines.md](machines.md), [#40](https://github.com/gbl08ma/waarm64/issues/40) (Steam)

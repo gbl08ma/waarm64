@@ -13,14 +13,12 @@
   `triage.json`, `units.json` (the split of docs/backlog.md at e04a6974, unchanged since), `assemble.py`,
   `migrate.ts`, the briefs.
 
+- **Loop 4 done**: the references switched (docs, code comments, test lists, CLAUDE.md, PLAN.md, the other tracks'
+  files, VK4's kickoff with the user's OK), the 19 doc units in their pages, docs/backlog.md deleted,
+  `tools/backlog-refs.ts` in the static checks, #315 and #316 filed from the two `ponytail:` markers left without an
+  issue. After the migration the user switched kinds to issue types and priorities to the Priority field (effd1e83).
+
 ## Next
 
-Loop 4:
-1. Move the 19 doc units into the pages their notes name. Their verdicts and notes are in `triage.json`
-   (`verdict: "doc"`).
-2. Switch the references to `docs/backlog.md` to issue URLs, using `map.json` to go from a backlog entry to its
-   issue. That covers about 25 docs, the 3 `ponytail:` markers, CLAUDE.md, docs/testing.md, docs/README.md, PLAN.md's
-   header and rows, and the open kickoffs and handovers. A reference to a stale, done or merged unit points to the
-   doc or to the issue it was merged into.
-3. Add a check (static checks) that fails on a remaining `backlog.md` reference.
-4. Delete docs/backlog.md, and update the memories that name it (backlog-hygiene).
+The track's end: the out-of-context review of tools/issue.ts and tools/backlog-refs.ts, its findings fixed or filed,
+then PLAN.md's row set to done and this file and the kickoff deleted.

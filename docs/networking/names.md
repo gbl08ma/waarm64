@@ -864,7 +864,7 @@ only compiled services fetched, the asks for a pending proof against N0b's 80 st
   other), `bench/net/names-window.ts` (a first sync's rate through the rig's derper behind a shaper),
   `bench/net/room-scale.ts names` (1,000 members, 20 servers, 5,000 names, junk against the bound),
   `net/ts/examples/names-memory.rs` (where a server's memory goes), `bench/net/names-long.ts` (two Node processes on
-  the shipped module and the page's agent on the public services, for days: docs/backlog.md).
+  the shipped module and the page's agent on the public services, for days: [#221](https://github.com/gbl08ma/waarm64/issues/221)).
 
 ## Why it is this way
 

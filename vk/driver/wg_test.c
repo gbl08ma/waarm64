@@ -5362,7 +5362,7 @@ t39_ms_bits(VkCommandBuffer cmd, VkBuffer out)
  *    texel at 0, 4: A, B.
  * 56 (X5): 4 samples of RGBA8_SRGB cleared to 0.5 (bytes 188), copied into RGBA8_UNORM, resolved: 188 at 0.
  * 57 (X8): 4 samples of R5G6B5 cleared to red, copied into B5G6R5, resolved: the same bits (0xf800) at 0.
- * 59 (backlog "Copies WebGPU refuses"): 4 samples of RGBA8 cleared to A, copied into R16G16_UINT, resolved: A's bytes at 0.
+ * 59 (https://github.com/gbl08ma/waarm64/issues/93): 4 samples of RGBA8 cleared to A, copied into R16G16_UINT, resolved: A's bytes at 0.
  * 63, 64 (the review of R1 to R4's D3, W3): two layers of 4 samples of RGBA8_SRGB, R5G6B5, the first cleared and copied
  * to the second within the image, that resolved: 188 a channel, 0xf800 at 0. */
 static int
@@ -6489,7 +6489,7 @@ t43_push_layers(const uint32_t *fs, uint32_t fs_words, VkCommandBuffer cmd, VkBu
 }
 
 /*
- * VK4 T44's warm-up (docs/backlog.md "Rendering", the review of T41 to T43), wgt_misc's scenario 124 (`feedback_vs`:
+ * VK4 T44's warm-up (https://github.com/gbl08ma/waarm64/issues/109, the review of T41 to T43), wgt_misc's scenario 124 (`feedback_vs`:
  * tests/venus/t44/fan.vert; `fs`: tests/venus/t44/fan-past.frag): two triangle fans in one pass of a 16x16 RGBA8 image
  * cleared to zeros, each through indices of their own. The first, vkCmdDrawIndirect of the left half's quad, binds a
  * 4100x4096 RG32_SFLOAT storage image the stage reaches as words (135 MB: past the test device's

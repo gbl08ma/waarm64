@@ -82,7 +82,7 @@ test('a machine running in another tab: a second tab says so at once, and starts
 });
 
 test('Open disk… and From a disk image… pick through the file picker: the machine keeps the file\'s handle', { timeout: 120_000 }, async () => {
-  // An on-disk profile: Chromium 153 crashes reading a file handle back from IndexedDB off the record (docs/backlog.md).
+  // An on-disk profile: Chromium 153 crashes reading a file handle back from IndexedDB off the record (https://github.com/gbl08ma/waarm64/issues/172).
   const context = await chromium.launchPersistentContext(mkdtempSync(join(dir, 'profile-')), { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
   try {
     const page = context.pages()[0] ?? await context.newPage();

@@ -21,7 +21,7 @@ obligations (publish the configs, point to the sources), separate from waarm64's
   `images/Containerfile` (the same Debian, pinned by its amd64 digest) is x86_64 and builds
   only `kvm-unit-tests` (Debian's `gcc-aarch64-linux-gnu`), under qemu-user on the dev VM, where
   `unshare` fails (every image's input key hashes that file, so changing it rebuilds them all:
-  [backlog.md](backlog.md) "Tests and tools"). **Prefer the
+  [#301](https://github.com/gbl08ma/waarm64/issues/301)). **Prefer the
   native container on the dev VM** (the user, M7: development stays on the M4). The Alpine-based
   images (`linux`, `alpine`, `alpine-user`, `alpine-node`, `alpine-gl`, `alpine-demo`, `linux-crypto`, `linux-gpu`, `linux-snd`, `linux-usb`, `linux-usbhost`, `litmus`, `fptest`) build natively in Alpine's own arm64 container
   (`USERLAND_CONTAINER`, pinned by digest), as its root, needing neither qemu-user nor unshare.
@@ -104,8 +104,7 @@ GFXReconstruct's replay is built for Debian 13 (arm64, at images/'s snapshot dat
 (<https://arch.bens.haus/>, listed on <https://ports.archlinux.page/aarch64/>): Arch's own PKGBUILDs built for ARMv8.0-A
 and later (our CPU's baseline), mirrored `[core]` and `[extra]`, with Arch's own kernel configuration (`linux`, not a
 board kernel). Until 2026-10-16 it was Arch Linux ARM (archlinuxarm.org); we moved because ALARM's generic
-`linux-aarch64` is built for boards and debugging (`DEBUG_PREEMPT` on, no `SND_VIRTIO`: [backlog.md](backlog.md) "A
-guest kernel"), while the port's `linux` 7.2.9.arch1 has `DEBUG_PREEMPT` off and `virtio_snd` as a module.
+`linux-aarch64` is built for boards and debugging (`DEBUG_PREEMPT` on, no `SND_VIRTIO`: [#185](https://github.com/gbl08ma/waarm64/issues/185)), while the port's `linux` 7.2.9.arch1 has `DEBUG_PREEMPT` off and `virtio_snd` as a module.
 
 - **The base container** (`images/arch/base.sh [--rebuild]`, ~3 min once; the others call it): the port's latest
   bootstrap tarball (named on its home page with its SHA256, which is checked; cached in `target/arch`) imported into

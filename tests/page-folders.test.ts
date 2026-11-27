@@ -252,7 +252,7 @@ async function debianMachine(page: Page, folders: { id: string; readOnly: boolea
 
 test('the guest: the mount, owners, a workload, a folder attached while running, another mount point', { skip: skipGuest, timeout: 20 * 60_000 }, () => withDebianLock(async () => {
   const dir = mkdtempSync(join(tmpdir(), 'waarm64-profile-'));
-  const context = await chromium.launchPersistentContext(dir, { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' }); // on disk: docs/backlog.md "A handle read back off the record"
+  const context = await chromium.launchPersistentContext(dir, { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' }); // on disk: https://github.com/gbl08ma/waarm64/issues/35
   const page = await context.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
@@ -371,7 +371,7 @@ test('snapshots: restored with a file open for writing, and into a folder detach
   const fixture = await storedFixture(browser, base, STORED.shares(), FOLDERS_QUERY);
   await withDebianLock(async () => {
     const dir = mkdtempSync(join(tmpdir(), 'waarm64-profile-'));
-    const context = await chromium.launchPersistentContext(dir, { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' }); // on disk: docs/backlog.md "A handle read back off the record"
+    const context = await chromium.launchPersistentContext(dir, { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' }); // on disk: https://github.com/gbl08ma/waarm64/issues/35
     const page = await context.newPage();
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));

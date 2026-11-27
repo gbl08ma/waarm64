@@ -2,7 +2,7 @@
 
 Every track, with its state and where its outcome is written. This is an index only. What exists and how it works is in
 [`docs/`](docs/README.md), the decisions that bind are in [docs/decisions.md](docs/decisions.md), the numbers are in
-`bench/*/REPORT.md`, the loose ends are in [docs/backlog.md](docs/backlog.md), and how work runs is in
+`bench/*/REPORT.md`, the open work is in [GitHub issues](https://github.com/gbl08ma/waarm64/issues) ([docs/issues.md](docs/issues.md)), and how work runs is in
 [CLAUDE.md](CLAUDE.md). An open track's progress goes in its `<TRACK>-HANDOVER.md`. When a track opens or ends, its row
 here changes, and that row stays one line: a name, a state with a date, and links (about 200 characters at most).
 
@@ -32,7 +32,7 @@ here changes, and that row stays one line: a name, a state with a date, and link
 | virtio-gpu 2D (G0, G1) | Done 2026-10-02 | [graphics.md](docs/graphics.md) |
 | Disk I/O speed | Done 2026-10-08 | `bench/io/REPORT.md` |
 | 3D through virgl on WebGL2 (G2–G4) | Done 2026-10-10 | [graphics.md](docs/graphics.md) |
-| G5: 3D's breadth | Partly done 2026-10-19, the rest open (no kickoff) | [graphics.md](docs/graphics.md) "Testing", [backlog.md](docs/backlog.md) |
+| G5: 3D's breadth | Partly done 2026-10-19, the rest open (no kickoff) | [graphics.md](docs/graphics.md) "Testing", [the graphics issues](https://github.com/gbl08ma/waarm64/issues?q=is%3Aissue+state%3Aopen+label%3Agraphics) |
 | Audio | Done 2026-10-12 | [audio.md](docs/audio.md) |
 | Video decoding | Done 2026-10-15 | [graphics.md](docs/graphics.md) "Video" |
 | Networking and the tailnet client | Done 2026-10-16 | [networking/tailnet.md](docs/networking/tailnet.md), [plans/networking.md](docs/plans/networking.md) |
@@ -67,13 +67,13 @@ here changes, and that row stays one line: a name, a state with a date, and link
 | The user's QA findings (QA) | Done 2026-11-18 | [frontend.md](docs/frontend.md) (Home, the message bar, a machine that stops by itself), [machines.md](docs/machines.md) §4.4, §5.1 "Unrestorable", [i18n.md](docs/i18n.md) "Markers" |
 | CI in tiers and faster lanes (CI) | In progress since 2026-11-18 | [CI-KICKOFF.md](CI-KICKOFF.md), [CI-HANDOVER.md](CI-HANDOVER.md), [plans/ci-tiers.md](docs/plans/ci-tiers.md) |
 | The first demo (DEMO) | Done 2026-11-20 | [machines.md](docs/machines.md) §6, [remote-disks.md](docs/remote-disks.md) "Publishing the demos", [demo-network.md](docs/networking/demo-network.md), [comparison.md](docs/comparison.md), `bench/demo/REPORT.md` |
-| The host code outside the page: review, performance, linters (HOST) | Done 2026-11-20 | [host-code.md](docs/host-code.md), [backlog.md](docs/backlog.md) "The host's code", `bench/boot/REPORT.md` "HOST" |
+| The host code outside the page: review, performance, linters (HOST) | Done 2026-11-20 | [host-code.md](docs/host-code.md), [the host-code issues](https://github.com/gbl08ma/waarm64/issues?q=is%3Aissue+state%3Aopen+label%3Ahost-code), `bench/boot/REPORT.md` "HOST" |
 | The backlog as GitHub issues (ISSUES) | In progress since 2026-11-27 | [ISSUES-KICKOFF.md](ISSUES-KICKOFF.md) |
 
 ## Proposed, not started
 
-The stable embedding API ([machines.md](docs/machines.md)); Firefox and Safari ([backlog.md](docs/backlog.md)).
+The stable embedding API ([machines.md](docs/machines.md)); Firefox and Safari ([#168](https://github.com/gbl08ma/waarm64/issues/168), [#167](https://github.com/gbl08ma/waarm64/issues/167)).
 | The introduction (INTRO) | Done 2026-11-22 | [frontend.md](docs/frontend.md) "The introduction" |
-| A page per connection, and its domains (DOMAINS) | Done 2026-11-21 | [frontend.md](docs/frontend.md) "The Home page", [names.md](docs/networking/names.md) "What the user sees", [backlog.md](docs/backlog.md) "DOMAINS" |
+| A page per connection, and its domains (DOMAINS) | Done 2026-11-21 | [frontend.md](docs/frontend.md) "The Home page", [names.md](docs/networking/names.md) "What the user sees", [the domains issues](https://github.com/gbl08ma/waarm64/issues?q=is%3Aissue+state%3Aopen+label%3Anetwork-p2p-domains) |
 | The move to waarm64.com (DOTCOM) | Done 2026-11-21 | [frontend.md](docs/frontend.md) "Deployed at waarm64.com" |
 | Mesa 26.3 on our virgl: GTK4 finds no EGL config (MESA-UPDATE) | Done 2026-11-22 (Arch's fixed Mesa; the demos rebuilt, not deployed) | [graphics.md](docs/graphics.md) "GTK4", [remote-disks.md](docs/remote-disks.md) "Deploying the demos" |

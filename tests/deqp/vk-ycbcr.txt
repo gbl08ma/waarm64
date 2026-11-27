@@ -4,7 +4,7 @@
 # what the device offers on every adapter), optimal tiling, compute and fragment stages, descriptor sets, with
 # filtering, misc and single_plane_copy.optimal; the copy group thinned to every second case. Of 3,209 candidates on
 # SwiftShader: 953 pass, 114 fail (plane views of another format of the plane's class and memory aliased by a
-# plane's image: docs/backlog.md "YCbCr"), the rest NotSupported (linear tiling, other formats, the explicit
+# plane's image: https://github.com/gbl08ma/waarm64/issues/72), the rest NotSupported (linear tiling, other formats, the explicit
 # reconstruction, render and storage usage of planes).
 dEQP-VK.ycbcr.conversion.g8_b8_r8_3plane_420_unorm.chroma_reconstruction.nearest.default_nearest_cosited_cosited_tiling_optimal
 dEQP-VK.ycbcr.conversion.g8_b8_r8_3plane_420_unorm.chroma_reconstruction.nearest.default_nearest_cosited_cosited_tiling_optimal_disjoint

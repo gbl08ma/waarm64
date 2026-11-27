@@ -125,7 +125,7 @@ Settled with the user, 2026-11-18; written down so it isn't looked up again.
   with Wisp v2's extension), IPv4 only. Frames to a server-side netstack reuse the local helper whole and give the
   guest TCP, UDP (DNS, NTP, QUIC) and ICMP, with no TCP stack or smoltcp in the page; the allowlist's work moves to
   the server's dial. A Wisp connection kind stays possible later, for users who bring their own unrestricted server
-  (backlog). If it's built: **smoltcp** (Rust wasm, 0BSD, sans-I/O as `net/ts` is; a dependency to ask for) over a
+  ([#231](https://github.com/gbl08ma/waarm64/issues/231)). If it's built: **smoltcp** (Rust wasm, 0BSD, sans-I/O as `net/ts` is; a dependency to ask for) over a
   port of unkernel's ~530-line `net.ts` or v86's stack (minimal TCPs: v86's showed no retransmission or window); and
   unkernel's DNS trick (A queries answered from a reserved range, a connect to one becoming a CONNECT by name), but
   not its 198.18.0.0/15, which our echo backend's leases use.

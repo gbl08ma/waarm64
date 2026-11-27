@@ -1,7 +1,8 @@
 # dEQP-VK's pass list (scripts/ci-deqp-vk.sh, tests/page-deqp-vk.test.ts; docs/testing.md "dEQP-VK"): cases that
 # pass on the page today, every one expected to pass. VK2 L5 (2026-10-26): the passing cases of samples of the direct
 # set's groups (bench/gpu/deqp-run.ts vk with PREFIX, STRIDE and PASSED=1), the larger groups' thinned evenly; the
-# failures, by cause, are docs/backlog.md's "The Vulkan driver's gaps". VK2 L7: the 8
+# failures, by cause, are the Vulkan issues
+# (https://github.com/gbl08ma/waarm64/issues?q=is%3Aissue+state%3Aopen+label%3Avulkan). VK2 L7: the 8
 # zero_initialize_workgroup_memory.specialize_workgroup cases past 256 invocations left, NotSupported on SwiftShader since
 # what the device advertises follows its adapter (256 invocations a workgroup).
 # VK3 L4c-D: the passing cases of dynamic rendering's basic group (suspended and resumed passes), its
@@ -9,7 +10,8 @@
 # VK3 L4c-F: the passing cases of samples of 3D blits, 3D and non-renderable colour clears, storage images through
 # descriptors, and every buffer-to-buffer copy and pipeline push-constant case (84 newly pass); the list regrouped
 # so that each group's cases are together. Out: memory.allocation.random.* and memory.mapping.suballocation.random.*
-# (7), which crash deqp-vk after enough earlier cases, with the renderer of before too (docs/backlog.md "Memory").
+# (7), which crash deqp-vk after enough earlier cases, with the renderer of before too
+# (https://github.com/gbl08ma/waarm64/issues/124).
 # VK3 L4f: the cases the out-of-context reviews' fixes (the cloud session's and L4f's) turn into passes, and the
 # passing cases of the groups L4f sampled for them (indexed strips, storage images of cube views, inverted depth
 # ranges, demote, depth and stencil input attachments, memory binding: 533 more, less the 7 below), in mustpass order.
@@ -36,14 +38,16 @@
 # the samples_4 cases of multisample.min_sample_shading*, multisample_shader_builtin's sample_id, sample_mask,
 # sample_position, image_write_sample and write_sample_mask, and multisample_interpolation's sample and centroid
 # consistency and sample_qualifier_distinct_values; and every sixth depth_stencil_resolve samples_4 case of SAMPLE_ZERO
-# resolves that passes (s8_uint's stencil resolves fail: docs/backlog.md), at the end.
+# resolves that passes (s8_uint's stencil resolves fail:
+# https://github.com/gbl08ma/waarm64/issues?q=is%3Aissue+state%3Aopen+label%3Avulkan), at the end.
 # VK3 L7.4: ANGLE's ES3 row: more than 12 uniform buffers a stage (past WebGPU's, read as storage): every
 # descriptor_limits uniform_buffers case of compute and fragment shaders up to the device's 13, at the end. Then the provoking vertex
 # (its last, through indices of the draw's own made before the pass; indexed fans the same way): every
 # rasterization.provoking_vertex.draw case but adjacency's (not supported), and an indexed fan, at the end.
 # Then transform feedback (the vertex stage run as compute at its pass's end; attachment-less passes given an
 # attachment of the device's): the passing cases of transform_feedback.simple but queries, streams, indirect, multiview,
-# geometry and tessellation (xfb_clipdistance's fail: docs/backlog.md), and of every third fuzz vertex case, at the end.
+# geometry and tessellation (xfb_clipdistance's fail:
+# https://github.com/gbl08ma/waarm64/issues/81), and of every third fuzz vertex case, at the end.
 # VK3 L7.5: vkd3d's row (draw parameters: the push buffer's words past the push constants, an indirect draw's copied from
 # its arguments before its pass): every draw.*shader_draw_parameters case that passes (60 of 76: draw_index's 16 are
 # not supported without multiDrawIndirect), the two api cases of its feature, and the passing cases of every tenth
@@ -7727,8 +7731,8 @@ dEQP-VK.memory.mapping.suballocation.random.99_map2
 dEQP-VK.memory.mapping.suballocation.random.9_map2
 # VK4 T10: the passing cases of samples of image_to_image (size-compatible copies between formats, compressed and
 # uncompressed), resolve_image, depth_stencil_msaa_copy, buffer_to_depthstencil, depthstencil_to_buffer, blit_image,
-# depth_stencil_resolve and multisample_resolve, at the end; out, the 37 of them that fail on the M4 (docs/backlog.md
-# "The M4's own failures").
+# depth_stencil_resolve and multisample_resolve, at the end; out, the 37 of them that fail on the M4
+# (https://github.com/gbl08ma/waarm64/issues/119).
 dEQP-VK.api.copy_and_blit.copy_commands2.blit_image.all_formats.color.1d.b8g8r8a8_unorm.b8g8r8a8_unorm.optimal_general_linear
 dEQP-VK.api.copy_and_blit.copy_commands2.blit_image.all_formats.color.1d.r16g16b16a16_uint.r16g16b16a16_uint.optimal_general_nearest
 dEQP-VK.api.copy_and_blit.copy_commands2.blit_image.all_formats.color.1d.r32g32_uint.r32g32_uint.optimal_general_nearest
@@ -13449,7 +13453,8 @@ dEQP-VK.synchronization2.timeline_semaphore.device_host.write_ssbo_fragment_read
 dEQP-VK.synchronization2.timeline_semaphore.device_host.write_ssbo_fragment_read_ubo_fragment.buffer_16384
 # VK4 T8: samplers in the shader and component swizzles: every census case of those causes that passes, every 24th of
 # pipeline.monolithic.sampler, image_view, texture and glsl.texture_* (a sample of 57,066 thinned, passing on the M4 too),
-# integer cube images. Out: integer lod_base_mip_level views, wrong on SwiftShader only (docs/backlog.md).
+# integer cube images. Out: integer lod_base_mip_level views, wrong on SwiftShader only
+# (https://github.com/gbl08ma/waarm64/issues/106).
 dEQP-VK.glsl.opaque_type_indexing.sampler.const_expression.compute.isampler1d
 dEQP-VK.glsl.opaque_type_indexing.sampler.const_expression.fragment.usampler1d
 dEQP-VK.glsl.opaque_type_indexing.sampler.const_literal.fragment.isampler3d
@@ -16939,7 +16944,7 @@ dEQP-VK.texture.swizzle.texture_coordinate.r8_snorm_2d_npot_yx
 dEQP-VK.texture.swizzle.texture_coordinate.r8g8_sint_2d_npot_yx
 dEQP-VK.texture.swizzle.texture_coordinate.r8g8_unorm_2d_npot_yx
 dEQP-VK.texture.swizzle.texture_coordinate.r8g8b8a8_srgb_2d_npot_yx
-# VK4 T18: compressed images that aren't whole blocks, sampled in the shader: the cases of T1's cause and every 16th new pass of the groups T8 sampled. Out since T18: padded lod_base_mip_level views, which fetch and meet SwiftShader's bug (docs/backlog.md; the M4 passes them).
+# VK4 T18: compressed images that aren't whole blocks, sampled in the shader: the cases of T1's cause and every 16th new pass of the groups T8 sampled. Out since T18: padded lod_base_mip_level views, which fetch and meet SwiftShader's bug (https://github.com/gbl08ma/waarm64/issues/106; the M4 passes them).
 dEQP-VK.pipeline.monolithic.image.suballocation.sampling_type.combined.view_type.2d.format.astc_10x5_srgb_block.count_4.size.32x16
 dEQP-VK.pipeline.monolithic.image.suballocation.sampling_type.combined.view_type.2d.format.astc_5x4_srgb_block.count_1.size.3x3
 dEQP-VK.pipeline.monolithic.image.suballocation.sampling_type.combined.view_type.2d.format.astc_5x5_srgb_block.count_1.size.32x16
@@ -26501,7 +26506,7 @@ dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.rem
 dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.remaining_array_layers.r8g8b8a8_srgb_sample_count_4
 dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.remaining_array_layers.r8g8b8a8_uint_sample_count_4
 # VK4 R7: what the device advertises: api.info's format and image-format queries and limits, passing since the A8B8G8R8
-# and BC1_RGB formats, the limits and 16 vertex bindings (r32g32 and r32g32b32a32 floats' sample counts stay out: docs/backlog.md).
+# and BC1_RGB formats, the limits and 16 vertex bindings (r32g32 and r32g32b32a32 floats' sample counts stay out: https://github.com/gbl08ma/waarm64/issues/112).
 dEQP-VK.api.info.format_properties.a2b10g10r10_sint_pack32
 dEQP-VK.api.info.format_properties.a2b10g10r10_snorm_pack32
 dEQP-VK.api.info.format_properties.a2b10g10r10_sscaled_pack32
@@ -32479,7 +32484,7 @@ dEQP-VK.pipeline.monolithic.sampler.view_type.cube_array.format.x8_d24_unorm_pac
 # VK4 T26: multi-draw (VK_EXT_multi_draw, multiDrawIndirect, drawIndirectCount): every case of the census's sample that
 # asked for one, every indirect-draw and draw-parameters case of draw.*, every 20th multi_draw case, that passes on
 # SwiftShader and the M4 and wasn't in the list (1,344 of 2,757; the rest tessellation, geometry and divisors; 118 s as
-# one list on SwiftShader), in mustpass order, at the end. shader_draw_parameters.draw_index's 16 fail on the M4 (docs/backlog.md).
+# one list on SwiftShader), in mustpass order, at the end. shader_draw_parameters.draw_index's 16 fail on the M4 (https://github.com/gbl08ma/waarm64/issues/119).
 dEQP-VK.draw.dynamic_rendering.complete_secondary_cmd_buff.indexed_draw.draw_indexed_count_indirect_count_bindindexbuffer2_maintenance6
 dEQP-VK.draw.dynamic_rendering.complete_secondary_cmd_buff.indexed_draw.draw_indexed_count_indirect_count_bindindexbuffer2_maintenance_5_maintenance6
 dEQP-VK.draw.dynamic_rendering.complete_secondary_cmd_buff.indexed_draw.draw_indexed_count_indirect_count_maintenance6
@@ -33827,7 +33832,7 @@ dEQP-VK.draw.renderpass.multi_draw.overlapping.normal.one_draw.stride_extra_4.1_
 # VK4 T27: depth and stencil resolve modes (MIN, MAX and AVERAGE as the worker's draws, each aspect on its own): every
 # samples_4 and misc depth_stencil_resolve case that passes on SwiftShader and the M4 and wasn't in the list (2,503 of
 # 3,823; the rest D16_UNORM_S8_UINT and geometry; 20 s as one list on SwiftShader), in mustpass order, at the end. The
-# M4's *_testing_stencil_samplemask fail whatever the mode (docs/backlog.md).
+# M4's *_testing_stencil_samplemask fail whatever the mode (https://github.com/gbl08ma/waarm64/issues/119).
 dEQP-VK.renderpasses.dynamic_rendering.complete_secondary_cmd_buff.depth_stencil_resolve.samples_4.d16_unorm.depth_average_stencil_none_testing_depth
 dEQP-VK.renderpasses.dynamic_rendering.complete_secondary_cmd_buff.depth_stencil_resolve.samples_4.d16_unorm.depth_max_stencil_max_testing_depth
 dEQP-VK.renderpasses.dynamic_rendering.complete_secondary_cmd_buff.depth_stencil_resolve.samples_4.d16_unorm.depth_max_stencil_none_testing_depth

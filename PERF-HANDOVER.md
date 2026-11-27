@@ -6,7 +6,8 @@ devices; bench/interp/REPORT.md for the block interpreter; bench/gpu/REPORT.md f
 
 ## The brief
 
-The user's (2026-11-10): go through every performance entry of docs/backlog.md that the dev VM or the Mac host can try
+The user's (2026-11-10): go through every performance entry of the backlog (now the issues of type Performance:
+[docs/issues.md](docs/issues.md)) that the dev VM or the Mac host can try
 (skip what needs an x86_64 CPU and leave those entries as they are). For each: try it, measure it, then keep it, or drop
 it and write down why, so the backlog shrinks to what's still open. New ideas found along the way are welcome. ISA
 extensions count as performance work: measure them with representative workloads and implement new instructions through
@@ -27,7 +28,7 @@ theory of the answer):
   `bench/run-mac.sh`'s `MAC_TIMEOUT`; memory caps via `systemd-run` on every node and cargo run; CI scripts alone in
   the background and waited on **inside its turn**, Monitor or the completion notification, never a hand-back while
   waiting; no self-matching `pkill`). Then this file, docs/benchmarking.md, docs/v8.md, and the docs page of the area.
-- The entry, quoted with its docs/backlog.md location, and the files it touches; anything new since it was written
+- The entry, quoted with its issue's link, and the files it touches; anything new since it was written
   that bears on it (e.g. a later loop's change that could interact).
 - How to decide: counts from a diagnostic build first, bounding the gain before building; build only what the counts
   justify; if it needs a redesign out of proportion to the measured gain, stop and write the finding.
@@ -84,8 +85,8 @@ makes no calls (tests/core-wasm.test.ts). Step counts (tests/steps.txt) move onl
 pre-approved for performance, once, in its commit.
 
 **The finish of a loop** (the subagent does it, code or no code): a REPORT entry "PERF loop N" with its results JSON
-committed behind it; the docs page describing what exists (and the finding, so it isn't re-discovered); the backlog
-entry removed or reduced to a concrete doable follow-up; this file's queue row and state updated; `git fetch` and
+committed behind it; the docs page describing what exists (and the finding, so it isn't re-discovered); its issue
+closed (`Fixes #n` in the commit) or reduced to a concrete doable follow-up (`node tools/issue.ts edit`, docs/issues.md); this file's queue row and state updated; `git fetch` and
 rebase onto origin/main, commit, push to origin main.
 
 **The supervisor between loops:**
@@ -152,7 +153,7 @@ FP16, FHM, BF16. The ABI is 74.
 
 ## Still open (the queue: the first is next; by expected gain, highest first)
 
-Refilled by the supervisor on 2026-11-23 (after loop 63) from docs/backlog.md, from four static surveys of the code
+Refilled by the supervisor on 2026-11-23 (after loop 63) from the backlog (now issues), from four static surveys of the code
 (the JIT, the core outside its emitters, the host's devices and workers, the tunables and the old verdicts) and from
 the user's two prompts: measurements taken against an earlier design may not hold, and constants nobody swept may be
 worth as much as `block::REGION` 16 → 64 was (0793f714, 2026-11-22: the gates 4-5% faster, no memory). What bears on
@@ -164,19 +165,19 @@ every row:
   *re-count* runs an old diagnostic on today's tree before anything is built.
 - The rows are the surveys' reading of the code, nothing run: each row's figures are a bound to check, its count
   comes first, and a count that leaves a row under the floor closes it as a finding (the REPORT, the docs).
-- A row from the backlog names its entry; the others have none (their finish writes the docs and the REPORT only).
+- A row from the backlog names its entry (now an issue: search for it with `node tools/issue.ts search`); the others have none (their finish writes the docs and the REPORT only).
 - Rows 3-4 changed which blocks a region gets (on regions of 64 blocks: loop 64; batches of 50K steps: loop 65; `REGION_AFTER` 1000: loop 66): run them one at a time, each on the last one's winner; the compile threshold was re-checked after them (loop 69:
   1000/2000 stays).
 
 | # | Entry | Kind | Notes |
 |---|---|---|---|
-| 21 | **Next** (when the track resumes): Display: a key's glyph ~13 ms later on virtio-gpu than on the simple framebuffer (backlog "Platform and devices") | measure | the entry's next step: the same measurement on the Mac's GPU, then a device worker with animation frames or drawing from the machine worker |
+| 21 | **Next** (when the track resumes): Display: a key's glyph ~13 ms later on virtio-gpu than on the simple framebuffer ([#57](https://github.com/gbl08ma/waarm64/issues/57)) | measure | the entry's next step: the same measurement on the Mac's GPU, then a device worker with animation frames or drawing from the machine worker |
 | 22 | Round-robin's run loop: `Vm::publish` at every chunk end, ERET and SVC through the loop (core/src/vm.rs:1171, :1292; interp/sys.rs:270) | count, build | the gates' own cost, not the page's (parallel throttles `publish_cpu` to every 65,536 steps and its exits are 0.2-0.3%): 1.37 M chunk ends in the userspace gate, 452 K of them an unmasking ERET (`results/perf49/counts-new.json`). The throttle is S (~0.5% by the survey's estimate); completing ERET in place is M and moves the gates without moving a user's machine: low, and say so in its report |
 | 23 | Small sweeps, each one screen: `PRESSURE_KNEE` (mod.rs:297; flat 2000 against 1000/2000, the memory side), `VCPU_YIELD_MS` 50/100/250 (web/vm.ts:118; stalls), the table pre-grown at install (web/jit-host.ts:115) | sweep | none swept on the Mac; small expectations |
-| 24 | Host, per event: virgl uploads across backing entries join into a fresh buffer (web/virgl-renderer.ts:694; count the joins first), an import's serial 1 MiB reads from a server (web/stored.ts:105), frame ports taking batches (backlog "The network, per packet" P7), the checksum two bytes at a time (web/offload.ts:54), `Devices.poll`'s closures per request (web/devices.ts:887) | count, build | each by its own micro-benchmark; with other work in the file |
+| 24 | Host, per event: virgl uploads across backing entries join into a fresh buffer (web/virgl-renderer.ts:694; count the joins first), an import's serial 1 MiB reads from a server (web/stored.ts:105), frame ports taking batches (P7 of the old backlog's "The network, per packet", which no issue carries), the checksum two bytes at a time (web/offload.ts:54), `Devices.poll`'s closures per request (web/devices.ts:887) | count, build | each by its own micro-benchmark; with other work in the file |
 | 25 | JIT, likely under the floor: late-compiled successors through a reserved table slot (`via_jc`, emit.rs:2220; relinking and rebinding lost: try `results/perf54/` `chain2.mjs` with a constant index first), SP's alignment guard folded into the tag compare (emit.rs:4297; five wasm ops a probe), `refresh` storing every vCPU's IRQ byte (parallel.rs:814) | count | x64 and arm64 static counts (`bench/jit/codestats.ts`) decide the second |
 
-Swept, measured or counted on the Mac recently, not to redo: the start message's wait for the GPU worker (loop 85: hidden behind the machine worker's own module load on the dev server, −7 ms on the VM and −10 ms on the Mac's load once removed; a fresh browser's first WebGL2 context on the Mac's GPU 27-178 ms), device completions and host signals waking every vCPU (loop 83: ~300 empty `IDLE` exits a second on the pages session, ≤1.7% of a core, none in an idle guest; one taker or no poll after them not built), the idle poll's `SPIN_MS` 0/10/20/50/100 µs (loop 83: 20 kept, renderer CPU −2.8%; 0 slows futex hand-offs 2.5×; an adaptive poll is in docs/backlog.md), virgl's GL calls a draw (loop 79: 79 before a draw, 80% repeats; the framebuffer's points and draw buffers, the vertex arrays and the uniforms now kept; the rest, global state ~0.5 µs a draw, left: bench/gpu/REPORT.md "PERF loop 79"), the blk path on a persistent profile (loop 76: `ORDERED`'s flushes, the copies, the bulk writes), probes a region's earlier block already made, the translation memo and X registers sharing locals at 64 blocks (loop 75: closed under the floor), what entries cost a loop through another page (loop 75: ≤ 0.2%), entries at every member of the head's page and the helper's one decode (loop 74: kept; left without entries: loop regions' members and other pages', ~0.3% of the page at most), the jump cache's size (loop 73: `JC` 131,072 and 262,144), the sibling fill over another page's entry (loop 73: it thrashes a copy between two pages of one index), loop 72's closed counts (the transfer cache at 65,536 entries and a per-ASID generation, `TLB_ENTRIES` 32,768 and 65,536, a last-level table cache, a fill of the neighbour's PTE, `NG_SLOTS`, a longer TLBI queue, the interpreter under live host frames, the helper histogram: nothing to inline, FlagM never runs), the repeated last emission (loop 71: kept), XZR's write sink (kept) and one probe for an LdO/StO pair (loop 70), the compile threshold (loop 69: 500/1000 to 4000/8000), region sizes 16/32/64 and 96/128/256 (loop 64), the decoded blocks' budget and slots (loops 1, 38), the block map's constants (loop
+Swept, measured or counted on the Mac recently, not to redo: the start message's wait for the GPU worker (loop 85: hidden behind the machine worker's own module load on the dev server, −7 ms on the VM and −10 ms on the Mac's load once removed; a fresh browser's first WebGL2 context on the Mac's GPU 27-178 ms), device completions and host signals waking every vCPU (loop 83: ~300 empty `IDLE` exits a second on the pages session, ≤1.7% of a core, none in an idle guest; one taker or no poll after them not built), the idle poll's `SPIN_MS` 0/10/20/50/100 µs (loop 83: 20 kept, renderer CPU −2.8%; 0 slows futex hand-offs 2.5×; an adaptive poll is [#134](https://github.com/gbl08ma/waarm64/issues/134)), virgl's GL calls a draw (loop 79: 79 before a draw, 80% repeats; the framebuffer's points and draw buffers, the vertex arrays and the uniforms now kept; the rest, global state ~0.5 µs a draw, left: bench/gpu/REPORT.md "PERF loop 79"), the blk path on a persistent profile (loop 76: `ORDERED`'s flushes, the copies, the bulk writes), probes a region's earlier block already made, the translation memo and X registers sharing locals at 64 blocks (loop 75: closed under the floor), what entries cost a loop through another page (loop 75: ≤ 0.2%), entries at every member of the head's page and the helper's one decode (loop 74: kept; left without entries: loop regions' members and other pages', ~0.3% of the page at most), the jump cache's size (loop 73: `JC` 131,072 and 262,144), the sibling fill over another page's entry (loop 73: it thrashes a copy between two pages of one index), loop 72's closed counts (the transfer cache at 65,536 entries and a per-ASID generation, `TLB_ENTRIES` 32,768 and 65,536, a last-level table cache, a fill of the neighbour's PTE, `NG_SLOTS`, a longer TLBI queue, the interpreter under live host frames, the helper histogram: nothing to inline, FlagM never runs), the repeated last emission (loop 71: kept), XZR's write sink (kept) and one probe for an LdO/StO pair (loop 70), the compile threshold (loop 69: 500/1000 to 4000/8000), region sizes 16/32/64 and 96/128/256 (loop 64), the decoded blocks' budget and slots (loops 1, 38), the block map's constants (loop
 41), the parallel chunk (loop 32), `BATCH_STEPS` (loop 65), `REGION_AFTER` (loop 66), the compile worker's warm-up (loops 67, 67b), `WARM` with `REPORT` (loop 68), the 320 MiB budget (loop 63), the idle wait's constants (loops 53, 58, 60), a
 function's size as such (2026-11-05, loop 13), the dispatcher's entries and the signature check (loop 54), lazy NZCV
 at a loop's head (loop 42), and the features off by default (I8MM, FCMA, FP16, FHM, BF16: host-op counts, which

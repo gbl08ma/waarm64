@@ -359,7 +359,7 @@ does, which the page's DISPLAY races) is asked again from the resources, three t
 errors are logged. The mode made last is deleted (DeleteOutputMode, DestroyMode) once the screen is set to another, so
 the window's sizes don't pile up. A desktop's own daemon (KDE's kscreen) may set the same size too. The native test
 (`agent/src/x11_test.rs`) runs Xorg on the dummy driver (Xvfb's screen can't grow past the size it started with; the Debian
-image's X11 page test sees it set smaller); Xorg's modesetting on virtio-gpu isn't measured (backlog).
+image's X11 page test sees it set smaller); Xorg's modesetting on virtio-gpu isn't measured ([#269](https://github.com/gbl08ma/waarm64/issues/269)).
 
 **A template's identity** (RENEW; `agent/src/renew.rs`): a snapshot flagged as a template (its header's `template:
 true`, set by `tools/snapshot-template.ts` with `web/snapshot-file.ts` `asTemplate`, which rewrites the header alone: an
@@ -678,7 +678,7 @@ swaymsg); an X11 session's server (no compositor) through `setxkbmap` where the 
 keymap with `loadkeys -q <vc>` where kbd is there (CAP_SYS_TTY_CONFIG: the unit has it). Not GNOME or KDE: no shared
 live D-Bus path (localed's is the system's default, read-only on Debian 13; GNOME's is the user's dconf
 `org.gnome.desktop.input-sources`, KDE's `kxkbrc` and its reload signal, both kept in the user's settings): later, with
-a test image each (backlog). Tests: the payload, the boot's file and the root's rule (`agent/src/keymap.rs`,
+a test image each ([#179](https://github.com/gbl08ma/waarm64/issues/179)). Tests: the payload, the boot's file and the root's rule (`agent/src/keymap.rs`,
 `serve_test.rs`: nothing for the boot's layout, the child and loadkeys for another, once, a new session's child told),
 against headless sway (`sway_test.rs`: sway compiles the keymap at each command, so `xkb_variant neo` takes only on
 German and `intl` only on US: the layout read back without a keyboard), the link and the actions (`tests/agent.test.ts`),
@@ -899,7 +899,7 @@ performance.now()` re-anchored on `Date.now()` whenever the two part by more tha
 still follow a step of the host's clock). Everything else (READ_CROSS, the alarm requests) is EOPNOTSUPP, an unknown
 clock ENODEV, a short request EINVAL, each as the 8-byte head alone (an OK response fills its whole struct: the driver
 takes any other size as an error). Deterministic runs read a fixed time (2026-09-01). It is checked against the
-driver's formats (`tests/clock.test.ts`), not yet against a running driver (backlog "Snapshots"). Machines have it as
+driver's formats (`tests/clock.test.ts`), not yet against a running driver ([#205](https://github.com/gbl08ma/waarm64/issues/205)). Machines have it as
 a device kind of their own (docs/frontend.md "The guest's clock").
 
 ### balloon (ID 5): free memory left out of snapshots
@@ -933,8 +933,8 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   without the balloon (drop_caches alone frees pages with their old bytes). The hint took 10–45 ms; the guest has its
   memory back after the save and after a restore of it (`free`: 846 MiB).
 - Not done: inflating the balloon (the page has no use for it: a wasm memory can't shrink), its statistics queue.
-  Giving the reported pages back to the browser needs WebAssembly's memory-control proposal (backlog "Upstream
-  reports").
+  Giving the reported pages back to the browser needs WebAssembly's memory-control proposal
+  ([#314](https://github.com/gbl08ma/waarm64/issues/314)).
 
 ### blk (ID 2)
 - Features `SEG_MAX` = 126, `RO` (or `FLUSH` when writable: an overlay, or a ramdisk); one queue of 128. `IN`, `GET_ID`,
@@ -1113,7 +1113,7 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   table and cluster the file names is in it (`readChanges`'s `check`, which unpacks a compressed cluster the file's end
   cuts into) before the overlay is touched; a failure after (another compressed cluster that doesn't unpack, the file unreadable, the storage full) leaves it marked, and the error says it was
   emptied (`cleared`). What a fill can't keep is a replaced overlay's own blocks (a replace, the page's own disk): they
-  are deleted when it starts (backlog.md "A restore's replace fills in place"). A merge writes into a disk that exists:
+  are deleted when it starts ([#156](https://github.com/gbl08ma/waarm64/issues/156)). A merge writes into a disk that exists:
   it stays ordered.
   **The map's two levels** (RESIZE loop 2b): the entries are in **leaves** of 1,024 (4 KiB, a 4 MiB range of the
   disk), a leaf made at the first write (or zeroing) into its range; a range without one reads as the base (or zeros
@@ -1193,7 +1193,7 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   Natively, `Overlay` keeps 512-byte sectors in memory and can be shared by several boots; in
   Node, which has no OPFS, `openOverlay` keeps an overlay in memory for the process's life, by
   name (the tests' writable disks, e.g. `tests/uefi.test.ts`), under the same Web Lock. No quota handling or content check of the base
-  (backlog). Host API (web/overlay.ts, a page or a worker): `removeOverlay(name)` deletes an
+  ([#32](https://github.com/gbl08ma/waarm64/issues/32)). Host API (web/overlay.ts, a page or a worker): `removeOverlay(name)` deletes an
   overlay once no VM has it open (the page's "Reset disk", M8), `overlayBytes(name)` says what it holds.
   Overlay names are OPFS paths: a stored machine's are `overlays/<id>` (docs/machines.md §2), a transient one's
   (the tests' `?machine=`) are single names as before; `overlayMeta(name)` reads the generation (and own size) without opening it, `writeOwnSize(name, size)` grows it (a writable stream, from a page too: docs/machines.md §4.5).
@@ -1542,7 +1542,7 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   out (wasm can't remap pages, and Linux picks the offset). So a create, a map, an unmap, an unref and a Venus
   context's destruction hold their reply until the host has run them, fence flag or not.
 - Snapshots are refused while a Venus context exists ("the machine is using Vulkan (Venus), whose state can't be saved
-  yet"; docs/backlog.md), or a blob outlives one; the page asks first (`Gpu.refusal`), so a refused snapshot touches
+  yet"; [#65](https://github.com/gbl08ma/waarm64/issues/65)), or a blob outlives one; the page asks first (`Gpu.refusal`), so a refused snapshot touches
   nothing (frontend.md "Snapshots").
 - A virtio reset (a guest reboot) ends every Venus context, with its blobs, imports and objects
   (web/venus-host.ts `VenusRenderer.reset`; VK4 T2): vkr refuses a context id it has, so the rebooted guest's
@@ -1578,7 +1578,8 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   fence whatever the command was), so a guest waiting for it alone while the ring's newest waits for what the guest does
   next isn't left waiting (VK4 T36); when the guest sends nothing for 20 ms (`CARRY_MS`), the device raises the display
   event, and the kernel's GET_DISPLAY_INFO (and GET_EDID), sent from its own work, carry it (the cost a hotplug event's
-  re-probe of the outputs).
+  re-probe of the outputs). A larger queue isn't the way out: its being full is what paces a compositor ("Flush
+  replies are paced"), and 256 entries would put 4 s of replies ahead of each fence.
   A fenced `SUBMIT_3D`'s reply waits for vkr to retire its fence,
   which happens once the GPU's work before it on that context's ring is done (`VenusRenderer.retired`: the GPU worker
   holds the device's fence until then). A fence names its context, ring and id (`FenceScope`) and waits for itself alone, not for what's sent after it on its ring, and a ring is a lane of the GPU
@@ -1620,7 +1621,7 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   off (`VN_PERF=no_async_present`: Mesa 26's drops a present after one that failed, freezing a resized window, VK3 L4e;
   vk/README.md "The guest's Mesa"). The blob's unref drops the texture too. No guest scans a Venus blob out (`SET_SCANOUT_BLOB` stays
   `ERR_UNSPEC`): sway composited vkcube's tiled window; a fullscreen window, which wlroots may scan out directly, isn't
-  tried yet (docs/backlog.md).
+  tried yet ([#76](https://github.com/gbl08ma/waarm64/issues/76)).
 - **Imports** (VK2 L6, [vk/README.md](../vk/README.md) "Imports"): the other way, a virgl resource attached to a Venus
   context (a VA-API surface's plane that mpv on Vulkan imports as a dma-buf) isn't attached in virgl: the device hands
   it to Venus's renderer as `blob-ctx` with its size (its backing's pages, or its texels at 4 bytes, whichever is more),
@@ -1768,11 +1769,12 @@ guest share without copies (Venus's ring, its command streams, its reply buffers
   RAM in whole 2 MiB units just below the DTB's 2 MiB (`boot::framebuffer`; at most half of RAM).
   The DT has `/chosen/framebuffer@…` and reserves the region under `/reserved-memory` with
   `no-map`. `vm_framebuffer(vm)` returns its PA.
-- `web/display.ts` compares the buffer with the frame drawn last on every animation frame and puts
-  the rows that changed on a `<canvas>` (or a worker's `OffscreenCanvas`: the page draws in its
+- `web/display.ts` compares the buffer with the frame drawn last on every animation frame (~0.4 ms at 1024×768, on
+  the machine worker) and puts the rows that changed on a `<canvas>` (or a worker's `OffscreenCanvas`: the page draws in its
   machine worker, docs/frontend.md "The screen") as opaque RGBA; fixed size, no mode setting.
   virtio-gpu (above) is the display for guests with the driver (the page's Debian: docs/frontend.md "The
-  screen").
+  screen"); nothing more is planned for the machines that remain on this one (Buildroot's page, the test guests,
+  `?display=simple`).
 - The Buildroot test kernel has no fbcon (drawing the boot log would cost the boot test).
 
 ## Validation and oracles

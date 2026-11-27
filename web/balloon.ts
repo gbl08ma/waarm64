@@ -4,7 +4,8 @@
 // - **Free page reporting** (REPORTING): the guest hands over free blocks (2 MiB and up, a few at a time, from ~2 s after
 //   they were freed) and keeps them aside until the request completes, so the device may change them: each page of
 //   them that isn't zero already is zeroed. One that is is only read: writing zeros to memory the guest never touched
-//   would make the browser commit it (a wasm memory can't give pages back: docs/backlog.md "Upstream reports").
+//   would make the browser commit it (a wasm memory can't give pages back:
+//   https://github.com/gbl08ma/waarm64/issues/314).
 // - **Free page hinting** (FREE_PAGE_HINT), right before a snapshot or a suspend (`hint`): the device writes a new
 //   command id into its config space; the guest's driver allocates every free 4 MiB block it can get, sends their
 //   addresses after the id, and ends with STOP. It holds them until the device's DONE (`release`, after the save; a

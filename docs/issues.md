@@ -41,6 +41,13 @@ rename or delete labels, types, fields, milestones or projects**: a change to th
 user's OK, and the user applies it with `node tools/issue.ts labels --sync --apply` (without `--apply` it prints the
 plan).
 
+## Where the backlog was
+
+Until 2026-11-27 the open work was `docs/backlog.md`. Its 350 items were triaged and 311 filed as #4–#314; each
+issue's footer names its line in the file as it last stood (commit `e04a6974`). `tools/backlog-refs.ts` (in the static
+checks) fails on a file that still points at it. The dated journals (`bench/*/REPORT.md`, results) are left as they
+were written.
+
 ## Commits
 
 A commit names every issue it filed, changed, commented on or closed: `Refs #n` in its message, `Fixes #n` for one it

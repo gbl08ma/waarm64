@@ -168,7 +168,7 @@ offered there.
     a row in the docs' table and is measured if the user wants it.
 - **For a text console**, there is no clipboard to read (fbcon has no selection without gpm). Pasting goes to
   the foreground VT through `TIOCSTI`. Root keeps that even where `dev.tty.legacy_tiocsti=0`, because the check
-  passes with `CAP_SYS_ADMIN`. Unlike typing through virtio-input (backlog "Clipboard for the screen": paced,
+  passes with `CAP_SYS_ADMIN`. Unlike typing through virtio-input (paced,
   its queue drops past 1024 events, and the keyboard layout limits what can be typed), it is instant and takes
   any UTF-8 text. Copying from the console stays out of scope; the serial terminal already has both directions.
   **Only on a VT that shows text** (`KDGETMODE`): a compositor started from a tty puts its VT in graphics mode, its

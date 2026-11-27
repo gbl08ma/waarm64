@@ -5,7 +5,7 @@ USB devices from the user's computer reach the guest through an emulated xHCI. T
 passthrough, an emulated HID device rebuilt from what WebHID gives, and virtual devices of ours (Gadget Zero for
 the tests, the built-in keyboard, a game pad fed from the Gamepad API). The device interface every backend implements is `UsbDevice` in
 `web/usb-device.ts`, and the page's messages about the root connectors are defined there too. Built 2026-10-18
-(the plan, U0–U6, is in git history: `docs/plans/usb.md`); loose ends are in [backlog.md](backlog.md) "USB".
+(the plan, U0–U6, is in git history: `docs/plans/usb.md`); loose ends are [the USB issues](https://github.com/gbl08ma/waarm64/issues?q=is%3Aissue+state%3Aopen+label%3Ausb).
 
 ## What the browser allows
 
@@ -72,7 +72,7 @@ the tests, the built-in keyboard, a game pad fed from the Gamepad API). The devi
 | Game pads that aren't HID and that the host holds | the Gamepad API → the game pad of ours, an emulated wired Xbox 360 controller ("The game pad") |
 | Flash drives, disks | the page's disks; a raw USB disk is out of reach in a browser |
 | Webcams, microphones, headsets | `getUserMedia` (the page already records through virtio-snd); a camera would be an emulated UVC device or virtio-video |
-| Serial adapters the host's driver holds | WebSerial → a virtio-console port (not built: backlog) |
+| Serial adapters the host's driver holds | WebSerial → a virtio-console port (not built: [#257](https://github.com/gbl08ma/waarm64/issues/257)) |
 | Bluetooth adapters | none (Web Bluetooth is GATT-level only) |
 
 ## Findings
@@ -448,7 +448,8 @@ set, on the dev VM's rigs, and writes each run's console to `target/tests/usb-gu
 
 What the runs found:
 - **Chromium refuses SET_FEATURE(ENDPOINT_HALT)**, and GET_STATUS and CLEAR_FEATURE on endpoint 0. The
-  passthrough answers them itself (the table above).
+  passthrough answers them itself (the table above), so a halt never reaches the device: a device-side function that
+  tests its own halt (rare outside usbtest) sees none.
 - **The guest's port reset reaches the device** through `reset()`. On a gadget, that is a disconnect: its
   tty hangs up, and the test's echo opens it again.
 - **A reset with interfaces claimed leaves Chromium's claims stale** (on Linux). Chromium still says the
@@ -529,7 +530,7 @@ follows it does the work.
 - Results map to codes: `ok` is `success`, or `short` when fewer bytes than asked; `stall` is `stall`;
   `babble` is `babble` (with its data); a rejected promise is `error`. A `NotFoundError` also calls
   `gone`.
-- Isochronous TDs complete with `error` (isochronous transfers aren't implemented: backlog.md "USB").
+- Isochronous TDs complete with `error` (isochronous transfers aren't implemented: [#254](https://github.com/gbl08ma/waarm64/issues/254)).
 
 **IN data outlives a cancel.** Each IN endpoint is a stream:
 - WebUSB transfers in flight, in order.

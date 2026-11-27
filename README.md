@@ -142,7 +142,8 @@ images/build.sh        # guest images for the tests, in rootless Podman
   the page's code and the host's; [docs/i18n.md](docs/i18n.md) and [docs/copy.md](docs/copy.md) cover the page's
   words.
 - [docs/decisions.md](docs/decisions.md) lists the decisions that bind the project, [`PLAN.md`](PLAN.md) the tracks
-  of work, and [docs/backlog.md](docs/backlog.md) the loose ends.
+  of work, and [the GitHub issues](https://github.com/gbl08ma/waarm64/issues) the loose ends
+  ([docs/issues.md](docs/issues.md)).
 - [docs/README.md](docs/README.md) is the index of all of it.
 
 ## How it was made

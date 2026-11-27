@@ -6,7 +6,8 @@
 //! what it last applied) and does nothing for a layout it has; else the session child sets it in the running session
 //! (sway through its IPC socket, which the agent speaks itself; an X11 session's server through `setxkbmap`, where the
 //! guest has it), and the root the text consoles' (`loadkeys`, where kbd is there). GNOME and KDE keep their own
-//! settings and aren't told (docs/backlog.md).
+//! settings and aren't told
+//! (https://github.com/gbl08ma/waarm64/issues/179).
 
 use crate::prelude::*;
 use rustix::fd::{AsFd, OwnedFd};

@@ -3,7 +3,7 @@
 # results into these and what's new (results.unexpected), and lists those that pass now (results.nowPass). The
 # reasons (docs/graphics.md "Findings"): `angle <bug>` a case ANGLE's own dEQP expectations list as failing on D3D11
 # (src/tests/deqp_support/deqp_gles*_test_expectations.txt, those of WIN, D3D11 and NVIDIA); `ours` not explained yet
-# (docs/backlog.md "dEQP's failures left on ANGLE's D3D11"); `line` a line's interpolation (a QualityWarning, as on
+# (https://github.com/gbl08ma/waarm64/issues/45); `line` a line's interpolation (a QualityWarning, as on
 # Metal); `timing` a timing case's warning on a busy host. The pass lists stay SwiftShader's (tests/deqp/gles*.txt).
 
 # GLES2: {'CompatibilityWarning': 1, 'Fail': 8, 'Pass': 17024, 'QualityWarning': 2}; invariance's 6 pass since

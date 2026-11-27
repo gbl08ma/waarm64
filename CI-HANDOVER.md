@@ -60,7 +60,7 @@ decisions in §11).
   own timeout 10 min (`--test-timeout`; the longest take ~100 s), so a hang fails by name. The cancelled run had left
   `target/ci/timings.json` empty and the next ci.sh failed its areas check: ci.sh writes `timings.json.new` and keeps
   the last good file; the check warns on an unreadable one (docs/testing.md "A test file that never ends").
-- **A flake seen once:** spin.test.ts's IPI round trip, median 2,121 µs for 1,000 (in docs/backlog.md "Parallel SMP";
+- **A flake seen once:** spin.test.ts's IPI round trip, median 2,121 µs for 1,000 ([#138](https://github.com/gbl08ma/waarm64/issues/138);
   0/20 alone or loaded).
 - The commit with these passed the fast lane (89 s) and ci.sh except that flake (640 s, before two comment and `if` tidy-ups). **Not run yet:** the topic scripts other than ci-net
   since they gained the lock line, and the lock with two sessions' real runs at once (checked with small scripts only).
@@ -129,7 +129,7 @@ decisions in §11).
     the save under load caught (a DHCP client already started? the link's state?); a maker could check that before it
     saves.
   - **The names test** `a_release_beats_a_renewal_waiting_at_its_parent` failed once in ci.sh, 1 of 30 alone
-    (docs/backlog.md "net/ts's other draws are unseeded"; it may be the server's bug, not the test's).
+    ([#283](https://github.com/gbl08ma/waarm64/issues/283); it may be the server's bug, not the test's).
   - The MIDR commit passed the fast lane, ci-debian, ci-machines and ci.sh (a second run, after the names flake);
     ci-net's two failures passed again on a fixture made alone.
 

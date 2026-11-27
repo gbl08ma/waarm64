@@ -48,7 +48,8 @@
 //! time) don't send every flush in their half through 512 indices, nor a
 //! 1 GiB block's through all of them.
 // ponytail: the nG entries of the previous ASID are dropped, not kept for when
-// it's current again (per-ASID stashes; 0.3M nG refills in Alpine's boot).
+// it's current again (per-ASID stashes; 0.3M nG refills in Alpine's boot):
+// https://github.com/gbl08ma/waarm64/issues/316.
 //
 // **The transfer cache** (`Tlb::xc`): JIT blocks find the compiled block an
 // indirect branch (or a by-VA link) goes to by its VA in one probe, without

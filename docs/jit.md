@@ -780,7 +780,7 @@ guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions)
   runs inside V8 without telling the core), so aging would need a counter update per block entry, the
   cost the design avoids everywhere; and links between blocks (`linkers`, direct calls by table index)
   make dropping a subset need the unlink walk that invalidation does. FIFO by module is the cheaper
-  precise option (backlog); until then a flush is one clear of the maps, and the guest's hot set is
+  precise option ([the JIT issues](https://github.com/gbl08ma/waarm64/issues?q=is%3Aissue+state%3Aopen+label%3Ajit)); until then a flush is one clear of the maps, and the guest's hot set is
   recompiled in ~1–2 s of one vCPU's time.
 - **What the budget was sized against** (before [Sharing](#sharing), 40 MiB per vCPU on 4): the
   live set of a Debian boot on 4 vCPUs (~31 MiB per vCPU), so booting didn't flush; a mixed load
@@ -1156,7 +1156,7 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   arguments (no register plain, flags not dead). PERF loop 71: 8-10% fewer members emitted, `emitNs` 5-8% lower, the
   modules byte for byte the same. Regions that never settle are 20-30% of the regions of several blocks but 53-62% of
   the members emitted (six emissions each, larger regions). None came back to an earlier state within the four
-  iterations (bench/boot/REPORT.md "PERF loop 71"; docs/backlog.md "Regions whose entry states never settle").
+  iterations (bench/boot/REPORT.md "PERF loop 71"; [#15](https://github.com/gbl08ma/waarm64/issues/15)).
   A kept emission is checked wherever debug assertions are on: `module` emits it again and asserts the two the same
   (`Emission::same`), so every native test that compiles a region checks the rule, and
   `block::tests::a_kept_emission_has_its_flag_states` and `an_unsettled_region_enters_no_member_dirty_in_a_shadow_alone`
@@ -1416,7 +1416,7 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   (LD1–LD4/ST1–ST4) are a lane op per register; LD1R–LD4R are `v128.loadN_splat`. **CRC32/CRC32C**
   are a table lookup per byte; the two 1 KiB tables are statics in the core, their address the
   load's offset (the JIT's modules share the core's memory). Our encoder emits the SIMD128; the
-  core itself is built without `simd128` ([backlog.md](backlog.md)). With these and the lane-by-lane
+  core itself is built without `simd128` ([#16](https://github.com/gbl08ma/waarm64/issues/16)). With these and the lane-by-lane
   forms, the guest's browsers decode images 1.4-4.3× faster (`bench/boot/REPORT.md` "M8: the integer
   NEON inline").
 - **Crypto** (`emit/crypto.rs`): AESE+AESMC and AESD+AESIMC on the same register fused into one
@@ -1602,7 +1602,7 @@ interpreter's; the helper runs the instruction otherwise.
   fine), HOK, no FPOK. FABS, FNEG and the FMOVs (register, immediate, general, vector immediate) are bits. Vector,
   AdvSIMD scalar (lane 0, the rest cleared) and scalar (ftype 3) forms share the code; 8H takes both singles' halves,
   4H and scalars one (the unused lanes ORed into the masks; a scalar form costs a vector's: in the f32 shadows
-  ("Scalar shadows") it would be about a third, [backlog.md](backlog.md)). Cost: FADD 8H about 50 lane ops (two widened operands, 16; the operand test, 4;
+  ("Scalar shadows") it would be about a third, [#13](https://github.com/gbl08ma/waarm64/issues/13)). Cost: FADD 8H about 50 lane ops (two widened operands, 16; the operand test, 4;
   the op, 2; the result test, 10; the narrowing, 17) where a single FADD 4S is about 5, so per element half precision
   here is 4-5× single's: code that keeps halves in memory and converts once wins (an axpy, 27%), code that computes
   in halves loses (a GEMM tile 2×; bench/boot/REPORT.md "PERF loop 10"). **FMLAL/FMLSL(2)** (FEAT_FHM): the halves of Vn and Vm (the low or,

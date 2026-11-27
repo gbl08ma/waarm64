@@ -5,7 +5,8 @@
 // to its stop) is the sound's length plus the gaps the ring counted (the worklet's or the sink's), within 40 ms; the
 // gaps under 10% of the sound: a guest starved of its vCPU for longer than its 85 ms buffer underruns for real, but no
 // time may go missing uncounted. Realtime and timed, so scripts/ci-audio.sh runs it alone, not npm test beside the
-// other files (under that load it failed now and then: docs/backlog.md). (The guest's own time, from its first
+// other files (under that load it failed now and then:
+// https://github.com/gbl08ma/waarm64/issues/55). (The guest's own time, from its first
 // write, also has its computing of the periods before START in it: up to ~100 ms more under that load.) S2's exit
 // (no underrun in a minute, the guest's own time) is measured alone (bench/audio/snd-page.ts, docs/audio.md "Measurements"); the
 // numbers are printed here.

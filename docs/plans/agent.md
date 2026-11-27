@@ -32,8 +32,8 @@ rest of what a host wants from a guest:
   text console (`/dev/vcsN` is readable by a root agent: only an agent of ours could offer that; built: COPY,
   devices.md "A text console's text");
 - **the time after a resume** (a restored or suspended machine's clock lags until something sets it:
-  backlog "Snapshots");
-- **a ready signal**, instead of matching a login prompt on the serial output (backlog "The page");
+  [the snapshots issues](https://github.com/gbl08ma/waarm64/issues?q=is%3Aissue+state%3Aopen+label%3Asnapshots));
+- **a ready signal**, instead of matching a login prompt on the serial output ([#180](https://github.com/gbl08ma/waarm64/issues/180));
 - a graceful power-off and reboot from the page, mounting a dropped-in 9p share, the guest's
   address or OS name in the status line.
 
@@ -55,7 +55,7 @@ power off. Worth a line in the host-integration track.
   tests too). No display or clipboard.
 - **What both need from us, and the step's first slice:** virtio-console's **multiport** feature
   (the control queue, named ports) and its receive path (today its receive buffers are held for
-  good: backlog "Platform and devices"). The agents then come from the distro's package manager
+  good: [#23](https://github.com/gbl08ma/waarm64/issues/23)). The agents then come from the distro's package manager
   (the guest has a network since the networking track), or are already on the image.
 
 ## An agent of ours, only for the gaps

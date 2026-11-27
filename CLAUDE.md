@@ -12,8 +12,8 @@ runs unmodified arm64 Linux. Chromium is the primary target.
   the doc it affects) in the same change.
 - **`docs/`** ([index](docs/README.md)): how things work now, by topic. Read the relevant page
   before changing an area; update it with the change. State what exists; keep history out unless
-  it's a finding worth not re-discovering (then say what was tried and why it lost). Loose ends go in
-  [docs/backlog.md](docs/backlog.md), not in TODOs.
+  it's a finding worth not re-discovering (then say what was tried and why it lost). Loose ends are filed as
+  GitHub issues ([docs/issues.md](docs/issues.md), the `issues` skill), not left as TODOs.
 - `bench/*/REPORT.md`: dated measurement journals with committed JSON. Read `bench/spike/REPORT.md`
   and [docs/v8.md](docs/v8.md) before designing JIT, dispatch or TLB code.
 - `THIRD_PARTY.json`: verified licenses of reference projects, the dependencies, and the attribution of ported code: the
@@ -30,7 +30,7 @@ runs unmodified arm64 Linux. Chromium is the primary target.
 ## Status
 
 The emulator is complete: M0–M7 built the CPU, the platform, the devices, the JIT and SMP, and M8 made it a machine
-to use in the browser. Work now runs as **tracks**, from the user's ideas and the backlog rather than a milestone
+to use in the browser. Work now runs as **tracks**, from the user's ideas and the issues rather than a milestone
 plan (the tracks: PLAN.md). This section stays short: a track's progress goes in its handover and its doc, never
 here. Facts most sessions need:
 - The page (`web/app/`, [docs/frontend.md](docs/frontend.md)) starts no disk image: the user opens one. Debian 13
@@ -93,7 +93,7 @@ CI run (`tools/i18n-check.ts` if it changes a `(ui:` quote).
 **Rust (core)**
 - The nightly is pinned in `rust-toolchain.toml` (wasm threads need `-Zbuild-std` and
   `-Zllvm-target-feature=+atomics`, see `.cargo/config.toml`). Bump it deliberately and re-run the
-  benchmarks; the core stays built **without `simd128`** ([docs/backlog.md](docs/backlog.md)).
+  benchmarks; the core stays built **without `simd128`** ([#16](https://github.com/gbl08ma/waarm64/issues/16)).
 - The core also builds natively, so logic is unit-tested with `cargo test`. Keep wasm-only code
   behind `cfg(target_arch = "wasm32")`.
 - SMP-ready: no mutable globals; all vCPU state behind a per-vCPU pointer; guest atomics use real
@@ -155,7 +155,7 @@ dependencies on the host; never Docker ([docs/images.md](docs/images.md)).
 
 **Browsers**: Chromium only, headless through Playwright (`playwright-core`, temporary profile).
 **Never touch Firefox outside the dev VM** (the user's daily browser is elsewhere); inside it, headless
-Firefox through Playwright is fine for checks (docs/backlog.md "Firefox"), and its incompatibilities are never blockers. Never run `/usr/bin/chromium` directly except `--version` (it opens a window on
+Firefox through Playwright is fine for checks ([#168](https://github.com/gbl08ma/waarm64/issues/168), the `browser-compat` issues), and its incompatibilities are never blockers. Never run `/usr/bin/chromium` directly except `--version` (it opens a window on
 the user's desktop); for V8 flags use `node --v8-options`. A launcher whose Chromium decodes video passes
 `env: chromiumEnv()` (`tools/nosme.ts`): the M4 under Lima has SME but no SVE, and Chromium's SME kernels fault
 reading a decoded frame without the shim ([docs/testing.md](docs/testing.md), "Video over virgl").
@@ -176,7 +176,7 @@ their code.**
   kill it and investigate.
 - **Cap memory on heavy runs** (`npm test`, `scripts/ci.sh`, multi-machine experiments):
   `systemd-run --user --scope -q -p MemoryMax=10G -p MemorySwapMax=0 -- timeout N <cmd>` (6G for `scripts/ci-fast.sh`; 11G for `npm test` and the
-  other `scripts/ci*.sh` scripts, whose JS step peaks near 10G: docs/backlog.md; 14G for `scripts/ci-deqp-vk.sh`'s two machines). A leak
+  other `scripts/ci*.sh` scripts, whose JS step peaks near 10G: [#289](https://github.com/gbl08ma/waarm64/issues/289); 14G for `scripts/ci-deqp-vk.sh`'s two machines). A leak
   once grew a Node test process to 7 GB and the VM's OOM kill took the whole Claude session down
   (M8 loop 8); a capped scope dies alone. **Subagents cap every `node` and `cargo` run**, small
   ones too, with caps that sum under the VM's memory (a "pure TypeScript" unit test run uncapped
@@ -204,7 +204,7 @@ their code.**
 - **Out-of-context reviews** ([docs/testing.md](docs/testing.md) "Out-of-context reviews"): at each track's end, and
   mid-track every ~3 loops or after a loop that adds a subsystem, a fresh agent with only the repo and a neutral brief
   (the area, "find real defects", a symptom at most; never the handover's theories or what was ruled out) reviews the code statically and
-  leaves ranked findings on a `review/<area>` branch. The supervisor triages them into fix loops or the backlog; each
+  leaves ranked findings on a `review/<area>` branch. The supervisor triages them into fix loops or issues; each
   fix starts with its confirming test, failing first. (VK3's static review of one picture's path found six defects
   that fit the bug being chased and eight more besides, all missed by the loops that wrote the code.)
 - **How a track runs:** it starts from a kickoff brief the user confirms (goal, decisions taken, loops, what needs
@@ -212,5 +212,5 @@ their code.**
   per loop); settle choices by measurement and ask only what can't be measured: dependencies, host ABI changes (a
   design note in [docs/abi.md](docs/abi.md) first), guest-visible changes and step counts, CPU features, FP semantics,
   forcing TurboFan. The user is often watching: give short status lines during long runs.
-- **A track ends** with every test layer green, its numbers recorded, its docs updated, its loose ends in the backlog,
+- **A track ends** with every test layer green, its numbers recorded, its docs updated, its loose ends filed as issues,
   and its row in PLAN.md set to done.

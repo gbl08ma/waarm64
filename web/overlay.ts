@@ -1118,7 +1118,8 @@ export async function lockOverlay(
  * opening's close calls, as it does on a failure (a restore takes all its disks' before it empties any). Dedicated
  * workers only (sync access handles).
  */
-// ponytail: the image is identified by path (or file name) and size, not content; add a hash if images get replaced in place.
+// ponytail: the image is identified by path (or file name) and size, not content; add a hash if images get replaced in place
+// (https://github.com/gbl08ma/waarm64/issues/32).
 export async function openOverlay(
   name: string,
   want: string | undefined,

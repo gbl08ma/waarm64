@@ -5,7 +5,7 @@ tailcat, the local helper, the demo network or a peer-to-peer room), or to none.
 locks between tabs, the guest's routes over several adapters and the numbers measured. The page's menus and wizard
 are in [frontend.md](../frontend.md) "Network" and "The Home page", the gateway's DHCP and router advertisements in
 [devices.md](../devices.md) "net", and the clients in [tailnet.md](tailnet.md). Loose ends are in
-[backlog.md](../backlog.md) "Several adapters' loose ends". (Built 2026-10-18/19, from a plan whose section numbers the
+[#225](https://github.com/gbl08ma/waarm64/issues/225). (Built 2026-10-18/19, from a plan whose section numbers the
 code's comments still cite; machines had first left several adapters for later: [machines.md](../machines.md).)
 
 ## 1. The rules (the user's, 2026-10-18)

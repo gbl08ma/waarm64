@@ -6,7 +6,7 @@ findings and the leftovers that drop work as tier 2b (R1–R7, before tier 3); T
 **Updated at the user's ask (2026-11-02)**: tier 2b done and summarized in the done table.
 **Updated at the user's ask (2026-11-05)**: the census again (bench/vulkan/REPORT.md "VK4: the census again") and
 the tasks it opens, T21–T35 (tier 3's T20 among them, as T23), after tier 3; tier 4's items they take point to them.
-**Updated at the user's ask (2026-11-07)**: docs/backlog.md's Vulkan entries that WebGPU can back made tasks, T36–T50
+**Updated at the user's ask (2026-11-07)**: the backlog's Vulkan entries (now the vulkan issues) that WebGPU can back made tasks, T36–T50
 (after the census's, grouped by the machinery they share; tier 4's and the leftovers' items they take point to them).
 
 ## How VK4 runs: tasks the user starts
@@ -18,7 +18,7 @@ task T3"), in any order, several at once where they don't touch the same files. 
 - starts with its confirming test, failing first (a dEQP-VK case, a unit test, or a measurement for a performance
   task), and ends with **one commit or a few**, rebased onto origin/main and pushed: the fix, its tests, its dEQP-VK
   cases added to `tests/deqp/vk.txt`, the docs it changes, and its row below marked done with a line of outcome
-  (numbers, what's left). What it leaves goes to docs/backlog.md, not here.
+  (numbers, what's left). What it leaves is filed as issues (docs/issues.md), not here.
 - runs `scripts/ci.sh` and `scripts/ci-deqp-vk.sh` (and the CI scripts its area names in CLAUDE.md) before it's done:
   the latter's seeded sample of the pass list (docs/testing.md "dEQP-VK"), the task's own new cases proven by its own
   runs; a sample's failure is looked into at once or filed and taken out of the list. `--full`, the whole list, runs
@@ -51,7 +51,7 @@ T2–T14; the rest of the order is judgement, said with each.
 ### Done: tiers 1, 2 and 2b, tier 3 but T15, T21–T34, T36–T49 (2026-10-29 to 2026-11-09); T35 parked
 
 Each row's outcome in full is its section of bench/vulkan/REPORT.md ("VK4 T<n>") and its commit; what each left is in
-docs/backlog.md "The Vulkan driver's gaps" (the entry named) and, where it is a defect or drops work, in the tasks
+the vulkan issues (once the entry "The Vulkan driver's gaps") and, where it is a defect or drops work, in the tasks
 below. dEQP-VK's pass list went 4,725 → 26,002 over tiers 1 and 2, and 27,714 → 30,040 with T21–T22, every new case
 passing on SwiftShader and the M4.
 Tier 2b (R1–R7) took the out-of-context review's findings ([VENUS-VK4-REVIEW.md](VENUS-VK4-REVIEW.md), ids by area:
@@ -137,11 +137,11 @@ the sample's on the M4 (×100 for the whole list, roughly); each starts by runni
   `VK_EXT_texture_compression_astc_3d` (Mesa main's guest driver doesn't list it, venus-protocol 1.1.3 has no encoding
   of its feature struct, vkr's allowlist doesn't name it), so no guest would see it advertised, and no adapter the
   user has offers it natively either. A WGSL port of dEQP's ASTC decoder (2D and 3D, LDR, sRGB, HDR; naga-validated,
-  never run) is on the branch `park/t35-astc-decoder`; the design and what it needs are in docs/backlog.md "3D ASTC".
+  never run) is on the branch `park/t35-astc-decoder`; the design and what it needs are in [#115](https://github.com/gbl08ma/waarm64/issues/115).
 
 ### The backlog's tasks (T36–T50, drafted 2026-11-07 at the user's ask)
 
-docs/backlog.md's Vulkan entries ("The Vulkan driver's gaps" and the entries around it), grouped so that each task
+the backlog's Vulkan entries (now the vulkan issues; "The Vulkan driver's gaps" and the entries around it), grouped so that each task
 works in one place of the code (the replay's draws, the bindings' count, a fetch in the translator, the worker's
 compute passes), numbered by the kickoff's ranking: a hang first, then work WebGPU drops, wrong pixels, what Vulkan 1.3
 requires, then features by what programs (DXVK, vkd3d, Godot, ANGLE) and dEQP-VK meet, performance last. Each task

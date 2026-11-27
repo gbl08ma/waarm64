@@ -5,7 +5,7 @@ own disk"). How the reader works (the block cache, the OPFS store, parallel read
 is [devices.md](devices.md) "blk" ("Over HTTP", "A chunked image"). This page covers what a server must give, how an
 image is published, where ours are hosted and why there, and what a remote boot costs. Measurements:
 `bench/remote-disk/REPORT.md` (`node bench/remote-disk/boot.ts`, [benchmarking.md](benchmarking.md)). Open items:
-[backlog.md](backlog.md) "Remote disks' loose ends".
+[the remote disks issues](https://github.com/gbl08ma/waarm64/issues?q=is%3Aissue+state%3Aopen+label%3Adisks-remote).
 
 ## What a remote boot costs
 
@@ -42,7 +42,7 @@ Findings worth not re-measuring:
 - **The prefetch pays on a warm edge too** (R6: 9–10 s to Firefox's paint): a dependent miss is a round trip however
   fast the host.
 - **A hosted image's first boot runs its update jobs** (`ldconfig.service` by `ConditionNeedsUpdate`): 2–5 s of the
-  guest's time, no extra bytes (backlog).
+  guest's time, no extra bytes ([#30](https://github.com/gbl08ma/waarm64/issues/30)).
 - The deterministic mode reads a remote disk one request at a time with synchronous XHRs, by design (its step
   counts); everything above is realtime mode.
 
@@ -200,7 +200,7 @@ snapshot the countdown already made small. `settle` isn't used either. `arch-3d`
 offloaded GL area is disconnected on virgl) and its window is `gtk4-demo`. The screen is fixed at `screen` (sway keeps
 the size it started with; the page letterboxes it). Its card's `view` is `screen`. ~2.5 min a desktop. The image is
 the deployed Desktop Demo's (`desktop/`, its content id the same); the demos' copy of its pieces is in the shared
-`pieces/` (944 files more until `desktop/` is published again from there: backlog).
+`pieces/` (944 files more until `desktop/` is published again from there: [#162](https://github.com/gbl08ma/waarm64/issues/162)).
 
 **What's reproducible:** the shape hash. The recipe fixes everything it covers (the MACs, the disk's serial, CPUs, RAM,
 display, the devices) and the image is bit for bit, so its content id is too: a rebuild from the same checkout gives the

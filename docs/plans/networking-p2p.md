@@ -1,8 +1,8 @@
 # Peer-to-peer rooms: left open (explore later, not planned)
 
 Rooms are built (the P2P track, 2026-11-10 to 2026-11-12): how they work, the decisions that bind them, their numbers
-and findings are [networking/rooms.md](../networking/rooms.md); their loose ends are [backlog.md](../backlog.md)
-"Rooms' loose ends". This page holds only the ideas past them, none of them scheduled.
+and findings are [networking/rooms.md](../networking/rooms.md); their loose ends are
+[#218](https://github.com/gbl08ma/waarm64/issues/218) and [the P2P issues](https://github.com/gbl08ma/waarm64/issues?q=is%3Aissue+state%3Aopen+label%3Anetwork-p2p). This page holds only the ideas past them, none of them scheduled.
 
 - **Other suffixes for registered names**: names are built (the NAMES track: [networking/names.md](../networking/names.md))
   under a room's own domains (`<tag>.p2p.internal`, and the room's name when its ID is a label of its own); which

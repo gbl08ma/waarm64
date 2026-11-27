@@ -44,8 +44,7 @@ The network's pages are under `networking/`: the adapters and connections, then 
 | [devenv.md](devenv.md) | the dev VM, what's installed and why, the USB rigs, deploying, dev-only tools, every command |
 | [cloud.md](cloud.md) | Claude Code cloud sessions: what differs from the dev VM (x86_64, Node, Chromium, dtc, images) and the setup script |
 | [third-party.md](third-party.md) | `THIRD_PARTY.json`, the authoritative list of third-party code and references: its sections and fields, which rows the About pane shows and why, pinned license links, the checks |
-| [backlog.md](backlog.md) | open loose ends by area (moving to GitHub issues: [issues.md](issues.md)) |
-| [issues.md](issues.md) | the project's GitHub issues: `tools/issue.ts` (REST only), the labels (areas, kind, modifiers, priority) and who changes them, commits that name issues |
+| [issues.md](issues.md) | the open work, as the project's GitHub issues: `tools/issue.ts` (REST only), the labels (areas, kind, modifiers, priority) and who changes them, commits that name issues |
 | [comparison.md](comparison.md) | waarm64 against the other in-browser machines (unkernel, WebVM/CheerpX, v86, JSLinux, container2wasm): what each is, features, performance (to measure), where they lead, draft copy for the site, sources |
 | [plans/networking.md](plans/networking.md) | exploration for M8's networking (not scheduled) |
 | [plans/networking-p2p.md](plans/networking-p2p.md) | what's left open past peer-to-peer rooms (onion routing, broadcast, IPv4 between guests, spam, a directory on the page); how rooms work is [networking/rooms.md](networking/rooms.md) |

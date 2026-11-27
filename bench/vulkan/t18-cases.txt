@@ -1,5 +1,5 @@
 # VK4 T18 (bench/vulkan/nvidia.sh VK2_STEPS=t18): cases SwiftShader fails and the M4 passes: fetches from views with a base
-# level (docs/backlog.md "SwiftShader's fetch from a view with a base level"). Passing here says it was SwiftShader, not Dawn's Vulkan backend.
+# level (https://github.com/gbl08ma/waarm64/issues/106). Passing here says it was SwiftShader, not Dawn's Vulkan backend.
 dEQP-VK.pipeline.monolithic.image_view.view_type.1d.format.r16_sint.subresource_range.lod_base_mip_level_array_layer_last_remaining_levels_and_layers
 dEQP-VK.pipeline.monolithic.image_view.view_type.1d.format.r16g16_sint.subresource_range.lod_base_mip_level_array_layer_second
 dEQP-VK.pipeline.monolithic.image_view.view_type.1d.format.r16g16b16a16_uint.subresource_range.lod_base_mip_level_array_layer_last_remaining_levels_and_layers

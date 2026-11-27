@@ -132,7 +132,7 @@ goes to real guest work, not to sleeps. The costly patterns are structural: big 
 boots.
 
 **Where memory, not CPU, forces running alone.** The JS step peaks near 10 GiB at 7 files at a time
-(docs/backlog.md: boot-node-litmus 3.1 GiB, a native test binary 2.6 GiB, TSan's litmus 1.7 GiB, Chrome renderers
+([#289](https://github.com/gbl08ma/waarm64/issues/289): boot-node-litmus 3.1 GiB, a native test binary 2.6 GiB, TSan's litmus 1.7 GiB, Chrome renderers
 up to 2 GiB, overlapping by chance). Under the 11 GiB cap on an 18 GiB VM, that leaves room for nothing else, so CPU
 isn't what makes `ci.sh` exclusive: memory is. A Debian machine on the page is ~2–3 GiB (ci-machines runs 3 under
 11 GiB), and a dEQP-VK machine is 5.6–6.3 GiB. Per-file peaks aren't known: measuring them is the first thing to do

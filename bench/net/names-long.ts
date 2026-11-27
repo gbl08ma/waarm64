@@ -1,4 +1,4 @@
-// NAMES loop 6b: the kickoff's days-long run (docs/backlog.md "Room names' loose ends", the scalability test's public arm: "a few days on the public calendars, explorers and
+// NAMES loop 6b: the kickoff's days-long run (https://github.com/gbl08ma/waarm64/issues/221, the scalability test's public arm: "a few days on the public calendars, explorers and
 // default relays with real stamps, between two pages"; bench/net/REPORT.md "NAMES loop 6b"). Two Node processes play the
 // two pages, each running the page's own code: the shipped module (target/net/ts.wasm: production's proof of work and
 // headers floor), the names agent (web/names.ts `NamesAgent` on web/names-ops.ts `localBackend`, the ops the names
@@ -34,7 +34,7 @@
 //     node --disable-warning=ExperimentalWarning bench/net/names-long.ts run --dir bench/results/local/names-long --days 4 --every 20
 //   node bench/net/names-long.ts summary bench/results/local/names-long/log.jsonl --out results/names6b/long.json
 // Expected (the 1.8-hour proof): ~1,000 events a relay a day, a few dozen calendar and explorer requests over the run, ~0.2% of a
-// core and ~150 MB RSS a node. Then a "NAMES loop 6b, the long run" REPORT entry from the summary, and backlog items from what it
+// core and ~150 MB RSS a node. Then a "NAMES loop 6b, the long run" REPORT entry from the summary, and issues from what it
 // shows (resolves over days, relay and DERP drops, renewals made ahead, the agent's hourly publisher).
 // The relay budget, to choose before launching: a room's own cadence (a server alone asks "who serves?" about every 5 minutes,
 // three events each; the agent's publisher connects hourly; a member's names client reconnects at a lookup after 10 idle minutes)

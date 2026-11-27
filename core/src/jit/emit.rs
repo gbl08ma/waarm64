@@ -275,7 +275,8 @@ pub struct Func {
     /// emission of the block finds them, and registers read once and never
     /// written are `plain` in the second (a local costs Liftoff more than it
     /// saves them). Bit masks, not counts: rustc nightly-2026-09-24 with
-    /// simd128 miscompiles a `[u8; 32]` compared into a u32 mask (docs/backlog.md).
+    /// simd128 miscompiles a `[u8; 32]` compared into a u32 mask
+    /// (https://github.com/gbl08ma/waarm64/issues/16).
     pub read: u64,
     pub reused: u64,
     pub plain: u64,

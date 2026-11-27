@@ -466,7 +466,8 @@ at 160 MiB against 98.6% at 320 in all six sessions of 320, the A/A within 0.1 p
   the synthetic small guests may lose a few percent for such gains. Report the losses with
   numbers.
 - **Don't fit the design to CoreMark:** well-optimized wasm runs 10–30% behind native on
-  compute-bound code; CoreMark is at ~70% of QEMU TCG.
+  compute-bound code; CoreMark is at ~70% of QEMU TCG (its gap: the transfers between blocks and the store bounds
+  checks V8 keeps on Linux arm64).
 - **The dev VM pays explicit wasm bounds checks that macOS and x86_64 don't** (47% of the userspace
   benchmark: [v8.md](v8.md)). For what a macOS user gets, and before ranking work by a profile
   taken here, run the page on the Mac host's Chromium: `bench/run-mac.sh <name> --page
@@ -736,4 +737,4 @@ and energy (`bench/mac/procstat.c`, built there by `bench/run-mac.sh` and `bench
   subtract the code section's base). Only for the binary that crashed: keep it before rebuilding.
 - The wasm name section (`<va>_pa<pa>`) makes DevTools and `perf` profiles readable.
   (`performance.mark`/`measure` around compile, instantiate, device I/O and boot phases were
-  planned and aren't there yet: backlog.)
+  planned and aren't there yet: [#298](https://github.com/gbl08ma/waarm64/issues/298).)

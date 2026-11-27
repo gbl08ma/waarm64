@@ -2,7 +2,7 @@
 
 How a guest's sound reaches the page's speakers, and the page's microphone reaches the guest, **with the guest's own
 unmodified drivers**, in time with what the guest shows, without the main thread in the path. Done (milestone M8's audio
-track, 2026-10-10 to 2026-10-12); the loose ends are in [backlog.md](backlog.md). Where the parts are described in detail:
+track, 2026-10-10 to 2026-10-12); the loose ends are [the audio issues](https://github.com/gbl08ma/waarm64/issues?q=is%3Aissue+state%3Aopen+label%3Aaudio). Where the parts are described in detail:
 the device in [devices.md](devices.md) "snd", the page's side and the Sound menu in [frontend.md](frontend.md) "Sound",
 the guest images in [images.md](images.md), the tests in [testing.md](testing.md) "virtio-snd".
 
@@ -157,7 +157,7 @@ are shaped as they are.
 - **Limits come from `PCM_INFO`:** periods 2–16 of 160–122,880 bytes, a buffer up to 245,760; zero jacks and channel
   maps are fine; formats S16_LE, S32_LE, FLOAT_LE (ALSA mask `0x4404`); QEMU's device offers more (5,512–384,000 Hz).
 - **The test kernel's build number** (`#N` in the version string) moves a guest's step count (469 steps from `#2` to
-  `#1`): `linux-snd` pins `KBUILD_BUILD_VERSION=1`. (`linux-gpu` doesn't: [backlog.md](backlog.md).)
+  `#1`): `linux-snd` pins `KBUILD_BUILD_VERSION=1`. (`linux-gpu` doesn't: [#294](https://github.com/gbl08ma/waarm64/issues/294).)
 
 ## Measurements
 
@@ -223,4 +223,4 @@ mid-tone and loaded in a fresh profile, the fake microphone heard at its pitch);
 
 Not covered headless: the real autoplay prompt and a hidden tab (headless Chromium starts an `AudioContext` without a
 gesture and never hides a page; the test suspends the context itself to reach the same state), and the real microphone
-prompt, indicator and hardware ([backlog.md](backlog.md) "Sound by hand only").
+prompt, indicator and hardware ([#183](https://github.com/gbl08ma/waarm64/issues/183)).

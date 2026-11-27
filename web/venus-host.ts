@@ -452,7 +452,7 @@ export class VenusRenderer {
     if ((instance.exports as unknown as Exports).venus_arena_end() >>> 0 !== VENUS_ARENA) throw new Error(stale);
     // VK4 T46: Vulkan's timestamps stay the CPU's on Apple's GPUs: with them on the GPU the M4 lost its WebGPU device
     // ("Insufficient Memory") in 3 of 6 runs of dEQP's query cases, at the first timestamps after ~740 other cases, and
-    // never without (docs/backlog.md "Queries").
+    // never without (https://github.com/gbl08ma/waarm64/issues/108).
     const apple = caps?.adapterInfo?.vendor.toLowerCase() === 'apple' ? ['timestamp-query'] : [];
     self = new VenusRenderer(
       instance,

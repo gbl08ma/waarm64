@@ -516,7 +516,7 @@ snapshots.
 Until now a device's config space never changed under a running driver: `ConfigGeneration` read 0 and
 the only config-change interrupt was the transport's own NEEDS_RESET. virtio-gpu's display events
 (`events_read`, a size change from the page) need a host-initiated change, and so would a console
-resize, a block capacity change or a net link state (backlog "Platform and devices"; none is
+resize, a block capacity change or a net link state ([#24](https://github.com/gbl08ma/waarm64/issues/24); none is
 implemented by this step).
 
 - **`DevShared` word 5 (offset 20, the old padding) is `config_gen`**: the host's generation counter.

@@ -270,7 +270,7 @@ reference, the Go client (`net/tailscale`, now a test fixture) and the tests the
 - **Refused or left out:** a tailnet with Tailnet Lock on fails with that reason (not half-working);
   no direct connections, Taildrop, SSH server, serve/funnel or logtail.
 
-The remaining gaps of both clients are in [backlog.md](../backlog.md) "Network".
+The remaining gaps of both clients are [the tailnet issues](https://github.com/gbl08ma/waarm64/issues?q=is%3Aissue+state%3Aopen+label%3Anetwork-tailnet).
 
 ## Numbers
 

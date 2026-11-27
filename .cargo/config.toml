@@ -2,7 +2,8 @@
 # Layout A (M0.5): this one memory holds core state and guest RAM (see bench/spike/memory/REPORT.md).
 [target.wasm32-unknown-unknown]
 # No simd128: the core never uses SIMD itself, and with it the pinned nightly
-# miscompiled the JIT's register-mask code three times (docs/backlog.md).
+# miscompiled the JIT's register-mask code three times
+# (https://github.com/gbl08ma/waarm64/issues/16).
 rustflags = [
   "-C", "target-feature=+bulk-memory,+mutable-globals",
   "-Z", "llvm-target-feature=+atomics",

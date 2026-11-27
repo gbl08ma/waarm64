@@ -331,7 +331,8 @@ if [ "${1:-}" = page ]; then
     step rows-angle 900 env PAGE=bench/vulkan/angle/es3.html ARMS=--use-angle=vulkan node bench/vulkan/dawn-frames.ts guest target/arch/desktop.qcow2 "$R/rows-angle"
     [ -f "$R/rows-angle.log" ] && grep -hoE 'dawn: [a-z]+ [^"\\|]{0,100}' "$R/rows-angle.log" | sort -u | head -20 | sed 's/^/  /' | tee -a "$R/summary.txt" || true
     # VK3 L7.5: vkd3d 1.19 makes a feature level 11_0 device on Venus; its own tests (the dev VM, L8: the first three
-    # pass, test_vertex_id fails 39 of 89 and test_instance_id 84 of 372, gaps filed in docs/backlog.md "vkd3d on Venus").
+    # pass, test_vertex_id fails 39 of 89 and test_instance_id 84 of 372, gaps filed as
+    # issues: test_vertex_id's https://github.com/gbl08ma/waarm64/issues/86).
     if [ -n "$DRY" ] || [ -f "$P/target/vkd3d/vkd3d.ext4" ]; then
       step rows-vkd3d 900 env TESTS=test_draw_instanced,test_draw_indexed_instanced,test_root_constants,test_vertex_id,test_instance_id node bench/vulkan/vkd3d.ts target/arch/desktop.qcow2 "$R/rows-vkd3d"
       [ -f "$R/rows-vkd3d.log" ] && grep -hoE 'test_[a-z_]+ rc=[0-9]+|[0-9]+ tests executed \([0-9]+ failures|level [0-9_]+: hr 0x[0-9a-f]+( \(device made\))?' "$R/rows-vkd3d.log" | sort -u | head -20 | sed 's/^/  /' | tee -a "$R/summary.txt" || true

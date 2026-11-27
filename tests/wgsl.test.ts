@@ -17,8 +17,9 @@ import { chromium } from 'playwright-core';
 const root = new URL('..', import.meta.url).pathname;
 const MODULE = join(root, 'target/vk/venus.wasm');
 
-/** Why a stage may not translate: what the direct set doesn't offer, and the translator's known gaps (docs/backlog.md
- * "The Vulkan driver's gaps": vkQuake's variants for 16-bit floats, translated since VK3 L5, reach these). */
+/** Why a stage may not translate: what the direct set doesn't offer, and the translator's known gaps
+ * (https://github.com/gbl08ma/waarm64/issues/71: vkQuake's variants for 16-bit floats, translated since VK3 L5,
+ * reach these). */
 const OUTSIDE = /16-bit values|16-bit float arithmetic without|outside the layout \(set [4-9]|dynamically indexed|^image atomics on /;
 
 type Stage = { name: string; stage: number; words: Uint32Array };

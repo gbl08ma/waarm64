@@ -28,7 +28,7 @@ export type UsbTransfer = {
   setup?: Setup;
   data?: Uint8Array;
   length: number;
-  /** Isochronous: each packet's length (no device takes isochronous TDs yet: docs/backlog.md "USB"). */
+  /** Isochronous: each packet's length (no device takes isochronous TDs yet: https://github.com/gbl08ma/waarm64/issues/254). */
   packets?: number[];
 };
 

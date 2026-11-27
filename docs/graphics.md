@@ -3,7 +3,7 @@
 How a guest gets a display and hardware-accelerated 3D in the page **with its own unmodified drivers**: virtio-gpu for
 the display (2D), and OpenGL ES through Mesa's **virgl** driver, rendered on the host by **our own virgl renderer on
 WebGL2**. Done (milestone M8's graphics track, G0 to G5, 2026-10-01 to 2026-10-19, and fixes since); the decisions that
-bind it are below ("Decisions"), the loose ends in [backlog.md](backlog.md) ("Platform and devices"). Vulkan is a
+bind it are below ("Decisions"), the loose ends in [the graphics issues](https://github.com/gbl08ma/waarm64/issues?q=is%3Aissue+state%3Aopen+label%3Agraphics). Vulkan is a
 second path beside it, per machine: Venus's commands translated onto the browser's WebGPU by a renderer of ours in wasm
 (VK0 to VK3, 2026-10-25 to 10-29: "Vulkan through Venus" below; the renderer's code in
 [vk/README.md](../vk/README.md); the bar, the decisions and VK4 in [plans/graphics.md](plans/graphics.md)), whose
@@ -25,8 +25,8 @@ These bind the graphics work; changing one is the user's call ([decisions.md](de
 - **3D is OpenGL ES through Mesa's virgl driver, rendered by our own virgl renderer on WebGL2.** virglrenderer (MIT)
   is the reference (ported from with attribution where it helps, THIRD_PARTY.json); the guest gets what virglrenderer
   gives on a GLES 3.0 host, GLES 3.0 and desktop GL 2.1.
-- **WebGL2 is the baseline.** A WebGPU backend for the same protocol (GLES 3.1: compute, storage buffers) is a backlog
-  item, not built. A page without WebGL2 offers 2D only.
+- **WebGL2 is the baseline.** A WebGPU backend for the same protocol (GLES 3.1: compute, storage buffers) is
+  [#53](https://github.com/gbl08ma/waarm64/issues/53), not built. A page without WebGL2 offers 2D only.
 - **The caps follow the browser**: never more than the renderer backs there (a snapshot restored where its caps can't
   be backed runs with 3D off).
 - **virgl's resources are guest-backed**: no `HOSTMEM` window, blob resources or coherent-memory tracking. (Vulkan
@@ -86,7 +86,7 @@ gfxstream driver is Vulkan only.
   every renderer object is gone with it, so the GPU worker answers fences, reads and snapshots' questions and drops
   virgl's calls (Venus's go on), and the device turns 3D off as a restore that can't back it does (`off3d`: no new
   context; a snapshot saves the machine without the renderer's state and its restore keeps 3D off) until the guest
-  starts again. The screen stops updating (backlog.md "3D back after a lost graphics context"). A 2D machine's WebGL2
+  starts again. The screen stops updating ([#52](https://github.com/gbl08ma/waarm64/issues/52)). A 2D machine's WebGL2
   screen draws again when its context comes back.
 - **The switches:** the Machine menu's Graphics (3D or 2D, a restart applies it); on the query, `?gpu=2d`, `virgl`,
   `virgl-null` (the null renderer: streams walked and counted, nothing drawn, fences at once), `nopace` and `q<N>`
@@ -195,7 +195,9 @@ the backing right after the flush and differs 30 ms later, at every flip), and t
 two flips ago plus whatever tiles were done: missing letters, tile-shaped holes. A real display hides the race by
 scanning memory continuously; a virtio-gpu host wins it only if its command path is slower than the rasterizer, and
 under the JIT it never is. llvmpipe is also expensive under emulation (323 ms a compositor frame on 1 vCPU, 71 ms on 4,
-~12× native, after the JIT's NEON work: `bench/boot/REPORT.md` "M8: llvmpipe"):
+~12× native, after the JIT's NEON work: `bench/boot/REPORT.md` "M8: llvmpipe"; before it, ~95% of the rasterizer's
+time was helper calls for NEON the JIT didn't inline, and inlining them made a frame 15.6× faster on 1 vCPU and 18.6×
+on 4, `gl_llvmpipe_jit`):
 
 | sway with foot, 4 vCPUs | llvmpipe (sway's default on 2D) | `WLR_RENDERER=pixman` |
 |---|---|---|
@@ -206,7 +208,7 @@ under the JIT it never is. llvmpipe is also expensive under emulation (323 ms a 
 So on a 2D machine a wlroots compositor should run with `WLR_RENDERER=pixman` (on a 3D one with `gles2`: virgl).
 wlroots refuses a software EGL device unless `WLR_RENDERER_ALLOW_SOFTWARE` is set, yet Arch's sway took llvmpipe
 without it (not looked into). A display mode that samples the scanout's memory at its refresh and holds a flipped
-buffer until it stops changing would hide the race for unmodified guests: not built (backlog).
+buffer until it stops changing would hide the race for unmodified guests: not built ([#39](https://github.com/gbl08ma/waarm64/issues/39)).
 
 ### Numbers
 
@@ -214,7 +216,7 @@ buffer until it stops changing would hide the race for unmodified guests: not bu
 firmware) instead of 18.7 s (the kernel's console), and `virtio_gpu` costs the boot nothing measurable; a transfer
 ~0.7 ms a megapixel on the 2D context, a flush with its draw 1.4 and 2.6 ms for a full 1080p and 1440p frame; host
 memory 4 bytes a pixel per resource, capped at 64 MiB each and 256 MiB together; a key's glyph ~13 ms later on the
-screen than on the simple framebuffer (backlog).
+screen than on the simple framebuffer ([#57](https://github.com/gbl08ma/waarm64/issues/57)).
 
 ## The guest's 3D: Mesa's virgl
 
@@ -252,7 +254,7 @@ screen than on the simple framebuffer (backlog).
   texture that isn't `PIPE_BIND_SHARED` with a 1-byte BO when the host copies transfers both ways
   (`COPY_TRANSFER_BOTH_DIRECTIONS`), so the dmabuf is smaller than stride × height and sway disconnects the client
   ("invalid buffer stride or height for plane 0"). A guest-side bug (QEMU with virgl has it too); `GDK_DISABLE=offload`
-  avoids it (backlog). **"No EGL configuration available"** in a GtkGLArea (GTK draws in software) was Mesa 26.3.1's
+  avoids it ([#42](https://github.com/gbl08ma/waarm64/issues/42)). **"No EGL configuration available"** in a GtkGLArea (GTK draws in software) was Mesa 26.3.1's
   regression, not our caps: `338afb32f86` left `EGL_OPENGL_ES_BIT` out of every config of a build without GLES1
   (Arch's), and GDK's `eglChooseConfig` doesn't set `EGL_RENDERABLE_TYPE`, whose default is that bit (mesa/mesa#16934);
   Arch's 1:26.3.1-2 reverts it (the desktop image from 2026-11-22 on).
@@ -398,7 +400,7 @@ YouTube in the guest's Chromium; Firefox waits on its fences before handing sway
 `bench/gpu/chromium-flicker.ts` (a frame counter read through Chromium's screencast) counted 20–22 frames stepping back
 in 30 s with the decoder slowed to ~50 ms a picture under the old rule, 0–1 under this one; the page's frame rate
 didn't move (JSON in `bench/gpu/results/2026-10-22-chromium-flicker/`). A single one-frame step back now and then is
-still seen (backlog).
+still seen ([#41](https://github.com/gbl08ma/waarm64/issues/41)).
 
 ## The renderer
 
@@ -756,7 +758,7 @@ Decided 2026-10-14 (the user); the track ended 2026-10-15 with H.264, VP9 and AV
   only ("Unsupported VA-API surface format"), so it fell back to software. Version 2 routes AV1 film grain around a
   Mesa omission; 3 says an exported object's size is what its planes span (Mesa's says its dma-buf's, a page for a
   decoder's host-only resources, and libplacebo refuses an image larger than its object: vk/README.md "Imports"). The user: keep it until Mesa
-  is fixed (backlog.md "Upstream reports").
+  is fixed ([#304](https://github.com/gbl08ma/waarm64/issues/304), [#306](https://github.com/gbl08ma/waarm64/issues/306)).
 - **The host decodes with WebCodecs in the GPU worker** and writes each picture into the guest's video buffer (Mesa's
   `vl_video_buffer`: ordinary virgl textures), as virglrenderer does with host VA-API (`vrend_video.c`: decode, then
   copy into the plane resources). The copy out of each `VideoFrame` (`copyTo`, exact) stays: a GPU-only conversion in a
@@ -777,7 +779,13 @@ Decided 2026-10-14 (the user); the track ended 2026-10-15 with H.264, VP9 and AV
   where `VideoDecoder.isConfigSupported` says yes, in hardware or not. 10-bit (VP9 profile 2, AV1 10-bit) isn't offered:
   the video buffers are NV12. **HEVC was dropped** (the user, 2026-10-15): Chromium on Linux has no HEVC decoder of its
   own (only a platform's, in hardware), so the user's host would never offer it, and VA's parameters lose the SPS's
-  short-term reference picture sets (backlog.md "HEVC on the host"). HEVC files play, decoded in the guest.
+  short-term reference picture sets. HEVC files play, decoded in the guest. What HEVC on the host would need: VPS, SPS
+  and PPS written from `virgl_h265_picture_desc` (offsets from a C program against Mesa's `virgl_video_hw.h`), and
+  every slice header rewritten, with an explicit short-term set built from the picture's DPB list (`ref[]`,
+  `PicOrderCntVal[]`, the RefPicSetSt*/Lt indices; the rest is foll) and the header parsed through to its end
+  (prediction weights, entry points) to re-align the slice data; long-term pictures from the SPS can't be rebuilt
+  (their POCs aren't sent). Testable only where the browser has HEVC (the Mac's hardware), and offline with FFmpeg in
+  Podman.
 - **Correctness is bit-exact:** a decoded picture's planes equal FFmpeg's software decode of the same stream byte for
   byte, where the browser's decoder is FFmpeg's or the hardware's (OpenH264 isn't: below).
 
@@ -811,7 +819,7 @@ Worth not re-discovering:
   hence the call queue.
 - **What virgl's descs carry isn't what Mesa's pipe descs have**: check `virgl_video.c`'s fill for every field read,
   and Mesa's VA frontend for what it fills when. AV1: no `refresh_frame_flags` (written 1), no `lr_unit_size`, the film
-  grain target set after the desc is sent (backlog.md "Upstream reports").
+  grain target set after the desc is sent ([#306](https://github.com/gbl08ma/waarm64/issues/306)).
 - **The browsers' H.264 decoders differ.** Chromium's own (VideoToolbox, D3D11, VA-API) honors the SPS's
   `max_num_reorder_frames` 0: each picture out before the next chunk goes in. FFmpeg in software (Chrome's
   `prefer-software`) drops every picture that comes after one it has output in display order when told 0, guesses a
@@ -840,7 +848,7 @@ Worth not re-discovering:
   detaching them, while the compositor's and content process's contexts still hold them: the write once needed the
   decoding context's attachment and the compositor sampled the old planes. Hence "where a picture goes" (above).
 - **A WebM/MP4 seek lands on a key picture; an MPEG-TS seek doesn't** (no index): the guest's FFmpeg conceals the
-  missing references, the browser's decoders refuse (backlog.md "H.264 that jumps to a picture that isn't an IDR").
+  missing references, the browser's decoders refuse ([#61](https://github.com/gbl08ma/waarm64/issues/61)).
   Use TS only for straight decodes.
 - **AV1's reference slots:** a frame's decoding depends only on what the slots hold, so the host keeps its own. With
   eight distinct pictures in the guest's map (libaom's streams, mostly) none is free; decoding again whenever none was
@@ -978,7 +986,7 @@ Two extensions WebGL2 has can't reach the guest through virgl: multiview (`OVR_m
 `multiview` cap for virgl, and virgl's protocol has no views) and `EXT_debug_marker` (Mesa 26.2 has none; virgl's
 `STRING_MARKER` serves `KHR_debug`'s messages).
 Beyond GLES 3.0 (compute, GLES 3.1) would be a WebGPU backend, and desktop GL 3.0 and 3.1 extensions WebGL2 has only
-as extensions (backlog.md "Platform and devices"); desktop GL past 3.1 needs geometry and tessellation, which neither
+as extensions ([#53](https://github.com/gbl08ma/waarm64/issues/53), [#51](https://github.com/gbl08ma/waarm64/issues/51)); desktop GL past 3.1 needs geometry and tessellation, which neither
 WebGL2 nor WebGPU has.
 
 ## Applications on 3D
@@ -1003,13 +1011,13 @@ the browser's **WebGPU**, on the real GPU. Its frames reach the screen through t
 bar it must meet and the decisions that bind it are [plans/graphics.md](plans/graphics.md), with VK4's tasks. Where the
 parts are described in detail: the renderer's code in [vk/README.md](../vk/README.md), the device, the window and the
 host's side in [devices.md](devices.md) "Venus" and "The host-visible window", the tests in [testing.md](testing.md)
-"dEQP", the loose ends in [backlog.md](backlog.md) ("Platform and devices": the Vulkan entries).
+"dEQP", the loose ends in [the Vulkan issues](https://github.com/gbl08ma/waarm64/issues?q=is%3Aissue+state%3Aopen+label%3Avulkan).
 
 **Programs it runs** beyond the tests' (each found by a track that ran it end to end): vkcube, vkmark, vkQuake, mpv on
 Vulkan with VA-API, GTK4, ANGLE's ES3 and Dawn in the guest's Chromium, vkd3d's tests; and Godot 4.7.2 (GD, 2026-11-03
 to 11-04): its editor, Forward+ and Mobile scenes, SDFGI, and its Global Illumination demo at 60 frames/s on NVIDIA,
 under Wayland and X11 (X11's windows through Mesa's prime blit, vk/README.md "Presentation"). What GD left is in
-backlog.md "Godot on Venus, GD's leftovers"; bench/vulkan/godot.ts and godot-disk.sh run it.
+[#67](https://github.com/gbl08ma/waarm64/issues/67) to [#70](https://github.com/gbl08ma/waarm64/issues/70); bench/vulkan/godot.ts and godot-disk.sh run it.
 
 ### The shape
 
@@ -1053,7 +1061,7 @@ backlog.md "Godot on Venus, GD's leftovers"; bench/vulkan/godot.ts and godot-dis
 | **Passes and bytes of the driver's** (VK4 T7) | Multiview (a pass per view); atomics on R32 images (the image's words in a buffer, copied to and from its texture); inline uniform blocks (a uniform buffer of the set's); device addresses (address memory placed at its first buffer's bind in an address buffer of regions, a GPUBuffer and binding each, a pointer's high word its region and its low word a byte of it; VK4 T41); the depth bounds test, logic ops and advanced blends (VK4 T32: the attachment copied before each such draw, in a cut of the pass, the stage testing or blending against the copy) | |
 | **Not offered** | Sparse resources; 64-bit floats and 64-bit atomics in shaders; pipeline statistics queries; sample counts other than 1 and 4; full bindless (until WebGPU's binding arrays); geometry and tessellation (compute pre-passes, as libpoly does, when a program asks: VK4) | |
 
-What each row still misses is in backlog.md "The Vulkan driver's gaps", "ANGLE's row's gaps", "YCbCr's gaps"; what
+What each row still misses is in [the Vulkan issues](https://github.com/gbl08ma/waarm64/issues?q=is%3Aissue+state%3Aopen+label%3Avulkan) (ANGLE's row: [#81](https://github.com/gbl08ma/waarm64/issues/81) to [#84](https://github.com/gbl08ma/waarm64/issues/84); YCbCr: [#72](https://github.com/gbl08ma/waarm64/issues/72)); what
 WebGPU itself stops is "Permanent limitations" below.
 
 **The render-pass rule** (VK0 C): WebGPU can't run compute inside a render pass, and ending one to run a pre-pass,
@@ -1105,7 +1113,7 @@ bar** (bench/vulkan/REPORT.md G), or GTK4 moves to the slower path.
 - **The guest's Mesa is a party too**: it keys its WSI on the vendor ID, Mesa 26's async present drops a present after
   one that failed (the desktop image sets `VN_PERF=no_async_present`), and its opaque-fd semaphore export hands back fd
   0 (so Dawn in the guest's Chromium doesn't take Venus). The host can't fix these: what the device reports is chosen
-  around them, the images carry workarounds, each goes upstream (backlog.md "Upstream reports"), and a guest image
+  around them, the images carry workarounds, each goes upstream ([the upstream reports](https://github.com/gbl08ma/waarm64/issues?q=is%3Aissue+state%3Aopen+label%3Aupstream)), and a guest image
   built before a workaround meets the bug.
 - **WebGPU's binding model is narrower than Vulkan's**: the advertised per-stage limits come from one count of the
   bindings WebGPU takes, translation's own included (`wg_bindings_fit`), and a pipeline past them is refused at
@@ -1118,9 +1126,9 @@ bar** (bench/vulkan/REPORT.md G), or GTK4 moves to the slower path.
 
 ### Permanent limitations
 
-What WebGPU doesn't allow at an acceptable cost, so not on the backlog: each line says what, why WebGPU stops it,
+What WebGPU doesn't allow at an acceptable cost, so not an issue: each line says what, why WebGPU stops it,
 and what the device does instead. What is only expensive (geometry and tessellation as compute pre-passes, polygon
-modes, several viewports, formats WebGPU can't multisample, update after bind) stays in backlog.md as an L task. The
+modes, several viewports, formats WebGPU can't multisample, update after bind) stays [an issue](https://github.com/gbl08ma/waarm64/issues?q=is%3Aissue+state%3Aopen+label%3Avulkan), a large one. The
 census's no-task reasons (VK4-KICKOFF.md, "The census's tasks") are the first lines.
 
 - **Sparse binding and residency**: WebGPU has no tiled or partly resident resources. Not advertised.
@@ -1289,7 +1297,7 @@ Worth not re-discovering:
   real GPU (the Mac host, `bench/gpu/sway-mac.sh`), never on the dev VM.
 - **A worker's canvas commits a frame at the end of every task that draws**, held to the display's rate: draw once, in
   an animation frame (the device worker, nested in the machine worker, has no `requestAnimationFrame` and draws on a
-  timer: the backlog's 13 ms key-to-glyph suspect).
+  timer: the 13 ms key-to-glyph suspect of [#57](https://github.com/gbl08ma/waarm64/issues/57)).
 - **Most renderer bugs were WebGL refusing silently what GLES allows, or protocol meanings that are vrend's rather than
   Gallium's** (query numbers, stride 0, index offsets, the append mask): read `vrend_decode.c`/`vrend_renderer.c` and
   Mesa's encoder (`src/gallium/drivers/virgl/`) before assuming the Gallium meaning.
@@ -1370,8 +1378,7 @@ pending hung the guest; the drawn depth upload's `UNPACK_ALIGNMENT`); a sample t
 **On the Mac's GPU** (ANGLE on Metal, Apple M4, through `bench/gpu/sway-mac.sh` with `SCRIPT=deqp-run.ts`;
 `bench/gpu/results/g5-deqp-metal/`; dEQP runs ~2.4 times as fast as on the dev VM): GLES2 16,939 pass and 85 fail,
 GLES3 44,276 pass and 129 fail, every failure the GPU's (the filter switch, one invariance loop; above). No cap we
-advertise is beyond Metal: no "not supported" count moved. Other WebGL2 stacks are still to run (backlog "dEQP on more
-platforms"). The pass lists stay SwiftShader's (CI's).
+advertise is beyond Metal: no "not supported" count moved. Other WebGL2 stacks are still to run ([#43](https://github.com/gbl08ma/waarm64/issues/43)). The pass lists stay SwiftShader's (CI's).
 
 **The method that found the bugs:** a group with `CASES='dEQP-…group.*'` and `DETAIL=3`, then one case with
 `VIRGL_GPU=virgl,debug` (the renderer's trace) or `CAPTURE=` (replayed on Chromium with every read-back compared by
