@@ -163,8 +163,10 @@ connection meows again (the server may have forgotten us), and so does the serve
 (it left the relay: a restart forgets its clients), every second until it answers; after a
 `PeerGone` the answer also starts a new WireGuard session, since the server lost ours. The guest's lease: IPv6
 the tunnel address as a /128 (DHCPv6 and the router advertisement), IPv4 `192.0.0.2` (RFC 7335's
-address for a host translator's IPv4 side; nothing outside sees it), resolvers 1.1.1.1 and
-2606:4700:4700::1111 reached through the exit node (no MagicDNS). The IPv6 default route and resolver only while the
+address for a host translator's IPv4 side; nothing outside sees it), resolvers 1.1.1.1 and 8.8.8.8,
+2606:4700:4700::1111 and 2001:4860:4860::8888 reached through the exit node (no MagicDNS): two operators, Cloudflare's
+first and Google's second in each family, so a guest where one is blocked still resolves (`DNS4`/`DNS6` in
+web/ts-client.ts; second rather than last, since glibc takes only three resolvers of both families). The IPv6 default route and resolver only while the
 server's machine reaches the internet over IPv6 (web/reach6.ts, probed by the worker: docs/networking/adapters.md §4
 "IPv6 out"); otherwise the guest uses IPv4, with routes to the tailcat clients it lets in only. **NAT46 in the module** (`nat46.rs`,
 stateless RFC 7915 for TCP, UDP and ICMP echo), so the gateway stays the same for both protocols: IPv4

@@ -6,7 +6,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
-import { DERP_BUFFER, RTC_BUFFER, rtcSend, socketSend, TsClient, TsModule, type TsEvent } from '../web/ts-client.ts';
+import { v6text } from '../web/ip6.ts';
+import { DERP_BUFFER, DNS4, DNS6, RTC_BUFFER, rtcSend, socketSend, TsClient, TsModule, type TsEvent } from '../web/ts-client.ts';
 
 const WASM = 'target/net/ts.wasm';
 const skip = existsSync(WASM) ? false : `${WASM} isn't built (net/ts/build.sh)`;
@@ -126,4 +127,9 @@ test("a relay's WebSocket drops the module's frames once it holds DERP_BUFFER un
   assert.equal(socketSend(ws, { text: false, derp: false }, frame), true, "the control connection's Noise stream is lossless");
   ws.bufferedAmount = 0;
   assert.equal(socketSend(ws, derp, frame), true);
+});
+
+test("a tailcat lease's resolvers are two operators' in each family, the second operator before glibc's third", () => {
+  assert.deepEqual(DNS4.map((a) => a.join('.')), ['1.1.1.1', '8.8.8.8']);
+  assert.deepEqual(DNS6.map(v6text), ['2606:4700:4700::1111', '2001:4860:4860::8888']);
 });

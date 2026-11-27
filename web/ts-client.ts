@@ -249,11 +249,19 @@ export function exitNodeError(e: TsFailure & { id?: string }): Error {
   return failureOf(e);
 }
 
+/**
+ * A tailcat lease's resolvers, reached through the exit node: two operators in each family, Cloudflare's then
+ * Google's, so a guest where one is blocked (Cloudflare is in some countries at times) still resolves. Second in each
+ * list, not last: glibc's resolv.conf takes only the first three of the IPv4 and IPv6 ones together.
+ */
 export const DNS4 = [
   [1, 1, 1, 1],
-  [1, 0, 0, 1],
+  [8, 8, 8, 8],
 ];
-export const DNS6 = [[0x26, 0x06, 0x47, 0x00, 0x47, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0x11, 0x11]];
+export const DNS6 = [
+  [0x26, 0x06, 0x47, 0x00, 0x47, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0x11, 0x11],
+  [0x20, 0x01, 0x48, 0x60, 0x48, 0x60, 0, 0, 0, 0, 0, 0, 0, 0, 0x88, 0x88],
+];
 
 /** How long a fetch (the control server's key, a DERP map or probe, DNS over HTTPS) may take. */
 const FETCH_MS = 15_000;

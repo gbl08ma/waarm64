@@ -2529,8 +2529,8 @@ and the guest's default way out (below).
     Connecting to the relay, Waiting for the tailcat server, Opening the tunnel, then **Connected
     through the tailcat server (192.0.0.2)**. The guest's lease: IPv4 `192.0.0.2` (translated to
     the tunnel's IPv6 by the client, NAT64 to the exit node), IPv6 the tunnel's own
-    `fd7a:115c:a1e0:…` address, MTU 1280, resolvers 1.1.1.1 and 2606:4700:4700::1111 (reached
-    through the exit node). What the guest reaches is TCP and UDP to wherever that computer
+    `fd7a:115c:a1e0:…` address, MTU 1280, resolvers 1.1.1.1, 8.8.8.8, 2606:4700:4700::1111 and 2001:4860:4860::8888
+    (Cloudflare's and Google's, reached through the exit node). What the guest reaches is TCP and UDP to wherever that computer
     reaches, its LAN included; no ping beyond it, no exit-node choice, no Log out. Connected, the menu shows
     [This machine's key](ui:network:NetAdapter.key) (`nodekey:…`, to copy) and the connection's Details the command that lets only it
     use that computer (`tailcat serve --allow=<key> exit-node`): the connection's identity is its node, going online alone too,
