@@ -80,7 +80,7 @@ async function deviceTree(dir: string) {
   // button: probing them cost the Debian boot seconds, loop 1.)
   for (const n of ['pcie@10000000', 'platform-bus@c000000', 'pmu', 'gpio-keys', 'pl061@9030000']) drop(n);
   drop('its@8080000', '\t\t'); // the GIC's ITS
-  dts = dts.replace(/^\t\t(kaslr-seed|rng-seed) = .*\n/gm, ''); // our DT has no seeds (backlog)
+  dts = dts.replace(/^\t\t(kaslr-seed|rng-seed) = .*\n/gm, ''); // our DT has no seeds (docs/firmware.md, testing.md "The UEFI oracle": QEMU's kaslr-seed turned on KASLR)
   if (opt['no-fw-cfg']) drop('fw-cfg@9020000');
   const out = join(dir, 'waarm64.dtb');
   run('dtc', ['-q', '-I', 'dts', '-O', 'dtb', '-o', out], dts);

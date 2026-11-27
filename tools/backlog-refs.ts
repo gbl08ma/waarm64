@@ -12,7 +12,7 @@ export const LAST = 'e04a6974';
 
 /** Files whose mentions are history, not pointers. */
 export function allowedFile(path: string): boolean {
-  return /^bench\/[^/]+\/REPORT\.md$/.test(path) || /^bench\/(.+\/)?results\//.test(path) || /^ISSUES-(KICKOFF|HANDOVER)\.md$/.test(path) || path === 'tools/backlog-refs.ts' || path === 'docs/issues.md';
+  return /^bench\/[^/]+\/REPORT\.md$/.test(path) || /^bench\/(.+\/)?results\//.test(path) || path === 'tools/backlog-refs.ts' || path === 'docs/issues.md';
 }
 
 /** A line's mentions of backlog.md that aren't links to the file at LAST. */
@@ -20,12 +20,23 @@ export function strayRefs(line: string): number {
   return (line.replaceAll(`blob/${LAST}/docs/backlog.md`, '').match(/backlog\.md/g) ?? []).length;
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const out = execFileSync('git', ['-C', ROOT, 'grep', '-n', '--no-color', '-I', 'backlog\\.md'], { encoding: 'utf8', maxBuffer: 64 << 20 }).trim();
-  const bad = out.split('\n').filter((l) => {
+/** The lines of `git grep -n` output that still point at the file. */
+export function strayLines(grep: string): string[] {
+  return grep.split('\n').filter((l) => {
     const m = /^([^:]+):(\d+):(.*)$/.exec(l);
-    return m && !allowedFile(m[1]) && strayRefs(m[3]) > 0;
+    return m !== null && !allowedFile(m[1]) && strayRefs(m[3]) > 0;
   });
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  let out = '';
+  try {
+    // --untracked: a new file the fast lane checks before it is added.
+    out = execFileSync('git', ['-C', ROOT, 'grep', '-n', '--no-color', '-I', '--untracked', 'backlog\\.md'], { encoding: 'utf8', maxBuffer: 64 << 20 });
+  } catch (e) {
+    if ((e as { status?: number }).status !== 1) throw e; // 1: no line matched
+  }
+  const bad = strayLines(out.trim());
   for (const b of bad) console.error(`${b.slice(0, 200)}`);
   if (bad.length) {
     console.error(`backlog-refs: ${bad.length} line(s) still point at docs/backlog.md: link the issue (docs/issues.md)`);

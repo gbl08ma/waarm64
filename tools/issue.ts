@@ -51,8 +51,10 @@ export function lintLabels(set: LabelSet): string[] {
   if (!Number.isInteger(set.priority?.field_id) || !set.priority.options?.length) out.push('the Priority field needs its field_id and options');
   else if (set.priority.options.some((x) => x.toLowerCase() === 'none')) out.push('"none" clears a priority: not an option');
   const byName = new Map<string, Label>();
+  const lower = new Set<string>();
   for (const l of set.labels) {
-    if (byName.has(l.name)) out.push(`${l.name}: listed twice`);
+    if (lower.has(l.name.toLowerCase())) out.push(`${l.name}: listed twice`);
+    lower.add(l.name.toLowerCase());
     byName.set(l.name, l);
     if (!GROUPS.includes(l.group)) out.push(`${l.name}: unknown group "${l.group}"`);
     if (!/^[0-9a-f]{6}$/.test(l.color)) out.push(`${l.name}: color "${l.color}" is not six lowercase hex digits`);
@@ -78,16 +80,24 @@ export function lintLabels(set: LabelSet): string[] {
  */
 export function resolveLabels(set: LabelSet, current: string[], add: string[], remove: string[]): string[] {
   const byName = new Map(set.labels.map((l) => [l.name, l]));
-  for (const n of [...add, ...remove]) {
-    if (!byName.has(n)) throw new Error(`"${n}" is not in .github/labels.json (\`node tools/issue.ts labels\` lists them; new labels need the user's OK)`);
-  }
+  for (const n of add) checkLabel(set, n);
+  // A label outside the set (set by hand on GitHub) may be removed, as long as the issue has it.
+  for (const n of remove) if (!byName.has(n) && !current.includes(n)) checkLabel(set, n);
   const out = new Set(current.filter((n) => !remove.includes(n)));
   for (const n of add) for (let l = byName.get(n); l; l = l.parent ? byName.get(l.parent) : undefined) out.add(l.name);
   for (const n of remove) {
-    const child = [...out].find((c) => byName.get(c)?.parent === n);
-    if (child) throw new Error(`"${n}" is the parent of "${child}", which stays: remove that too`);
+    const below = [...out].find((c) => {
+      for (let l = byName.get(c)?.parent; l; l = byName.get(l)?.parent) if (l === n) return true;
+      return false;
+    });
+    if (below) throw new Error(`"${n}" is above "${below}" (its parent or further up), which stays: remove that too`);
   }
   return sortLabels(set, [...out]);
+}
+
+/** Throws on a label outside the set. */
+export function checkLabel(set: LabelSet, n: string): void {
+  if (!set.labels.some((l) => l.name === n)) throw new Error(`"${n}" is not in .github/labels.json (\`node tools/issue.ts labels\` lists them; new labels need the user's OK)`);
 }
 
 /** The type's name as GitHub has it, matched without regard to case; throws on one outside the set. */
@@ -191,7 +201,11 @@ export function fileIssue(o: Ops, f: NewIssue): Issue {
   const labels = resolveLabels(o.set, [], f.labels, []);
   const p = f.priority === undefined ? undefined : resolvePriority(o.set, f.priority, f.triage ?? false);
   const i = o.api('POST', `repos/${o.repo}/issues`, { title: f.title, body: f.body, type: t, labels }) as Issue;
-  if (p) setPriority(o, i.number, p);
+  try {
+    if (p) setPriority(o, i.number, p);
+  } catch (e) {
+    throw new Error(`#${i.number} ${i.html_url} was filed, but its priority wasn't set (edit ${i.number} --triage --priority ${p}): ${(e as Error).message}`);
+  }
   return i;
 }
 
@@ -207,8 +221,10 @@ export function editIssue(o: Ops, n: number, e: { title?: string; body?: string;
     patch.labels = resolveLabels(o.set, cur, e.add ?? [], e.remove ?? []);
   }
   if (!Object.keys(patch).length && p === undefined) throw new Error('nothing to change');
+  // The PATCH first: a priority set after a refused PATCH would be half an edit.
+  const i = Object.keys(patch).length ? (o.api('PATCH', `repos/${o.repo}/issues/${n}`, patch) as Issue) : undefined;
   if (p !== undefined) setPriority(o, n, p);
-  return o.api(Object.keys(patch).length ? 'PATCH' : 'GET', `repos/${o.repo}/issues/${n}`, Object.keys(patch).length ? patch : undefined) as Issue;
+  return i ?? (o.api('GET', `repos/${o.repo}/issues/${n}`) as Issue);
 }
 
 export function commentIssue(o: Ops, n: number, body: string): { html_url: string } {
@@ -218,14 +234,23 @@ export function commentIssue(o: Ops, n: number, body: string): { html_url: strin
 
 export function closeIssue(o: Ops, n: number, reason: string, comment?: string): Issue {
   if (!['completed', 'not_planned', 'duplicate'].includes(reason)) throw new Error(`--reason is completed, not_planned or duplicate, not "${reason}"`);
+  // Closed first: a rerun after a failed comment then doesn't post it twice.
+  const i = o.api('PATCH', `repos/${o.repo}/issues/${n}`, { state: 'closed', state_reason: reason }) as Issue;
   if (comment?.trim()) commentIssue(o, n, comment);
-  return o.api('PATCH', `repos/${o.repo}/issues/${n}`, { state: 'closed', state_reason: reason }) as Issue;
+  return i;
 }
 
 export type Filter = { words?: string; type?: string; labels?: string[]; priority?: string[]; untriaged?: boolean; state?: string; limit?: number };
 
 /** The advanced-search query for a filter: the field's qualifiers work only there (`field.priority:`, `no:field.priority`). */
+function checkFilter(o: Ops, f: Filter): void {
+  for (const l of f.labels ?? []) checkLabel(o.set, l);
+  if (f.priority?.length && f.untriaged) throw new Error('--priority or --untriaged: an issue has a priority or none');
+  if (f.state !== undefined && !['open', 'closed', 'all'].includes(f.state)) throw new Error(`--state is open, closed or all, not "${f.state}"`);
+}
+
 export function searchQuery(o: Ops, f: Filter): string {
+  checkFilter(o, f);
   const state = f.state ?? 'open';
   const parts = [`repo:${o.repo}`, 'is:issue'];
   if (state !== 'all') parts.push(`is:${state}`);
@@ -242,10 +267,19 @@ export function searchQuery(o: Ops, f: Filter): string {
 }
 
 function search(o: Ops, q: string, limit: number, sort: string): Issue[] {
-  return pages(o.api, `search/issues?q=${encodeURIComponent(q)}&advanced_search=true${sort}`, limit, (r) => (r as { items: Issue[] }).items);
+  let warned = false;
+  return pages(o.api, `search/issues?q=${encodeURIComponent(q)}&advanced_search=true${sort}`, limit, (r) => {
+    const res = r as { items: Issue[]; total_count?: number; incomplete_results?: boolean };
+    if (!warned && (res.incomplete_results || (res.total_count ?? 0) > 1000)) {
+      process.stderr.write(`issue: search results may be partial (${res.total_count ?? '?'} matched; GitHub returns up to 1000, and timed out: ${res.incomplete_results ? 'yes' : 'no'}): narrow the filter\n`);
+      warned = true;
+    }
+    return res.items;
+  });
 }
 
 export function listIssues(o: Ops, f: Filter): Issue[] {
+  checkFilter(o, f);
   if (f.priority?.length || f.untriaged) return search(o, searchQuery(o, f), f.limit ?? 1000, '&sort=created&order=asc');
   const q = new URLSearchParams({ state: f.state ?? 'open', sort: 'created', direction: 'asc' });
   if (f.type) q.set('type', resolveType(o.set, f.type));
@@ -265,14 +299,20 @@ export function line(set: LabelSet, i: Issue): string {
 
 export type RepoLabel = { name: string; color: string; description: string | null };
 
-/** What `labels --sync` would do: create the set's new labels, update changed ones, delete the rest. */
-export function labelPlan(set: LabelSet, have: RepoLabel[]): { create: Label[]; update: Label[]; remove: string[] } {
-  const want = new Map(set.labels.map((l) => [l.name, l]));
-  const got = new Map(have.map((l) => [l.name, l]));
+/** What `labels --sync` would do: create the set's new labels, update changed ones (`from` names the repo's label, which
+ * GitHub matches without regard to case, so a rename of case is an update), delete the rest. */
+export function labelPlan(set: LabelSet, have: RepoLabel[]): { create: Label[]; update: (Label & { from: string })[]; remove: string[] } {
+  const want = new Set(set.labels.map((l) => l.name.toLowerCase()));
+  const got = new Map(have.map((l) => [l.name.toLowerCase(), l]));
+  const update: (Label & { from: string })[] = [];
+  for (const l of set.labels) {
+    const g = got.get(l.name.toLowerCase());
+    if (g && (g.name !== l.name || g.color !== l.color || (g.description ?? '') !== l.description)) update.push({ ...l, from: g.name });
+  }
   return {
-    create: set.labels.filter((l) => !got.has(l.name)),
-    update: set.labels.filter((l) => got.has(l.name) && (got.get(l.name)!.color !== l.color || (got.get(l.name)!.description ?? '') !== l.description)),
-    remove: have.filter((l) => !want.has(l.name)).map((l) => l.name),
+    create: set.labels.filter((l) => !got.has(l.name.toLowerCase())),
+    update,
+    remove: have.filter((l) => !want.has(l.name.toLowerCase())).map((l) => l.name),
   };
 }
 
@@ -284,6 +324,28 @@ function num(s: string | undefined): number {
   const n = Number(String(s ?? '').replace(/^#/, ''));
   if (!Number.isInteger(n) || n <= 0) throw new Error(`an issue number, not "${s ?? ''}"`);
   return n;
+}
+
+/** The options each command takes, and how many positionals (an issue number, the search's words). */
+const TAKES: Record<string, { options: string[]; positionals: 'none' | 'number' | 'words' }> = {
+  file: { options: ['title', 'type', 'label', 'body-file', 'priority', 'triage'], positionals: 'none' },
+  edit: { options: ['title', 'type', 'body-file', 'add-label', 'remove-label', 'priority', 'triage'], positionals: 'number' },
+  comment: { options: ['body-file'], positionals: 'number' },
+  close: { options: ['reason', 'comment-file'], positionals: 'number' },
+  reopen: { options: [], positionals: 'number' },
+  show: { options: ['comments', 'json'], positionals: 'number' },
+  list: { options: ['type', 'label', 'priority', 'untriaged', 'state', 'limit', 'json'], positionals: 'none' },
+  search: { options: ['type', 'label', 'priority', 'untriaged', 'state', 'limit', 'json'], positionals: 'words' },
+  labels: { options: ['lint', 'diff', 'sync', 'apply'], positionals: 'none' },
+};
+
+/** Throws on an option the command doesn't take (it would be dropped without a word), or a wrong count of positionals. */
+export function checkOptions(cmd: string, v: Record<string, unknown>, positionals: string[] = []): void {
+  const t = TAKES[cmd];
+  if (!t) throw new Error(`unknown command "${cmd}": ${Object.keys(TAKES).join(', ')} (the header of tools/issue.ts)`);
+  for (const k of Object.keys(v)) if (v[k] !== undefined && !t.options.includes(k)) throw new Error(`${cmd} doesn't take --${k}`);
+  if (t.positionals === 'none' && positionals.length) throw new Error(`${cmd} takes no arguments, not "${positionals.join(' ')}"`);
+  if (t.positionals === 'number' && positionals.length !== 1) throw new Error(`${cmd} takes one issue number`);
 }
 
 function main(argv: string[]): void {
@@ -298,6 +360,7 @@ function main(argv: string[]): void {
       json: { type: 'boolean' }, lint: { type: 'boolean' }, diff: { type: 'boolean' }, sync: { type: 'boolean' }, apply: { type: 'boolean' },
     },
   });
+  checkOptions(cmd ?? '', v, pos);
   const set = loadLabels();
   if (cmd === 'labels') {
     const bad = lintLabels(set);
@@ -319,7 +382,7 @@ function main(argv: string[]): void {
       if (!v.sync) return;
       if (!v.apply) return void console.log('(nothing changed: --sync --apply changes the repo, and only the user runs it)');
       for (const l of plan.create) ghApi('POST', `repos/${r}/labels`, { name: l.name, color: l.color, description: l.description });
-      for (const l of plan.update) ghApi('PATCH', `repos/${r}/labels/${encodeURIComponent(l.name)}`, { color: l.color, description: l.description });
+      for (const l of plan.update) ghApi('PATCH', `repos/${r}/labels/${encodeURIComponent(l.from)}`, { new_name: l.name, color: l.color, description: l.description });
       for (const n of plan.remove) ghApi('DELETE', `repos/${r}/labels/${encodeURIComponent(n)}`);
       return;
     }
@@ -356,8 +419,10 @@ function main(argv: string[]): void {
       if (v.json) return void console.log(JSON.stringify(i, null, 2));
       console.log(`${line(set, i)}\n${i.html_url}\n\n${i.body ?? ''}`);
       if (v.comments) {
-        for (const c of o.api('GET', `repos/${o.repo}/issues/${n}/comments?per_page=100`) as { user: { login: string }; created_at: string; body: string }[]) {
-          console.log(`\n--- ${c.user.login}, ${c.created_at}\n${c.body}`);
+        for (let page = 1; ; page++) {
+          const cs = o.api('GET', `repos/${o.repo}/issues/${n}/comments?per_page=100&page=${page}`) as { user: { login: string }; created_at: string; body: string }[];
+          for (const c of cs) console.log(`\n--- ${c.user.login}, ${c.created_at}\n${c.body}`);
+          if (cs.length < 100) break;
         }
       }
       break;

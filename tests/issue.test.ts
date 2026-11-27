@@ -6,8 +6,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   type Api, closeIssue, editIssue, fileIssue, type Issue, type LabelSet, labelPlan, line, lintLabels, listIssues, loadLabels, priorityOf, repoOf, resolveLabels, resolvePriority,
-  resolveType, searchIssues, searchQuery,
+  resolveType, searchIssues, searchQuery, checkOptions,
 } from '../tools/issue.ts';
+import { allowedFile, strayLines, strayRefs } from '../tools/backlog-refs.ts';
 
 const FIELD = 77;
 const set: LabelSet = {
@@ -114,7 +115,7 @@ test('labels, types and priorities outside the set, no type, and a priority outs
 });
 
 test("removing a parent its sub-area keeps is refused; labels set by hand on GitHub are kept", () => {
-  assert.throws(() => resolveLabels(set, ['network', 'network-p2p'], [], ['network']), /parent of "network-p2p"/);
+  assert.throws(() => resolveLabels(set, ['network', 'network-p2p'], [], ['network']), /is above "network-p2p"/);
   assert.deepEqual(resolveLabels(set, ['page', 'network', 'network-p2p', 'wip'], [], ['network-p2p', 'network']), ['page', 'wip']);
 });
 
@@ -137,7 +138,7 @@ test('filing and editing go through REST with the resolved type, labels and prio
   assert.equal(g.issues.get(1)!.state, 'closed');
   assert.match(line(set, g.issues.get(1)!), /^#1 \(closed: not_planned\) {2}Performance {2}Low {2}\[network network-p2p upstream\] {2}p2p rooms on the page$/);
   assert.deepEqual(g.calls.filter((c) => !c.startsWith('GET')), [
-    'POST repos/o/r/issues', 'POST repos/o/r/issues/1/issue-field-values', 'PATCH repos/o/r/issues/1', 'POST repos/o/r/issues/1/comments', 'PATCH repos/o/r/issues/1',
+    'POST repos/o/r/issues', 'PATCH repos/o/r/issues/1', 'POST repos/o/r/issues/1/issue-field-values', 'PATCH repos/o/r/issues/1', 'POST repos/o/r/issues/1/comments',
   ]);
   assert.throws(() => closeIssue(g.ops, 1, 'fixed'), /completed, not_planned or duplicate/);
 });
@@ -192,4 +193,61 @@ test("the label sync's plan creates, updates and deletes against the set", () =>
   assert.deepEqual(plan.create.map((l) => l.name), ['network-p2p', 'network-p2p-domains', 'upstream']);
   assert.deepEqual(plan.update.map((l) => l.name), ['page']);
   assert.deepEqual(plan.remove, ['priority:high']);
+});
+
+// The out-of-context review's findings (ISSUES track end), each pinned.
+test('review: list and search refuse labels outside the set, impossible filters and unknown states', () => {
+  const g = fake();
+  assert.throws(() => listIssues(g.ops, { labels: ['netwrok'] }), /"netwrok" is not in/);
+  assert.throws(() => searchIssues(g.ops, { labels: ['netwrok'] }), /"netwrok" is not in/);
+  assert.throws(() => listIssues(g.ops, { priority: ['High'], untriaged: true }), /--priority or --untriaged/);
+  assert.throws(() => listIssues(g.ops, { state: 'opne' }), /--state is open, closed or all/);
+});
+
+test('review: a filed issue whose priority fails is still reported, with its number', () => {
+  const g = fake();
+  const api: Api = (m, p, b) => {
+    if (p.endsWith('/issue-field-values') && m === 'POST') throw new Error('HTTP 503');
+    return g.ops.api(m, p, b);
+  };
+  assert.throws(() => fileIssue({ ...g.ops, api }, { title: 't', body: 'b', type: 'Bug', labels: [], priority: 'High', triage: true }), /#1 .*filed.*priority.*HTTP 503/s);
+  assert.equal(g.issues.size, 1);
+});
+
+test('review: an edit writes its PATCH before the priority; a close closes before it comments', () => {
+  const g = fake();
+  fileIssue(g.ops, { title: 't', body: 'b', type: 'Bug', labels: [] });
+  editIssue(g.ops, 1, { title: 'u', priority: 'Low', triage: true });
+  const writes = g.calls.filter((c) => !c.startsWith('GET')).slice(1);
+  assert.deepEqual(writes, ['PATCH repos/o/r/issues/1', 'POST repos/o/r/issues/1/issue-field-values']);
+  closeIssue(g.ops, 1, 'completed', 'done\n');
+  assert.deepEqual(g.calls.filter((c) => !c.startsWith('GET')).slice(3), ['PATCH repos/o/r/issues/1', 'POST repos/o/r/issues/1/comments']);
+});
+
+test('review: removing a parent is refused while any area under it stays', () => {
+  // A grandchild set by hand without its parent: removing the grandparent would leave it with no parents.
+  assert.throws(() => resolveLabels(set, ['network', 'network-p2p-domains'], [], ['network']), /"network" is above "network-p2p-domains"/);
+});
+
+test('review: label names compare without regard to case, as GitHub does', () => {
+  const dup: LabelSet = { ...set, labels: [...set.labels, { name: 'Page', group: 'area', color: '1d76db', description: 'x' }] };
+  assert.ok(lintLabels(dup).includes('Page: listed twice'));
+  const plan = labelPlan(set, [{ name: 'Network', color: '1d76db', description: 'n' }]);
+  assert.deepEqual(plan.remove, []);
+  assert.deepEqual(plan.update.map((l) => l.name), ['network']);
+});
+
+test('review: a command refuses options it does not take', () => {
+  assert.throws(() => checkOptions('edit', { title: 'T', label: 'jit' }), /edit doesn't take --label/);
+  assert.throws(() => checkOptions('comment', { 'comment-file': 'f' }), /comment doesn't take --comment-file/);
+  assert.doesNotThrow(() => checkOptions('list', { label: 'jit', priority: 'High', json: true }));
+});
+
+test('review: backlog-refs allows the journals and finds a pointer anywhere else', () => {
+  assert.ok(allowedFile('bench/boot/REPORT.md') && allowedFile('bench/gpu/results/x.json'));
+  assert.ok(!allowedFile('docs/jit.md') && !allowedFile('bench/boot/notes.md'));
+  const file = ['backlog', 'md'].join('.'); // spelled apart, or this test is a line the check flags
+  assert.equal(strayRefs(`see docs/${file} "X" and https://github.com/gbl08ma/waarm64/blob/e04a6974/docs/${file}#L3`), 1);
+  assert.deepEqual(strayLines(`docs/jit.md:3:docs/${file}\nbench/boot/REPORT.md:9:docs/${file}`), [`docs/jit.md:3:docs/${file}`]);
+  assert.deepEqual(strayLines(''), []);
 });
