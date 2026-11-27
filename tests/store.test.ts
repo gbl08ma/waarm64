@@ -343,7 +343,7 @@ test("a deletion removes an overlay's and a disk's files under their lock: a rea
 });
 
 test('network adapters on the Home page: added up to the limit, removed; copies and definitions carry the MACs, no connections', async () => {
-  const { createMachine, duplicateMachine, movedAdapter, withAdapter, withoutAdapter } = await import('../web/app/machines.ts');
+  const { createMachine, duplicateMachine, macFor, movedAdapter, withAdapter, withMac, withNewMac, withoutAdapter } = await import('../web/app/machines.ts');
   const { exportDefinition, importDefinition, parseDefinition } = await import('../web/app/definitions.ts');
   const { adaptersOf } = await import('../web/app/shape.ts');
   const store = new Store(memoryRecords(), memoryFiles(), { channel: false });
@@ -372,6 +372,25 @@ test('network adapters on the Home page: added up to the limit, removed; copies 
   assert.deepEqual(adaptersOf(movedAdapter(x, order[0], -1)).map((a) => a.id), order);
   assert.deepEqual(adaptersOf(movedAdapter(x, order[2], 1)).map((a) => a.id), order);
   assert.notEqual(await shapeHash(shapeOf(moved, () => undefined)), await shapeHash(shapeOf(x, () => undefined)), 'the guest sees eth0 and eth1 change');
+  // A MAC typed over (dashes and upper case as the page writes them), refused when it isn't a unicast MAC or is another
+  // adapter's; a new random one is none of the machine's. Both change the shape (the guest sees the MAC).
+  const [a0, a1] = adaptersOf(x);
+  assert.deepEqual(macFor(x, a0.id, ' 52-54-00-AB-CD-EF '), { mac: '52:54:00:ab:cd:ef' });
+  assert.deepEqual(macFor(x, a0.id, a0.mac), { mac: a0.mac }, 'its own MAC');
+  for (const bad of ['52:54:00:ab:cd', '53:54:00:ab:cd:ef', '00:00:00:00:00:00', 'zz:54:00:ab:cd:ef'])
+    assert.deepEqual(macFor(x, a0.id, bad), { error: 'bad' }, bad);
+  assert.deepEqual(macFor(x, a0.id, a1.mac.toUpperCase()), { error: 'taken' });
+  const typed = withMac(x, a0.id, '52:54:00:ab:cd:ef');
+  assert.deepEqual(adaptersOf(typed).map((a) => a.mac), ['52:54:00:ab:cd:ef', ...adaptersOf(x).slice(1).map((a) => a.mac)]);
+  assert.equal(adaptersOf(typed)[0].connection, 'c00000000001', 'the connection stays');
+  assert.notEqual(await shapeHash(shapeOf(typed, () => undefined)), await shapeHash(shapeOf(x, () => undefined)), 'the guest sees the MAC');
+  const renewed = adaptersOf(withNewMac(x, a1.id));
+  assert.ok(isMac(renewed[1].mac) && !adaptersOf(x).some((a) => a.mac === renewed[1].mac), renewed[1].mac);
+  // A machine made before adapters (its card at the default MAC) gets adapters with a new one.
+  const old = { ...bare, adapters: undefined, network: true } as MachineRecord;
+  const oldRenewed = adaptersOf(withNewMac(old, adaptersOf(old)[0].id));
+  assert.equal(oldRenewed.length, 1);
+  assert.notEqual(oldRenewed[0].mac, DEFAULT_MAC);
   await store.put('machines', x);
   const copy = await duplicateMachine(store, x.id);
   assert.deepEqual(adaptersOf(copy).map((a) => a.mac), adaptersOf(x).map((a) => a.mac));

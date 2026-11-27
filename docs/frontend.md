@@ -574,7 +574,12 @@ left column's Disks, Shared folders and Connections the same):
 - **[Network](ui:machines:MachinePane.tab.network):** the machine's network adapters (docs/networking/adapters.md): up to four, each with its MAC (random,
   `newMac`, since 2026-11-03: machines share LANs, such as a local helper's, whose network knows a guest by its MAC;
   machines made before have `52:54:00:12:34:56` first, as the one card was), added, removed and moved up or down
-  with the machine off (the order is the guest's `eth<n>` and decides the default way out), and each with its connection (below, "Network"): **[Attach…](ui:machines:AdapterCard.adapter.attach)** or [Change connection…](ui:network:NetAdapter.change) (the Network wizard),
+  with the machine off (the order is the guest's `eth<n>` and decides the default way out). The MAC is a field that
+  reads as its line's words (`machines.ts` `macFor`: lowercase, dashes taken as colons; what isn't a unicast MAC, or
+  is another adapter's, is refused, a note saying [That isn't a MAC address. Enter six pairs of hexadecimal digits, like 52:54:00:ab:cd:ef.](ui:machines:AdapterCard.adapter.mac.bad) and the field going back), with an icon for
+  a [New random MAC address](ui:machines:AdapterCard.adapter.newMac) (`withNewMac`); at the default MAC a note says
+  [Machines made before November 2026 all have this MAC address; machines on one network need different ones.](ui:machines:AdapterCard.adapter.mac.default) Either goes in
+  the draft, saved with Save (the shape changes). Each adapter has its connection (below, "Network"): **[Attach…](ui:machines:AdapterCard.adapter.attach)** or [Change connection…](ui:network:NetAdapter.change) (the Network wizard),
   **[Detach](ui:machines:AdapterCard.adapter.detach)**, **[Connect at start](ui:machines:AdapterCard.adapter.atStart)**, and Connect or Disconnect while it runs on this page. Attaching is saved at
   once, running or not (a connection isn't in the shape), and a machine running in another tab connects it at once. **[Take the connection's settings in the guest](ui:machines:NetworkTab.netConfig)** (on; off is
   `MachineRecord.netConfig: false`, carried by definitions, not in the shape): below, "What the page sets in the guest". **[Connections](ui:machines:ConnectionsPane.connections.heading)** (in the list of machines) is the

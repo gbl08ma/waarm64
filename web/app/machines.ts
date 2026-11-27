@@ -10,6 +10,7 @@ import {
   adaptersOf,
   canonical,
   generateName,
+  isMac,
   MAX_ADAPTERS,
   newId,
   newMac,
@@ -136,6 +137,23 @@ export function withAdapter(m: MachineRecord): MachineRecord {
   if (have.length >= MAX_ADAPTERS) return m;
   return { ...m, network: undefined, adapters: [...have, { id: newId(), mac: newMac(have.map((a) => a.mac)) }] };
 }
+
+/** Why `typed` can't be adapter `id`'s MAC on `m` (`bad`: not a unicast MAC; `taken`: another adapter's), or its MAC as
+ *  the page writes them: lowercase, colons (dashes accepted, as Windows writes them). */
+export function macFor(m: MachineRecord, id: string, typed: string): { mac: string } | { error: 'bad' | 'taken' } {
+  const mac = typed.trim().toLowerCase().replaceAll('-', ':');
+  if (!isMac(mac) || mac === '00:00:00:00:00:00') return { error: 'bad' };
+  if (adaptersOf(m).some((a) => a.id !== id && a.mac.toLowerCase() === mac)) return { error: 'taken' };
+  return { mac };
+}
+
+/** `m` with adapter `id` at MAC `mac` (guest-visible: in the shape, and the guest's leases follow it). */
+export function withMac(m: MachineRecord, id: string, mac: string): MachineRecord {
+  return { ...m, network: undefined, adapters: adaptersOf(m).map((a) => (a.id === id ? { ...a, mac } : a)) };
+}
+
+/** `m` with adapter `id` at a new random MAC, not one of its other adapters'. */
+export const withNewMac = (m: MachineRecord, id: string) => withMac(m, id, newMac(adaptersOf(m).map((a) => a.mac)));
 
 /** `m` without adapter `id`. */
 export function withoutAdapter(m: MachineRecord, id: string): MachineRecord {

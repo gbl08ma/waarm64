@@ -110,7 +110,8 @@ disconnects and says it was taken.
 
 ## 3. The page
 
-The Home page's **Network tab** (§3.1) lists a machine's adapters with their MACs and connections, and
+The Home page's **Network tab** (§3.1) lists a machine's adapters with their MACs (each typed over where it is, or
+given a new random one, and saved with Save: the shape changes, and the guest's leases follow the MAC) and connections, and
 **[Connections](ui:machines:ConnectionsPane.connections.heading)** lists the browser's, each with a page of its own one level down (its Details, which say
 which machines have it attached and what it gives out; its Settings, which change what can change without a new node;
 a room connection's Domains ([names.md](names.md) "What the user sees"); and its commands: a room's Back up key and
@@ -218,7 +219,9 @@ running in another tab takes effect there at once: that tab hears the record cha
   through the guest agent at once, else by a link flap (devices.md "The network after a restore").
 - **A machine's definition** carries its adapters' MACs (`machine.macs`, left out for one at the default) and not its
   connections, which hold secrets and are this browser's: an imported machine's adapters come detached.
-- **[Duplicate](ui:machines:MachinePane.duplicate)** copies the adapters with their MACs and no connections.
+- **[Duplicate](ui:machines:MachinePane.duplicate)** copies the adapters with their MACs and no connections. A copy
+  that shares a network with its machine needs new ones from its Network tab (§3), as does a machine made before
+  2026-11-03 (all at `52:54:00:12:34:56`) on a network with another such machine.
 
 ## 6. Tests
 

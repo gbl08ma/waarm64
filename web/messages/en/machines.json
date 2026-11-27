@@ -1560,8 +1560,32 @@
     "note": "Home page, Network tab: the name of each network adapter. {{n}}: its place, from 1."
   },
   "AdapterCard.adapter.mac": {
-    "message": "virtio-net, MAC {{mac}}",
-    "note": "Home page, Network tab: the line under an adapter's name. {{mac}}: its MAC address."
+    "message": "virtio-net, MAC <mac>{{mac}}</mac>",
+    "note": "Home page, Network tab: the line under an adapter's name. {{mac}}: its MAC address, in a field that reads as the line's words (it can be typed over), followed by AdapterCard.adapter.newMac's icon."
+  },
+  "AdapterCard.adapter.mac.label": {
+    "message": "MAC address",
+    "note": "Home page, Network tab: the accessible name of an adapter's MAC field (AdapterCard.adapter.mac)."
+  },
+  "AdapterCard.adapter.newMac": {
+    "message": "New random MAC address",
+    "note": "Home page, Network tab: the accessible name of the icon after an adapter's MAC, which gives it a new random one (saved with Save)."
+  },
+  "AdapterCard.adapter.newMac.title": {
+    "message": "Give this adapter a new random MAC address. The guest sees it once you save.",
+    "note": "Home page, Network tab: the tooltip of the icon after an adapter's MAC (AdapterCard.adapter.newMac)."
+  },
+  "AdapterCard.adapter.mac.bad": {
+    "message": "That isn't a MAC address. Enter six pairs of hexadecimal digits, like 52:54:00:ab:cd:ef.",
+    "note": "Home page, Network tab: under an adapter's MAC when what was typed isn't a unicast MAC address; the field goes back to the MAC it had."
+  },
+  "AdapterCard.adapter.mac.taken": {
+    "message": "Another adapter of this machine has that MAC address.",
+    "note": "Home page, Network tab: under an adapter's MAC when what was typed is another adapter's of the same machine; the field goes back to the MAC it had."
+  },
+  "AdapterCard.adapter.mac.default": {
+    "message": "Machines made before November 2026 all have this MAC address; machines on one network need different ones.",
+    "note": "Home page, Network tab: under an adapter's MAC when it is the default one (52:54:00:12:34:56), which older and imported machines share. AdapterCard.adapter.newMac's icon beside the MAC gives a new one."
   },
   "AdapterCard.adapter.connection": {
     "message": "<name>{{name}}</name>: {{kind}}",

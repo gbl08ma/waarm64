@@ -308,6 +308,32 @@ test('power off lets a connection go; a running machine follows what another tab
   await pageA.waitForFunction(() => document.querySelector('[data-action="save"]')?.hasAttribute('disabled') !== false, null, { timeout: 10_000 });
   assert.deepEqual(await macs(), [before[1], before[0]]);
 
+  // The MAC, typed over where it is: what isn't one is refused (the field goes back, a note says why), another
+  // adapter's too; one typed in dashes and capitals is written as the page writes MACs. The icon beside it gives a new
+  // random one. Each is the draft's until Save.
+  const macField = '[data-adapter="0"] [data-field="mac"]';
+  const typeMac = async (mac: string) => { await pageA.fill(macField, mac); await pageA.press(macField, 'Enter'); };
+  const saved = async () => {
+    await pageA.click('[data-action="save"]');
+    await pageA.waitForFunction(() => document.querySelector('[data-action="save"]')?.hasAttribute('disabled') !== false, null, { timeout: 10_000 });
+  };
+  await typeMac('52:54:00:zz');
+  assert.match(await text(pageA, '[data-adapter="0"] [data-mac-error]'), words('machines:AdapterCard.adapter.mac.bad'));
+  assert.equal(await pageA.inputValue(macField), before[1], 'the field goes back');
+  await typeMac(before[0]);
+  assert.match(await text(pageA, '[data-adapter="0"] [data-mac-error]'), words('machines:AdapterCard.adapter.mac.taken'));
+  assert.equal(await pageA.locator('[data-action="save"]').isDisabled(), true, 'nothing to save');
+  await typeMac('52-54-00-AB-CD-EF');
+  assert.equal(await pageA.inputValue(macField), '52:54:00:ab:cd:ef');
+  assert.equal(await pageA.locator('[data-adapter="0"] [data-mac-error]').count(), 0);
+  await saved();
+  assert.deepEqual(await macs(), ['52:54:00:ab:cd:ef', before[0]]);
+  await pageA.click('[data-adapter="0"] [data-action="new-mac"]');
+  const renewed = await pageA.inputValue(macField);
+  assert.ok(/^52:54:00(:[0-9a-f]{2}){3}$/.test(renewed) && renewed !== '52:54:00:ab:cd:ef' && renewed !== before[0], renewed);
+  await saved();
+  assert.deepEqual(await macs(), [renewed, before[0]]);
+
   // Still off, the new adapter (now first) gets the connection from its row: the row says so at once (Change
   // connection… and Detach), with no reload, though nothing connects until the machine starts; Detach brings Attach back.
   const row = '.adapters [data-adapter="0"]';

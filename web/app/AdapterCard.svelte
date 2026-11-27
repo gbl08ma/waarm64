@@ -1,5 +1,6 @@
 <!--
-  One network adapter of a machine (its Network tab, NetworkTab.svelte): its MAC, its connection (the record's: saved
+  One network adapter of a machine (its Network tab, NetworkTab.svelte): its MAC (edited where it is, or a new random
+  one: in the draft, saved with Save), its connection (the record's: saved
   first) and, on this page's running machine, the connection's state; attach, change or detach the connection,
   connect or disconnect it here, whether it connects at the start, its place among the adapters, remove it. A room
   connection's line ends with its link to its Domains (DomainsLink.svelte; Back leads to this tab).
@@ -17,9 +18,9 @@
   import type { Connection } from './connections.ts';
   import { msg, said, t } from '../i18n.ts';
   import type { Editing } from './machine-edit.svelte.ts';
-  import { movedAdapter, withoutAdapter } from './machines.ts';
+  import { macFor, movedAdapter, withMac, withNewMac, withoutAdapter } from './machines.ts';
   import type { PageNetwork } from './net-live.ts';
-  import { adaptersOf, type Adapter } from './shape.ts';
+  import { adaptersOf, DEFAULT_MAC, type Adapter } from './shape.ts';
   import { defaultsOf } from './network-view.ts';
   import { network } from './areas/network.ts';
   import { current } from './areas/current.svelte.ts';
@@ -63,6 +64,24 @@
     return parts.map((p) => ` · ${p}`).join('');
   });
 
+  /** Why the MAC last typed wasn't taken (the field went back to the draft's). */
+  let macError = $state<'bad' | 'taken'>();
+  function typeMac(input: HTMLInputElement) {
+    const r = macFor(edit.draft, adapter.id, input.value);
+    if ('error' in r) {
+      macError = r.error;
+      input.value = adapter.mac;
+      return;
+    }
+    macError = undefined;
+    input.value = r.mac;
+    if (r.mac !== adapter.mac) edit.set(withMac(edit.draft, adapter.id, r.mac));
+  }
+  function newMac() {
+    macError = undefined;
+    edit.set(withNewMac(edit.draft, adapter.id));
+  }
+
   async function setAtStart(conn: Connection, on: boolean) {
     await net.conns.put({ ...conn, connectAtStart: on });
     await net.refresh();
@@ -84,7 +103,35 @@
     <Icon name="network" size={18} />
     <div class="lines">
       <strong>{t('machines:AdapterCard.adapter', { n: index + 1 })}</strong>
-      <Note inline class="meta">{t('machines:AdapterCard.adapter.mac', { mac: adapter.mac })}</Note>
+      <Note inline class="meta"
+        ><T k="machines:AdapterCard.adapter.mac" params={{ mac: adapter.mac }}
+          >{#snippet mac(text: string)}<span class="mac-edit"
+              ><input
+                class="mac"
+                value={text}
+                onchange={(e) => typeMac(e.currentTarget)}
+                aria-label={t('machines:AdapterCard.adapter.mac.label')}
+                data-field="mac"
+                autocomplete="off"
+                spellcheck="false"
+              /><Button
+                variant="inline"
+                icon="refresh"
+                onclick={newMac}
+                data-action="new-mac"
+                aria-label={t('machines:AdapterCard.adapter.newMac')}
+                title={t('machines:AdapterCard.adapter.newMac.title')}
+              /></span
+            >{/snippet}</T
+        ></Note
+      >
+      {#if macError}<Note inline tone="warn" class="meta" data-mac-error
+          >{macError === 'bad'
+            ? t('machines:AdapterCard.adapter.mac.bad')
+            : t('machines:AdapterCard.adapter.mac.taken')}</Note
+        >{:else if adapter.mac.toLowerCase() === DEFAULT_MAC}<Note inline tone="warn" class="meta" data-mac-default
+          >{t('machines:AdapterCard.adapter.mac.default')}</Note
+        >{/if}
       <Note inline class="meta" data-connection-name><T m={head} />{rest}</Note>
       {#if c?.room && hasDomainsLink(c)}<span class="meta"
           ><DomainsLink id={c.id} room={c.room} from={{ to: 'tab', machine: edit.draft.id }} /></span
@@ -166,5 +213,37 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
+  }
+  /* The MAC's field and its icon, centered on each other; the field's text on the line's baseline (an inline-flex's). */
+  .mac-edit {
+    display: inline-flex;
+    align-items: center;
+  }
+  .mac-edit :global(button) {
+    min-height: 0;
+    align-self: center;
+  }
+  /* The MAC reads as the line's words, its frame on hover and focus (as NameInput's). */
+  .mac {
+    width: calc(17ch + 2 * var(--space-2) + 2px);
+    min-height: 0;
+    font: inherit;
+    color: inherit;
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+    padding: 0 var(--space-2);
+  }
+  /* As wide as the MAC (the width above, where a browser can't size a field to its text). */
+  @supports (field-sizing: content) {
+    .mac {
+      field-sizing: content;
+      width: auto;
+    }
+  }
+  .mac:hover,
+  .mac:focus {
+    color: var(--text);
+    border-color: var(--border);
   }
 </style>
