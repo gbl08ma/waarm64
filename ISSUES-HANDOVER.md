@@ -3,23 +3,24 @@
 ## State (2026-11-27)
 
 - **Loop 1 done** (c9df2738; push tier `scripts/ci.sh` passed): `tools/issue.ts` (REST through `gh api`), the
-  `issues` skill, docs/issues.md, `.github/labels.json` with the kinds, modifiers and priorities (no areas yet), the
-  set's lint in the static checks.
-- **Loop 2: the triage is done and awaits the user's review.** 350 units (an entry's sub-items count separately):
-  311 keep, 19 doc, 9 stale, 8 merge, 3 done. The review page is https://claude.ai/artifact/6SebpDrcnWTn5fZHksxg8x.
-  The data is in `bench/results/local/issues-triage/` (git-ignored): `units.json` (the split of docs/backlog.md at
-  e04a6974), `triage.json` (the verdicts), `labels.json` (area counts), `triage-brief.md` (the agents' brief).
-- The proposals waiting on the user: the areas with their counts (tailcat folds into `network-tailnet`, demo into
-  `network`); no effort label; non-keep units not filed; issues filed without a priority; bundled units filed as
-  one issue each.
+  `issues` skill, docs/issues.md, the set's lint in the static checks.
+- **Loop 2 done**: the user approved the triage (https://claude.ai/artifact/6SebpDrcnWTn5fZHksxg8x), the label set
+  (2986ec11, fast lane; the user synced it, GitHub's defaults deleted) and the bodies' light rework (What, Evidence,
+  Where, Tried, Context; the backlog's text in a collapsed block; a dated effort estimate in the footer; track names
+  kept as pointers to their reports).
+- **Loop 3 done**: the 311 kept units are issues #4–#314, and 15 of them got a Related section. The data, in
+  `bench/results/local/issues-triage/` (git-ignored): `map.json` (unit to issue number), `bodies.json`,
+  `triage.json`, `units.json` (the split of docs/backlog.md at e04a6974, unchanged since), `assemble.py`,
+  `migrate.ts`, the briefs.
 
 ## Next
 
-1. Once the user approves: add the areas (with parents) to `.github/labels.json`. The user runs
-   `node tools/issue.ts labels --sync --apply`; it also deletes GitHub's default labels, as the user confirmed.
-2. Loop 3: a migration script over `fileIssue`. Body: the unit's backlog text, its parent entry's intro for
-   sub-items, the merged units appended, and relative doc links made absolute (`blob/main/...`). Throttle at about 1
-   s per create. Keep a uid-to-number map in `bench/results/local/issues-triage/` so a rerun resumes. Dry run first.
-3. Loop 4: move the doc units into their pages, switch the references (25 docs, 3 `ponytail:` markers, CLAUDE.md,
-   docs/testing.md, PLAN.md's header, the open kickoffs and handovers), add the check for stale `backlog.md`
-   references, and delete docs/backlog.md.
+Loop 4:
+1. Move the 19 doc units into the pages their notes name. Their verdicts and notes are in `triage.json`
+   (`verdict: "doc"`).
+2. Switch the references to `docs/backlog.md` to issue URLs, using `map.json` to go from a backlog entry to its
+   issue. That covers about 25 docs, the 3 `ponytail:` markers, CLAUDE.md, docs/testing.md, docs/README.md, PLAN.md's
+   header and rows, and the open kickoffs and handovers. A reference to a stale, done or merged unit points to the
+   doc or to the issue it was merged into.
+3. Add a check (static checks) that fails on a remaining `backlog.md` reference.
+4. Delete docs/backlog.md, and update the memories that name it (backlog-hygiene).
