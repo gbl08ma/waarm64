@@ -68,6 +68,7 @@ here changes, and that row stays one line: a name, a state with a date, and link
 | CI in tiers and faster lanes (CI) | In progress since 2026-11-18 | [CI-KICKOFF.md](CI-KICKOFF.md), [CI-HANDOVER.md](CI-HANDOVER.md), [plans/ci-tiers.md](docs/plans/ci-tiers.md) |
 | The first demo (DEMO) | Done 2026-11-20 | [machines.md](docs/machines.md) §6, [remote-disks.md](docs/remote-disks.md) "Publishing the demos", [demo-network.md](docs/networking/demo-network.md), [comparison.md](docs/comparison.md), `bench/demo/REPORT.md` |
 | The host code outside the page: review, performance, linters (HOST) | Done 2026-11-20 | [host-code.md](docs/host-code.md), [backlog.md](docs/backlog.md) "The host's code", `bench/boot/REPORT.md` "HOST" |
+| The backlog as GitHub issues (ISSUES) | In progress since 2026-11-27 | [ISSUES-KICKOFF.md](ISSUES-KICKOFF.md) |
 
 ## Proposed, not started
 
