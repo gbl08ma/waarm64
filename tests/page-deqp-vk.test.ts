@@ -19,10 +19,10 @@ import { cases as listCases, phase, sample, seedFrom } from './deqp-lists.ts';
 const root = new URL('..', import.meta.url).pathname;
 const skip = process.env.WAARM64_DEQP_VK !== '1' ? 'SKIPPED: scripts/ci-deqp-vk.sh runs it (WAARM64_DEQP_VK=1)' : false;
 
-// The seconds dEQP may run the list: ~2 times what it takes (a machine's half of the whole list: 2,113 s at 58,906 cases,
-// VK4 T34), so a hung device (every later fence held: the guest waits
+// The seconds dEQP may run the list: ~2 times what it takes (a machine's half of the whole list: 3,696 s at 83,980 cases,
+// 2026-11-22; 2,113 s at 58,906, VK4 T34), so a hung device (every later fence held: the guest waits
 // for good) fails the test in minutes, with the guest's serial log kept.
-const LIMIT_S = 4200;
+const LIMIT_S = 7500;
 
 // The direct list runs as this many machines at once, each on its own server, browser and page: the script in 28 minutes at ~40,000 cases (54 at 58,906, VK4 T34; 47 with JOBS 2), one machine ~38,
 // at 13.7 GiB (one machine: 8.9). The list's memory-heavy stretch reaches both at once, at ~16 minutes: under an 11 GiB

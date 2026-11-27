@@ -232,7 +232,7 @@ test('review: removing a parent is refused while any area under it stays', () =>
 test('review: label names compare without regard to case, as GitHub does', () => {
   const dup: LabelSet = { ...set, labels: [...set.labels, { name: 'Page', group: 'area', color: '1d76db', description: 'x' }] };
   assert.ok(lintLabels(dup).includes('Page: listed twice'));
-  const plan = labelPlan(set, [{ name: 'Network', color: '1d76db', description: 'n' }]);
+  const plan = labelPlan(set, [{ name: 'Network', color: '1d76db', description: 'n' }]); // i18n-ignore: a label's name, not the page's words
   assert.deepEqual(plan.remove, []);
   assert.deepEqual(plan.update.map((l) => l.name), ['network']);
 });
