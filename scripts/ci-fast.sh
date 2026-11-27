@@ -53,6 +53,7 @@ group "typecheck::npx tsc --noEmit" \
   "lint::npm run -s lint" \
   "i18n::${node[*]} tools/i18n-check.ts" \
   "third-party::${node[*]} tools/third-party.ts" \
+  "labels::${node[*]} tools/issue.ts labels --lint" \
   "harness-imports::${node[*]} tools/harness-imports.ts" \
   "areas::${node[*]} tools/ci-select.ts --check" \
   "builds::scripts/build-wasm.sh -q && net/ts/build.sh && net/ts/build.sh --test-params"
