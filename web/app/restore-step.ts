@@ -6,8 +6,9 @@ import type { MachineRecord } from './shape.ts';
  * What a restore that hasn't loaded did to attachment `attachment` (`MachineRecord.restoring`): `fork`, a new overlay
  * `overlay` made and attached (undone: the attachment back on `before`, and the fork deleted unless another machine has
  * it chosen or something but the fill wrote it); `reuse`, an earlier fork `overlay`
- * attached again (undone: the attachment back on `before`, the fork kept); `into`, its attached overlay `overlay`
- * written into (a replace, or a template's fresh overlay), found at `generation` at the commit (undone: left as it is
+ * attached again (undone: the attachment back on `before`, the fork kept); a `fork` that is `replaced`, a replace with
+ * room for both (undone as a fork; loaded, what it replaced is deleted); `into`, its attached overlay `overlay`
+ * written into (a replace without that room, or a template's fresh overlay), found at `generation` at the commit (undone: left as it is
  * where its meta doesn't carry the restore's fill token, else read as empty). `fork` on an `into`: the fresh overlay
  * becomes the snapshot's fork, named after it, once the snapshot loaded. `token`: the restore's fill token (the
  * commit's, one per restore), which the worker's fill writes into the meta of each overlay it writes and any later
@@ -21,6 +22,11 @@ export type RestoreStep =
       overlay: string;
       /** What the attachment had before the restore: its overlay, or the disk written in place. */
       before: { overlay?: string; inPlace?: true };
+      /**
+       * A fork made for a replace (`fork` only): `before.overlay` is deleted once the snapshot loaded, where nothing else
+       * has it, and the fork takes its name.
+       */
+      replaced?: true;
       token?: string;
     }
   | {

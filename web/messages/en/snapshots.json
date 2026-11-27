@@ -571,6 +571,14 @@
     "message": "Keep the overlays {{list}} as they are and restore into new overlays? Replacing them will lose what the machine wrote since the snapshot.",
     "note": "Text of the question asked after Restore when several disks' overlays changed since the snapshot and could be replaced (one that another machine also has chosen is never offered: it forks without a question); {{list}} is them (names and sizes), {{count}} how many."
   },
+  "snapshot-restore.restore.keep.tight_one": {
+    "message": "Keep the overlay {{list}} as it is and restore into a new overlay? Replacing it will lose what the machine wrote since the snapshot. The browser's storage hasn't room to keep it until the restore is done, so a replace that stops part way starts the disk from its image.",
+    "note": "Text of the question asked after Restore when one disk's overlay changed since the snapshot and could be replaced (as snapshot-restore.restore.keep_one), when the browser's storage hasn't room for the snapshot's changes beside the overlay: a replace then deletes the overlay first and fills it, so one that stops part way (the tab closed, the storage full) leaves the disk with neither (it starts from its base image). With room, a replace keeps the overlay until the snapshot loaded, and that sentence isn't there. {{list}} is that overlay (its name and size)."
+  },
+  "snapshot-restore.restore.keep.tight_other": {
+    "message": "Keep the overlays {{list}} as they are and restore into new overlays? Replacing them will lose what the machine wrote since the snapshot. The browser's storage hasn't room to keep them until the restore is done, so a replace that stops part way starts the disks from their images.",
+    "note": "Text of the question asked after Restore when several disks' overlays changed since the snapshot and could be replaced (as snapshot-restore.restore.keep_other), when the browser's storage hasn't room for the snapshot's changes beside them: a replace then deletes them first and fills them, so one that stops part way (the tab closed, the storage full) leaves those disks with neither (they start from their base images). With room, a replace keeps them until the snapshot loaded, and that sentence isn't there. {{list}} is them (names and sizes), {{count}} how many."
+  },
   "snapshot-restore.restore.keep.title": {
     "message": "Keep the changes made since the snapshot?",
     "note": "Title of the question whether to keep the changes made since a snapshot."

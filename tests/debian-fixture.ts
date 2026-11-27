@@ -183,7 +183,8 @@ export const putStored = (page: Page, r: StoredRecords) => page.evaluate(async (
  * (web/app/?<query>&m=<id>: the address's devices are in the shape too), its kept snapshot downloaded from the Snapshots
  * tab: its local path, or '' with WAARM64_DEBIAN_FIXTURES=0. A test loads it with Load snapshot › From a file
  * (`loadSnapshotFile`) while its machine of the same records and query boots, answering the question whether to keep
- * the overlay written since with Replace (`replacesFixture`), so the machine keeps its one overlay.
+ * the overlay written since with Replace (`replacesFixture`), so the machine keeps one overlay (with room for both, a new one
+ * that takes the replaced one's name once the snapshot loaded: docs/machines.md §5.2).
  */
 export async function storedFixture(browser: Browser, base: string, r: StoredRecords, query: string): Promise<string> {
   if (process.env.WAARM64_DEBIAN_FIXTURES === '0') return '';
@@ -255,7 +256,8 @@ function machine(label: string, fields: Record<string, unknown>, more: StoredRec
 }
 
 /** Whether `q` asks whether to keep the overlay written since a snapshot: a fixture's load answers Replace (false). */
-export const replacesFixture = (q: Question) => q.kind === 'confirm' && [1, 2].some((count) => words('snapshots:snapshot-restore.restore.keep', { count }).test(q.text));
+export const replacesFixture = (q: Question) =>
+  q.kind === 'confirm' && [1, 2].some((count) => ['snapshots:snapshot-restore.restore.keep', 'snapshots:snapshot-restore.restore.keep.tight'].some((key) => words(key, { count }).test(q.text)));
 
 /**
  * The page's own transient machine of `query` (web/app/?<query>, the tests' `PAGE_QUERY` and `unattendedQuery()`

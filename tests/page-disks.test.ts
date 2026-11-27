@@ -142,7 +142,7 @@ test("a restore's plan: keep where the pin matches, fork where it moved on, reus
     await setGen(`disks/${s.id}`, 7);
     const out: Record<string, unknown> = {};
     // The restore plans and commits on the machine's record as the store has it (each plan below starts from `rec`).
-    const on = async (rec: unknown, p: unknown[], key = 'snap-1') => { await store.put('machines', structuredClone(rec)); return planRestore(store, structuredClone(rec), disks, { name: 'snap', key, pins: p }); };
+    const on = async (rec: unknown, p: unknown[], key = 'snap-1', o: { room?: number } = {}) => { await store.put('machines', structuredClone(rec)); return planRestore(store, structuredClone(rec), disks, { name: 'snap', key, pins: p }, undefined, o); };
     const plan = async (p: unknown[], key = 'snap-1') => on(m, p, key);
     // Everything as pinned: nothing written.
     const same = await plan(pins(4, 7));
@@ -160,10 +160,14 @@ test("a restore's plan: keep where the pin matches, fork where it moved on, reus
     await setGen(`overlays/${fork}`, 1);
     const again = await on({ ...m, attachments: [{ ...m.attachments[0], overlay: a.id }, m.attachments[1]] }, pins(3, 7));
     out.reused = { forks: again.forks.map((f: { reused: boolean }) => f.reused), plan: (await again.commit(false)).map((p: { action: string }) => p.action) };
-    // Once it moved, it isn't reused; replace writes into the attached overlay instead of forking.
+    // Once it moved, it isn't reused. Replace, with the storage's room for both (this profile's quota), fills a new
+    // overlay beside the attached one (#156); without room, writes into the attached overlay.
     await setGen(`overlays/${fork}`, 2);
-    const replace = await on({ ...m, attachments: [{ ...m.attachments[0], overlay: a.id }, m.attachments[1]] }, pins(3, 7));
-    out.replace = { reused: replace.forks.map((f: { reused: boolean }) => f.reused), plan: (await replace.commit(true)).map((p: { action: string; overlay?: string }) => [p.action, p.overlay === `overlays/${a.id}`]) };
+    const onWork = { ...m, attachments: [{ ...m.attachments[0], overlay: a.id }, m.attachments[1]] };
+    const replace = await on(onWork, pins(3, 7));
+    out.replace = { keeps: replace.replaceKeeps, reused: replace.forks.map((f: { reused: boolean }) => f.reused), plan: (await replace.commit(true)).map((p: { action: string; overlay?: string }) => [p.action, p.overlay === `overlays/${a.id}`]) };
+    const tight = await on(onWork, pins(3, 7), 'snap-1', { room: 0 });
+    out.tight = { keeps: tight.replaceKeeps, plan: (await tight.commit(true)).map((p: { action: string; overlay?: string }) => [p.action, p.overlay === `overlays/${a.id}`]) };
     // Written in place and moved on: refused without the whole disk, forked into an overlay with it.
     out.refused = (await plan(pins(4, 6))).refused?.key ?? null;
     const whole = await plan(pins(4, 6, 256));
@@ -187,7 +191,8 @@ test("a restore's plan: keep where the pin matches, fork where it moved on, reus
   assert.deepEqual(r.same, { kept: ['disk.img', 'stored.img'], forks: 0, plan: [{ slot: 5, action: 'keep', overlay: `overlays/${work}`, generation: 4 }, { slot: 6, action: 'keep', overlay: 'disks/d0000000000c', generation: 7 }], work });
   assert.deepEqual(r.moved, { forks: [[false, 'Work']], plan: [['keep', false], ['write', false]], attached: true });
   assert.deepEqual(r.reused, { forks: [true], plan: ['keep', 'keep'] });
-  assert.deepEqual(r.replace, { reused: [false], plan: [['keep', false], ['write', true]] });
+  assert.deepEqual(r.replace, { keeps: true, reused: [false], plan: [['keep', false], ['write', false]] });
+  assert.deepEqual(r.tight, { keeps: false, plan: [['keep', false], ['write', true]] });
   assert.equal(r.refused, 'snapshots:snapshots.writtenInPlace');
   assert.deepEqual(r.whole, [['keep', false], ['write', true]]);
   assert.deepEqual(r.staleKept, ['disk.img', 'stored.img']);

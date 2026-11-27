@@ -170,14 +170,16 @@ export async function unchoose(store: Store, id: string) {
  * that machine's load, would name it), and, for a restore's fork, every machine that attaches its disk (a restore
  * attaches an earlier fork again). A start owns its machine's lock from before it reads the record, and opens the
  * overlay only in its worker's disk phase: deleted in between, it would be made anew with no record naming it. Refused
- * while one of them holds its lock (it runs, or starts).
+ * while one of them holds its lock (it runs, or starts). `owner`: a machine whose lock the caller holds (a run that
+ * loaded a replace: web/app/snapshot-undo.ts `restoreLoaded`), not held again.
  */
-export async function deleteOverlayAsked(store: Store, id: string) {
-  const o = await store.get('overlays', id);
-  if (!o) return;
-  const users = o.fork
-    ? await store.machinesWith(o.disk)
+export async function deleteOverlayAsked(store: Store, id: string, o: { owner?: string } = {}) {
+  const r = await store.get('overlays', id);
+  if (!r) return;
+  const all = r.fork
+    ? await store.machinesWith(r.disk)
     : (await store.all('machines')).filter((m) => m.attachments.some((a) => a.overlay === id) || restoreNames(m, id));
+  const users = all.filter((m) => m.id !== o.owner);
   const held = await holdMachines(users);
   if (held.busy)
     throw new MsgError('disks:disks.overlayUsersRunning', {

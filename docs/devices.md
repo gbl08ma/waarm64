@@ -1124,8 +1124,10 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   never filled). Import changes checks every
   table and cluster the file names is in it (`readChanges`'s `check`, which unpacks a compressed cluster the file's end
   cuts into) before the overlay is touched; a failure after (another compressed cluster that doesn't unpack, the file unreadable, the storage full) leaves it marked, and the error says it was
-  emptied (`cleared`). What a fill can't keep is a replaced overlay's own blocks (a replace, the page's own disk): they
-  are deleted when it starts ([#156](https://github.com/gbl08ma/waarm64/issues/156)). A merge writes into a disk that exists:
+  emptied (`cleared`). What a fill can't keep is a replaced overlay's own blocks (a replace without room for the
+  snapshot's blocks beside them, the page's own disk, a transient machine's): they are deleted when it starts. A stored
+  machine's replace with that room fills a new overlay instead and deletes the replaced one once the snapshot loaded
+  (machines.md §5.2 "How a replace is made"). A merge writes into a disk that exists:
   it stays ordered.
   **The map's two levels** (RESIZE loop 2b): the entries are in **leaves** of 1,024 (4 KiB, a 4 MiB range of the
   disk), a leaf made at the first write (or zeroing) into its range; a range without one reads as the base (or zeros

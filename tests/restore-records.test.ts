@@ -80,10 +80,13 @@ async function runWrites(id: string) {
 }
 
 type Env = Awaited<ReturnType<typeof withMine>>;
-/** Plans and commits a restore of snapshot `key` onto machine `id` as its record is now; the worker's plan. */
-async function restore(e: Env, id: string, key: string, o: { replace?: boolean; fresh?: boolean } = {}) {
+/**
+ * Plans and commits a restore of snapshot `key` onto machine `id` as its record is now; the worker's plan. `room`: the
+ * storage's free bytes the plan sees, none unless given (a replace fills the attached overlay in place).
+ */
+async function restore(e: Env, id: string, key: string, o: { replace?: boolean; fresh?: boolean; room?: number } = {}) {
   const m = (await e.b.get('machines', id))!;
-  const plan = await planRestore(e.b, m, await disksOf(e.b), { name: `Snap ${key}`, key, pins: e.pins }, { display: '2d' }, { fresh: o.fresh });
+  const plan = await planRestore(e.b, m, await disksOf(e.b), { name: `Snap ${key}`, key, pins: e.pins }, { display: '2d' }, { fresh: o.fresh, room: o.room ?? 0 });
   return { plan, steps: await plan.commit(!!o.replace) };
 }
 /** A second machine, a copy of `id` (its record as Duplicate makes it). */
@@ -118,7 +121,8 @@ async function withFresh() {
 // the worker got (`never`: cut off or refused before its disk phase; `cut`: its fill cut off; `filled`: refused after
 // its fill; `loaded`: the worker's `loaded`), and what the machine's next load finds.
 type Case = {
-  how: 'fork' | 'reuse' | 'replace' | 'fresh';
+  /** `kept`: a replace with room for both (a fork beside the replaced overlay, which goes once it loaded). */
+  how: 'fork' | 'reuse' | 'replace' | 'kept' | 'fresh';
   worker: 'never' | 'cut' | 'filled' | 'loaded';
   /** The overlay the machine is on after the next load, by name. */
   on: string;
@@ -139,13 +143,17 @@ const CASES: Case[] = [
   { how: 'replace', worker: 'cut', on: 'Mine', overlays: ['Mine'], empty: true },
   { how: 'replace', worker: 'filled', on: 'Mine', overlays: ['Mine'], empty: true },
   { how: 'replace', worker: 'loaded', on: 'Mine', overlays: ['Mine'], empty: false },
+  { how: 'kept', worker: 'never', on: 'Mine', overlays: ['Mine'], empty: false },
+  { how: 'kept', worker: 'cut', on: 'Mine', overlays: ['Mine'], empty: false },
+  { how: 'kept', worker: 'filled', on: 'Mine', overlays: ['Mine'], empty: false },
+  { how: 'kept', worker: 'loaded', on: 'Mine', overlays: ['Mine'], empty: false },
   { how: 'fresh', worker: 'never', on: 'Fresh', overlays: ['Fresh', 'Mine'], empty: false },
   { how: 'fresh', worker: 'filled', on: 'Fresh', overlays: ['Fresh', 'Mine'], empty: true },
   { how: 'fresh', worker: 'loaded', on: S, overlays: ['Mine', S], empty: false },
 ];
 
 for (const c of CASES)
-  test(`the rules' table: a ${c.how} the worker ${c.worker === 'never' ? 'never reached' : c.worker === 'loaded' ? 'loaded' : `${c.worker} and never loaded`}: the next load finds the machine on ${c.on}`, async () => {
+  test(`the rules' table: a ${c.how === 'kept' ? 'replace with room for both' : c.how} the worker ${c.worker === 'never' ? 'never reached' : c.worker === 'loaded' ? 'loaded' : `${c.worker} and never loaded`}: the next load finds the machine on ${c.on}`, async () => {
     const e = c.how === 'fresh' ? await withFresh() : await withMine();
     let key = 'k';
     if (c.how === 'reuse') {
@@ -158,9 +166,15 @@ for (const c of CASES)
       await e.b.put('machines', m);
       key = 'first';
     }
-    const { plan, steps } = await restore(e, e.m.id, key, { replace: c.how === 'replace', fresh: c.how === 'fresh' });
+    const replace = c.how === 'replace' || c.how === 'kept';
+    const { plan, steps } = await restore(e, e.m.id, key, { replace, fresh: c.how === 'fresh', room: c.how === 'kept' ? Infinity : 0 });
     assert.deepEqual(plan.forks.map((f) => f.reused), [c.how === 'reuse']);
+    assert.equal(plan.replaceKeeps, c.how === 'kept');
     const target = (await attachedTo(e, e.m.id))!;
+    if (c.how === 'kept') {
+      assert.notEqual(target, e.mine, 'filled beside Mine');
+      assert.deepEqual(steps.map((p) => p.action === 'write' && [p.overlay, !!p.fork]), [[overlayDir(target), true]], "planned as a fork's fill: a refusal deletes nothing");
+    }
     if (c.worker === 'cut' || c.worker === 'filled' || c.worker === 'loaded') {
       if (c.how !== 'reuse') await fill(target, c.worker !== 'cut', e.b);
     }
@@ -176,6 +190,10 @@ for (const c of CASES)
     assert.deepEqual(await names(e), c.overlays, 'the overlays');
     assert.equal(await emptied(after.attachments[0].overlay!), c.empty, 'read as empty');
     assert.equal(after.restoring, undefined, 'nothing left to undo');
+    if (c.how === 'kept') {
+      assert.equal(after.attachments[0].overlay === e.mine, c.worker !== 'loaded', 'on Mine until it loaded, then on the fork');
+      if (c.worker === 'loaded') assert.equal((await e.b.get('overlays', target))?.fork, undefined, "Mine's place taken: no snapshot's fork");
+    }
     assert.deepEqual(await load(e, e.m.id), (await e.b.get('machines', e.m.id))!, 'a second load undoes nothing more');
     // What a later restore of the same snapshot finds: a fork that loaded is attached again; one never loaded isn't there.
     if (c.how === 'fork' || c.how === 'reuse') assert.deepEqual(await reusedLater(e, key), [c.worker === 'loaded' || c.how === 'reuse']);
@@ -621,8 +639,9 @@ test("restore-tokens 7: another machine chose the overlay a replace writes into 
   await e.b.put('overlays', work);
   await switchOverlay(e.b, two, two.attachments[0].id, work.id); // Two on Work: Mine is One's alone
   const m = (await e.b.get('machines', e.m.id))!;
-  const plan = await planRestore(e.b, m, await disksOf(e.b), { name: 'Snap k', key: 'k', pins: e.pins }, { display: '2d' });
+  const plan = await planRestore(e.b, m, await disksOf(e.b), { name: 'Snap k', key: 'k', pins: e.pins }, { display: '2d' }, { room: 0 });
   assert.deepEqual(plan.forks.map((f) => f.replaceable?.name), ['Mine'], 'Mine offered to replace');
+  assert.equal(plan.replaceKeeps, false, 'filled in place');
   // Another tab's Overlays dialog puts Two on Mine just before the commit's write of One's record.
   const [update, among] = [e.b.update.bind(e.b), e.b.updateAmong.bind(e.b)];
   let armed = true;
@@ -641,4 +660,30 @@ test("restore-tokens 7: another machine chose the overlay a replace writes into 
   const steps = await plan.commit(true);
   assert.notEqual(steps[0].action === 'write' && steps[0].overlay, overlayDir(e.mine), 'a fork, not Mine');
   assert.equal(await attachedTo(e, two.id), e.mine);
+});
+
+// #156: a replace keeps the overlay it replaces until the snapshot loaded where the storage has room for the snapshot's
+// blocks beside it (theirs, a tenth more and 64 MiB), else fills it in place, as the question says.
+test("#156: a replace keeps what it replaces only with room for the snapshot's blocks beside it", async () => {
+  const e = await withMine();
+  const m = (await e.b.get('machines', e.m.id))!;
+  const need = 120 * 4096 + Math.ceil((120 * 4096) / 10) + 64 * MiB;
+  for (const [room, keeps] of [[need - 1, false], [need, true]] as const) {
+    const plan = await planRestore(e.b, m, await disksOf(e.b), { name: 'Snap k', key: 'k', pins: e.pins }, { display: '2d' }, { room });
+    assert.equal(plan.replaceKeeps, keeps, `${room} free`);
+  }
+});
+
+test("#156: a replace with room whose replaced overlay another machine chose before it loaded leaves it, and the fork stays the snapshot's", async () => {
+  const e = await withMine();
+  await restore(e, e.m.id, 'k', { replace: true, room: Infinity });
+  const fork = (await attachedTo(e, e.m.id))!;
+  assert.notEqual(fork, e.mine);
+  await fill(fork, true, e.b);
+  const two = await copyOf(e, e.m.id); // a copy made meanwhile: on Mine, what the undo would put back
+  assert.equal(await attachedTo(e, two.id), e.mine);
+  await restoreLoaded(e.b, e.m.id);
+  assert.ok(await e.b.get('overlays', e.mine), 'Mine kept: Two has it');
+  assert.deepEqual(await names(e), ['Mine', 'Snap k']);
+  assert.equal(await attachedTo(e, e.m.id), fork);
 });

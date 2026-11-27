@@ -43,16 +43,23 @@ function restoreQuestion(name: string, header: SnapshotHeader, plan: Plan, runni
   return msg('snapshots:snapshot-restore.restore.question', { lines });
 }
 
-/** Whether the disks the restore forks replace their overlays (the user says no to keeping them). */
+/**
+ * Whether the disks the restore forks replace their overlays (the user says no to keeping them). Without room for the
+ * snapshot's blocks beside them (`replaceKeeps`), the question says that a replace cut off part way leaves the disks on
+ * their images.
+ */
 async function replaceForks(plan: Plan) {
   const replaceable = plan.forks.flatMap((f) => (!f.reused && f.replaceable ? [f.replaceable] : []));
   const count = replaceable.length;
   const list = replaceable.map((r) =>
     msg('snapshots:snapshot-restore.restore.keep.item', { name: r.name, size: r.bytes }),
   );
+  const key = plan.replaceKeeps
+    ? 'snapshots:snapshot-restore.restore.keep'
+    : 'snapshots:snapshot-restore.restore.keep.tight';
   return (
     count > 0 &&
-    !(await ask.confirm(msg('snapshots:snapshot-restore.restore.keep', { count, list }), {
+    !(await ask.confirm(msg(key, { count, list }), {
       title: t('snapshots:snapshot-restore.restore.keep.title'),
       ok: t('snapshots:snapshot-restore.restore.keep.ok'),
       cancel: t('snapshots:snapshot-restore.restore.replace', { count }),

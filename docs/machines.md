@@ -586,9 +586,25 @@ The file's format, what the core saves and the page's toolbar and header fields:
   snapshot gets its blocks and is attached (at the size the snapshot had: §4.5), and the old overlay stays as it was
   (an overlay written by a restore is over zeros: a disk whose size isn't a multiple of 4 KiB has a last block shorter
   than the overlay's, whose write reads the rest). The confirmation says which disks
-  fork, and offers to **replace** instead (the attached overlay takes the blocks; what was written since is lost), for
-  an overlay no other machine has chosen (below, "Other machines"). A
+  fork, and offers to **replace** instead (the snapshot's blocks take the attached overlay's place; what was written
+  since is lost), for an overlay no other machine has chosen (below, "Other machines"). A
   ramdisk takes the snapshot's blocks. Transient machines have no plan: a restore replaces their overlays.
+- **How a replace is made** (`planRestore`'s `replaceKeeps`, web/app/restore-room.ts; #156): where the storage has room
+  for the snapshot's blocks beside what is there (`estimate()`'s quota less usage, at least the blocks every fork and
+  replace of the restore write, a tenth more and 64 MiB; where the browser says nothing, there is), a replace is a
+  fork whose step says so (`replaced`): a new overlay takes the blocks, and once the snapshot loaded the overlay it
+  replaced is deleted (with the machines that could open it held off but this one, `deleteOverlayAsked`'s `owner`)
+  and the fork takes its name and is no snapshot's fork; cut off part way, it is undone as a fork, so the disk is as it
+  was. Where the replaced overlay can't be deleted then (another machine chose it since, one of the machines that could
+  open it runs), both stay: the fork named after the snapshot. Without that room the attached overlay itself is
+  emptied and filled (`into`), which needs room only for the snapshot's blocks, and the question says that a replace
+  that stops part way starts the disk from its image ([Keep the overlay {{list}} as it is and restore into a new
+  overlay? Replacing it will lose what the machine wrote since the snapshot. The browser's storage hasn't room to keep
+  it until the restore is done, so a replace that stops part way starts the disk from its
+  image.](ui:snapshots:snapshot-restore.restore.keep.tight_one)). Decided once, when the restore is planned, for the
+  question and the commit alike. Keeping the replaced overlay always (a replace refused for want of a fork's room)
+  was rejected: a replace is what the user picks to need less than a fork. The page's own disk, Import changes onto
+  it and transient machines still fill in place (devices.md "blk").
 - **An attachment written in place since a snapshot taken under an overlay** (the shape doesn't include writing in
   place, so the snapshot isn't orphaned): the machine runs on the stored disk itself, not on the overlay its record
   still names, so that overlay is neither kept (the snapshot's RAM would land on the stored disk without the overlay's
@@ -640,7 +656,8 @@ The file's format, what the core saves and the page's toolbar and header fields:
   chosen never does.
   - **The steps:** `fork`, a new overlay made and attached (with what the attachment had: `before`, its overlay or
     written in place); `reuse`, an earlier fork of the snapshot attached again (with `before`); `into`, the attached
-    overlay written into (a replace, or a template's fresh overlay), with the generation its files had at the commit.
+    overlay written into (a replace without room for both, or a template's fresh overlay), with the generation its
+    files had at the commit. A `fork` with `replaced` is a replace with that room: the replaced overlay is its `before`.
   - **The commit** (under the machine's lock, which the restore takes before it and its start keeps to the run's end:
     `Runner.own`) writes the machine's record once, its attachments switched and `restoring` set, onto the record as
     the store has it then (one read and write, `Store.updateAmong`: another tab's write to its other fields meanwhile
@@ -658,7 +675,8 @@ The file's format, what the core saves and the page's toolbar and header fields:
     still one that never loaded, as a whole (the guest never ran), and its Retry restores it again. After the write, a
     template's fresh overlay is named after the snapshot and marked as its fork (`fork`, its generation one past the
     commit's; one read and write of its record, as every writer of an overlay's fields: the run's refresh at its stop,
-    a rename, a resize's size and grow mark), which only spares a later restore a fork if it fails.
+    a rename, a resize's size and grow mark), which only spares a later restore a fork if it fails; and a replace's
+    fork (`replaced`) deletes the overlay it replaced and takes its name (above, "How a replace is made").
   - **The undo** (`undoCutRestores`, at the machine's next load or start, under its lock taken only if free, so a
     restore under way here or in another tab is left alone; a page reading the records again waits for its own last
     run's lock to go: `MachineLock.settled`; a start that boots undoes as the lock's owner, `#openDisks`; the record

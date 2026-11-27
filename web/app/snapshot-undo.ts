@@ -9,9 +9,9 @@
 // proves nothing else wrote it since and no other machine has it.
 import { MsgError } from '../msg.ts';
 import { markCutFill, overlayMeta } from '../overlay.ts';
-import { deleteOverlay, inUse } from './disks.ts';
+import { deleteOverlay, deleteOverlayAsked, inUse } from './disks.ts';
 import { machineLock } from './machines.ts';
-import { othersHave, type RestoreStep } from './restore-step.ts';
+import { othersHave, restoreNames, type RestoreStep } from './restore-step.ts';
 import type { MachineRecord } from './shape.ts';
 import { overlayDir, type Store } from './store.ts';
 
@@ -142,7 +142,8 @@ async function dropFork(store: Store, own: string, s: RestoreStep) {
  * `restoreFirst` cleared together in one read and write (`Store.update`): refused (the storage full), the restore is
  * still one that never loaded, as a whole (the guest hasn't run: its vCPUs wait for the page's answer to `loaded`). Then a template's fresh overlay it wrote into is named after the snapshot
  * and marked as its fork (a later restore of it attaches it again while it hasn't moved), which only spares a fork if
- * it fails. Called while the run holds the machine's lock.
+ * it fails. A replace's fork (`replaced`) deletes the overlay it replaced and takes its name (`dropReplaced`). Called
+ * while the run holds the machine's lock.
  */
 export async function restoreLoaded(store: Store, id: string) {
   let restoring: RestoreStep[] = [];
@@ -151,6 +152,9 @@ export async function restoreLoaded(store: Store, id: string) {
     restoring = m.restoring ?? [];
     return { ...m, restoring: undefined, restoreFirst: undefined, modified: Date.now() };
   });
+  for (const s of restoring)
+    if (s.how === 'fork' && s.replaced)
+      await dropReplaced(store, id, s).catch((e: unknown) => console.warn('waarm64: a replaced overlay stays:', e));
   for (const s of restoring) {
     if (s.how !== 'into' || !s.fork) continue;
     const { name, snapshot } = s.fork;
@@ -160,4 +164,26 @@ export async function restoreLoaded(store: Store, id: string) {
       .update('overlays', s.overlay, (o) => o && { ...o, name, fork, modified: Date.now() })
       .catch((e: unknown) => console.warn('waarm64: a fresh overlay not marked as its fork:', e));
   }
+}
+
+/**
+ * Replace's end, once the snapshot loaded (machine `own`'s step `s`: a fork made with room for both, docs/machines.md
+ * §5.2): the overlay it replaced (`before.overlay`) deleted, where no machine has it chosen or a restore names it (the
+ * question offered only one no other machine had, but another tab may have chosen it since), with the machines that
+ * could open it held off but `own` (`deleteOverlayAsked`); then the fork takes its name and is no snapshot's fork (as
+ * the overlay a replace fills in place stays what it was). Refused (one of those machines runs, the storage refused the
+ * delete), both stay: the fork named after the snapshot, the replaced overlay as it was.
+ */
+async function dropReplaced(store: Store, own: string, s: Extract<RestoreStep, { before: unknown }>) {
+  const old = s.before.overlay;
+  const was = old && (await store.get('overlays', old));
+  if (!was) return;
+  const all = await store.all('machines');
+  if (all.some((m) => m.attachments.some((a) => a.overlay === old) || restoreNames(m, old))) return;
+  await deleteOverlayAsked(store, old, { owner: own });
+  await store.update(
+    'overlays',
+    s.overlay,
+    (o) => o && { ...o, name: was.name, fork: undefined, modified: Date.now() },
+  );
 }

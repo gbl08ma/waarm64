@@ -243,7 +243,7 @@ test("a replace into an earlier fork, cut off, leaves the machine on that fork (
   await letGo(fork);
   await restoreLoaded(b, m.id); // and it loaded
   // Another snapshot restored over it, the user answering replace: a write into the fork.
-  const second = await planRestore(b, m, await disksOf(b), { name: 'Other', key: 'k8', pins }, { display: '2d' });
+  const second = await planRestore(b, m, await disksOf(b), { name: 'Other', key: 'k8', pins }, { display: '2d' }, { room: 0 });
   assert.deepEqual(second.forks.map((x) => x.replaceable?.overlay), [fork]);
   const steps = await second.commit(true);
   assert.deepEqual(steps.map((s) => s.action === 'write' && s.overlay), [overlayDir(fork)]);
