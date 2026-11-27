@@ -2052,6 +2052,19 @@ test('virgl caps: from the browser\'s WebGL2, formats only where their extension
   assert.equal(capsBacked(capsFromGl(mockGl({ extensions: [] })), capsFromGl(mockGl({ extensions: ['WEBGL_compressed_texture_s3tc'] }))), null);
   assert.match(capsBacked(capsFromGl(mockGl({ extensions: ['WEBGL_compressed_texture_s3tc'] })), capsFromGl(mockGl({ extensions: [] })))!, /sampler lacks formats/);
   assert.match(capsBacked(capsFromGl(mockGl({ params: { [0xd33]: 16384 } })), capsFromGl(mockGl()))!, /max_texture_2d_size/);
+  // What GL clamps (point sizes, line widths, the LOD bias) and a finer alignment don't stop a restore: SwiftShader's
+  // caps on the Mac's ANGLE (#18) were refused for its points and its 256-byte uniform alignment among real limits.
+  const lesser = capsFromGl(mockGl({
+    params: {
+      [E.ALIASED_POINT_SIZE_RANGE]: new Float32Array([1, 64]),
+      [E.UNIFORM_BUFFER_OFFSET_ALIGNMENT]: 16,
+      [E.MAX_TEXTURE_LOD_BIAS]: 1,
+    },
+  }));
+  assert.equal(capsBacked(capsFromGl(mockGl()), lesser), null);
+  // A coarser alignment than the guest was told of does.
+  assert.match(capsBacked(lesser, capsFromGl(mockGl()))!, /uniform_buffer_offset_alignment/);
+  assert.match(capsBacked(capsFromGl(mockGl({ params: { [E.MAX_UNIFORM_BLOCK_SIZE]: 65536 } })), capsFromGl(mockGl()))!, /max_uniform_block_size/);
 });
 
 test('virgl renderer: half floats round to nearest even', () => {

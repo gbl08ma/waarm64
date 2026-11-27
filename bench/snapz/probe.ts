@@ -145,7 +145,7 @@ await page.addInitScript(() => {
 const keepAsk = words('snapshots:snapshot-restore.restore.keep', { count: 1 }, { start: true });
 await answerAsks(page, (q) => !keepAsk.test(q.text));
 page.on('pageerror', (e) => console.log('[page error]', String(e).slice(0, 400)));
-page.on('console', (m) => { if (m.type() === 'error') console.log('[page console]', m.text().slice(0, 400)); });
+page.on('console', (m) => { if (m.type() === 'error' || m.text().startsWith('virtio-gpu')) console.log('[page console]', m.text().slice(0, 400)); });
 
 const state = () => page.evaluate(() => document.body.dataset.state ?? '');
 const until = (states: string[], ms = 600_000) => page.waitForFunction((s) => s.includes(document.body.dataset.state!), states, { timeout: ms, polling: 100 });

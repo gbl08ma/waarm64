@@ -171,8 +171,25 @@ export function withVideo(caps: Uint8Array, video: VideoCap[]): Uint8Array {
 }
 
 /**
+ * Limits the host's GL clamps to (its point sizes, line widths, LOD bias): above today's, the guest's draws still
+ * work, their points, lines or bias only clamped.
+ */
+const CLAMPED = new Set([
+  'min_aliased_point_size',
+  'max_aliased_point_size',
+  'min_smooth_point_size',
+  'max_smooth_point_size',
+  'min_aliased_line_width',
+  'max_aliased_line_width',
+  'min_smooth_line_width',
+  'max_smooth_line_width',
+  'max_texture_lod_bias',
+]);
+
+/**
  * Whether caps the guest was given (`saved`) are backed by `now` (a snapshot restored in another browser): every
- * format and capability bit given is still there, and no limit given is above today's.
+ * format and capability bit given is still there, no limit given is above today's (but what GL clamps: `CLAMPED`),
+ * and every alignment given is a multiple of today's.
  */
 export function capsBacked(saved: Uint8Array, now: Uint8Array): string | null {
   const a = decodeCaps(saved),
@@ -211,6 +228,10 @@ export function capsBacked(saved: Uint8Array, now: Uint8Array): string | null {
     } else if (typeof v === 'number' && typeof w === 'number') {
       if (k === 'capability_bits' || k === 'capability_bits_v2' || k === 'bset') {
         if ((v & ~w) !== 0) return `${k} lacks ${(v & ~w).toString(16)}`;
+      } else if (CLAMPED.has(k)) continue;
+      else if (k.endsWith('_alignment')) {
+        // The guest aligns its offsets to what it was told: a multiple of a finer alignment is aligned to it too.
+        if (w > 0 && v % w !== 0) return `${k} is coarser than ${v}`;
       } else if (k.startsWith('min_')) {
         if (v < w) return `${k} is above ${v}`;
       } else if (v > w) return `${k} is below ${v}`;

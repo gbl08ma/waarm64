@@ -291,7 +291,12 @@ screen than on the simple framebuffer ([#57](https://github.com/gbl08ma/waarm64/
 - **No lower-left origin** (no `fragment_coord_conventions`, as vrend on GLES): Mesa lowers `gl_FragCoord` to
   upper-left itself, so the translator ignores the TGSI's `FS_COORD_ORIGIN` (honouring it flipped y twice).
 - **`capsBacked`**: a snapshot restored in a browser that can't back the caps its guest was given keeps them for the
-  guest and turns 3D off (new contexts refused, the saved 3D state not loaded) rather than refusing the machine. The
+  guest and turns 3D off (new contexts refused, the saved 3D state not loaded) rather than refusing the machine. A
+  limit GL clamps to (point sizes, line widths, the LOD bias) doesn't count, nor an alignment finer than the guest's
+  (its offsets, multiples of the one it was told, are aligned to it); the GPU worker's log names the first that does
+  (`virtio-gpu: 3D is off: …`). So a snapshot made under SwiftShader (the dev VM's) restores with 3D off on the Mac's
+  ANGLE: its 31 vertex outputs, 64 KiB uniform blocks and 65,280-byte constant buffers are above the Mac's, and each
+  `CTX_CREATE` of the guest's Mesa gets `ERR_UNSPEC` (its kernel logs it; the session runs on) (#18). The
   caps are the guest's only once it read them (GET_CAPSET, `capsRead`; its kernel keeps them for the boot): a snapshot
   of a guest that never did carries none, and its restore gives the guest this browser's. A context doesn't count:
   Arch's kernel makes one at boot when a process opens the DRM device, with no caps read; nor does reading the Venus
