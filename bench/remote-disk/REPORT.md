@@ -283,3 +283,58 @@ browser's layout, so the guest runs the layout's unit at boot):
   and starting at 64 changes nothing but the menu's bytes. What R5 had was the menu's idle seconds: by systemd's start
   it held 510 MiB, so the boot's fetching (the network, the store's writes) never ran beside the guest. Left in
   docs/backlog.md (running eagerly once the guest is past its menu).
+
+## PERF loop 102: the prefetch eager past the boot menu, and paced without the store (2026-11-28)
+
+Issues #28 (the paced prefetch's 1.5 s, R6) and #29 (without the OPFS store it refetched what memory pushed out: 83
+against 65 s, 715 MB against 544, R5). Both re-measured on today's tree first, with R5's setup: the Desktop Demo
+(`target/disks/desktop/`, linked as `target/images/remote/desktop`: 2 MiB pieces, its boot trace of 531 blocks in
+`prefetch.json`) on `bench/remote-disk/server.ts` at 47 ms a request and one shared 20 MB/s link
+(`node bench/remote-disk/boot.ts <label> local:/d47/R20:desktop/prefetch.json`; `QUERY=diskcache=0` without the store;
+`manifest.json` without the trace), dev VM, Chromium 153 headless, fresh profiles, one boot to Firefox's paint each.
+Since DEMO's review the pieces are fetched whole on every host (web/chunked.ts), so a fetch brings two 1 MiB blocks.
+Three sessions, the arms alternated in each; painted (s, each round), median, and MiB the server sent
+(`results/p102-*.json`, `p102b-*`, `p102c-*`):
+
+| session | arm | painted, rounds | **median** | login (median) | MiB at the menu | MiB sent |
+|---|---|---|---|---|---|---|
+| 1 | C: today's, paced (window from 16, widening) | 65.9 / 65.3 / 66.0 | **65.9** | 30.2 | 24 | 590 |
+| 1 | E: R5's way, the window at its ceiling (128) from the start | 57.7 / 61.3 / 58.4 | **58.4** | 24.9 | 72–74 | 590 |
+| 1 | N: today's without the store | 93.0 / 91.6 / 91.5 | **91.6** | 41.2 | 24 | 904–908 |
+| 1 | A: no prefetch | 96.4 | 96.4 | 51.3 | 6 | 590 |
+| 1 | NA: no prefetch, no store | 100.6 | 100.6 | 51.8 | 6 | 664 |
+| 2 | C | 65.3 / 65.7 / 65.8 | **65.7** | 29.8 | 24 | 590 |
+| 2 | R: C, and at its ceiling once the guest read 16 blocks of the list | 61.5 / 62.5 / 61.3 | **61.5** | 28.3 | 24 | 590 |
+| 2 | N | 90.9 / 92.5 / 90.9 | **90.9** | 41.0 | 24 | 900–906 |
+| 2 | NR: R without the store, and no more than half of memory held ahead | 82.0 / 83.6 / 82.0 | **82.0** | 38.2 | 24 | 804–810 |
+| 3 | C | 65.1 / 65.3 / 65.9 | **65.3** | 29.9 | 24 | 590 |
+| 3 | **F: kept** (16 until 16 blocks read, then 128 over a store; 16 without; no widening) | 61.6 / 61.2 / 61.6 | **61.6** | 28.5 | 24 | 590 |
+| 3 | N | 90.4 / 91.8 / 90.1 | **90.4** | 40.7 | 24 | 902–910 |
+| 3 | **FN: kept, without the store** | 78.4 / 78.9 / 77.3 | **78.4** | 35.1 | 24 | 678–686 |
+| 3 | FN8: FN with a window of 8 | 79.7 / 78.9 / 80.1 | 79.7 | 36.8 | 16 | 672–674 |
+
+- **#28's gap is larger on this link than R6 measured: 7.5 s, not 1.5** (C 65.9 against E 58.4, rounds apart). R6
+  ran from a warm Cloudflare edge, where the network keeps up with the guest; over 20 MB/s it doesn't, and the paced
+  window (16, widened by 8 only when it held the guest back) had reached 40 blocks by the login prompt: the guest
+  waited on the list 69–101 times (E: once).
+- **Kept: the window goes to its ceiling once the guest has read 16 blocks of the list** (`EAGER_AFTER`). At the
+  menu the guest has read 4 (the firmware, the loader; the loader then reads the kernel and initramfs, 55 blocks by
+  systemd's start), so the menu's bytes are unchanged (24 MiB: what the guest read and a window), and the boot to Firefox's paint
+  is **65.3 → 61.6 s (−5.7%, rounds apart in two sessions)**, the login prompt 29.9 → 28.5; the guest waited on the
+  list 22–26 times. E's other 3 s are the menu's idle seconds, bought with 48 MiB fetched before anyone chose to boot:
+  not taken (R6's reason for pacing).
+- **#29's refetching was still there, and worse: 904–910 MiB for 590**, 90–92 s. Without the store the prefetch keeps
+  its blocks in memory (256 MiB) beside the guest's, the widened window reached 128 list entries, and each brings its
+  piece's sibling block: 256 blocks, all of memory. Kept: **without the store the window stays at 16** (no widening,
+  not eager): **90.4 → 78.4 s (−13%), 906 → 684 MiB.** A held-ahead bound with the eager window (NR, half of memory)
+  still fetched 804 MiB; 8 fetched 10 MiB less and was 1.3 s slower.
+- A replay of N's reads through a 256-block LRU with the prefetch always as far ahead as allowed (ad hoc; its "no
+  prefetch" arm gives NA's 664 MiB exactly) says the same: the boot's own reads already refetch 66 MiB at this memory
+  size, a window of 16 fetches 706, 32 740, 64 800, 128 ~1,190; no bound on what is held ahead does better than a
+  small window.
+- **What's left without the store is memory's:** 78.4 s and 684 MiB against 61.6 and 590 with it. Only a larger memory
+  budget while the prefetch runs would take it (the issue's other idea), at hundreds of MiB for a case (another tab has
+  the image, no room in OPFS) that the store covers otherwise: not built.
+- The widening rule is gone (no arm needed it: past the menu the window is the ceiling over a store, and a wider one
+  hurts without). Memory: unchanged (the block cache's 256 MiB, the store's slots). The guest sees nothing (realtime
+  mode's fetching only; the deterministic mode doesn't prefetch).

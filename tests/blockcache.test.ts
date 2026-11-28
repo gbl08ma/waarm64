@@ -136,8 +136,8 @@ test("prefetch: the list fetched ahead in the background, within its window, the
   c.close?.();
 });
 
-test('prefetch: over a large store it runs a window ahead, not the whole list; it widens only when it held the guest back', async () => {
-  const { AHEAD_START, AHEAD_STEP, AHEAD_MAX } = await import('../web/blockcache.ts');
+test('prefetch: over a large store it runs a window ahead while the guest is at its menu, then as far as it may', async () => {
+  const { AHEAD_START, AHEAD_MAX, EAGER_AFTER } = await import('../web/blockcache.ts');
   const { blockStore } = await import('../web/diskcache.ts');
   const { memFile } = await import('../web/overlay.ts');
   const N = 1024, B = 4096;
@@ -154,40 +154,40 @@ test('prefetch: over a large store it runs a window ahead, not the whole list; i
   };
   const list = Array.from({ length: N }, (_, i) => i);
   const settle = () => new Promise((r) => setTimeout(r, 60));
+  const read = async (c: ReturnType<typeof make>['c'], b: number) => {
+    const got = await c.readAsync!(b * B + 10, 20);
+    assert.ok(got && Buffer.compare(got, bytes.subarray(b * B + 10, b * B + 30)) === 0, `block ${b}`);
+  };
   // The guest reads nothing (a boot menu): a window and a run past it, of 1024 the store could hold.
   {
     const { c, fetched } = make(1);
     void c.prefetch(list);
     await settle();
     assert.ok(fetched() >= AHEAD_START && fetched() <= AHEAD_START + 8, `${fetched()} blocks fetched with the guest idle`);
-    assert.deepEqual([c.stats.prefetch!.window, c.stats.prefetch!.widened], [AHEAD_START, 0]);
+    assert.equal(c.stats.prefetch!.window, AHEAD_START);
     c.close?.();
   }
-  // The guest's first read comes at once: late, but the prefetch never sat on its window, so it doesn't widen.
+  // The guest reads the list's first blocks, short of EAGER_AFTER (the firmware, the menu): still a window ahead.
   {
-    const { c } = make(5);
+    const { c, fetched } = make(1);
     void c.prefetch(list);
-    await c.readAsync!(0, 100);
-    assert.ok(c.stats.prefetch!.late >= 1);
-    assert.equal(c.stats.prefetch!.widened, 0);
-    c.close?.();
-  }
-  // The prefetch idles on its window, then the guest reads faster than it fetches: it widens, step by step, to the
-  // ceiling at most; every read's bytes right.
-  {
-    const { c, fetched } = make(3);
-    void c.prefetch(list);
+    for (let b = 0; b < EAGER_AFTER - 1; b++) await read(c, b);
     await settle();
-    for (let b = 0; b < 400; b++) {
-      const got = await c.readAsync!(b * B + 10, 20);
-      assert.ok(got && Buffer.compare(got, bytes.subarray(b * B + 10, b * B + 30)) === 0, `block ${b}`);
-    }
+    assert.equal(c.stats.prefetch!.window, AHEAD_START);
+    assert.ok(fetched() <= EAGER_AFTER - 1 + AHEAD_START + 8, `${fetched()} blocks fetched, the guest at ${EAGER_AFTER - 1}`);
+    c.close?.();
+  }
+  // Past EAGER_AFTER (the boot under way): as far ahead as it may, AHEAD_MAX (the store holds 1024), and no further.
+  {
+    const { c, fetched } = make(1);
+    void c.prefetch(list);
+    for (let b = 0; b <= EAGER_AFTER; b++) await read(c, b);
+    await settle();
     const p = c.stats.prefetch!;
-    assert.ok(p.widened > 0, 'widened');
-    assert.equal(p.window, Math.min(AHEAD_MAX, AHEAD_START + p.widened * AHEAD_STEP));
-    assert.ok(p.window <= AHEAD_MAX);
-    await settle();
-    assert.ok(fetched() <= 400 + p.window + 8, `${fetched()} blocks fetched, the guest at 400, a window of ${p.window}`);
+    assert.equal(p.window, AHEAD_MAX);
+    assert.ok(fetched() > EAGER_AFTER + AHEAD_START + 8, `${fetched()} blocks fetched, the guest at ${EAGER_AFTER}: not eager`);
+    assert.ok(fetched() <= EAGER_AFTER + AHEAD_MAX + 8, `${fetched()} blocks fetched, the guest at ${EAGER_AFTER}, a window of ${AHEAD_MAX}`);
+    for (let b = EAGER_AFTER + 1; b < 400; b++) await read(c, b);
     c.close?.();
   }
 });
@@ -256,4 +256,42 @@ test("a block kept from a run doesn't keep the run's buffer: what the cache hold
   assert.ok(run, 'one read of the run');
   assert.equal(run.deref(), undefined, "the run's buffer is gone");
   assert.equal(c.read(0, 10)?.[0], 0, 'block 0 still held');
+});
+
+test("prefetch without a store: it stays a window ahead past the menu, so it never pushes out of memory what the guest hasn't read yet", async () => {
+  // Pieces of two blocks (a chunked image's: `span`), the list every piece's first block, so each fetch brings a sibling
+  // the guest never reads; the guest reads the list in order and blocks of its own (off the list) between.
+  const { AHEAD_START, EAGER_AFTER } = await import('../web/blockcache.ts');
+  const N = 1024, B = 4096, MAX = 64;
+  const bytes = Uint8Array.from({ length: N * B }, (_, i) => (i * 5 + 1) & 0xff);
+  const times = new Map<number, number>(); // block -> times fetched
+  const src: Source = {
+    size: N * B,
+    read: (off, len) => bytes.slice(off, off + len),
+    span: (off, len) => [Math.floor(off / (2 * B)) * 2 * B, Math.min(N * B, Math.ceil((off + len) / (2 * B)) * 2 * B)],
+    readAsync: async (off, len) => {
+      for (let k = off / B; k < (off + len) / B; k++) times.set(k, (times.get(k) ?? 0) + 1);
+      await new Promise((r) => setTimeout(r, 1));
+      return bytes.slice(off, off + len);
+    },
+  };
+  const c = cachedSource(src, { block: B, bytes: MAX * B });
+  const list = Array.from({ length: 200 }, (_, i) => 2 * i);
+  void c.prefetch(list);
+  for (let i = 0; i < list.length; i++) {
+    const b = list[i];
+    const got = await c.readAsync!(b * B + 10, 20);
+    assert.ok(got && Buffer.compare(got, bytes.subarray(b * B + 10, b * B + 30)) === 0, `block ${b}`);
+    if (i % 2) await c.readAsync!((600 + (i % 8) * 2) * B, 10); // the guest's own, off the list
+    if (i === EAGER_AFTER + 20) {
+      await new Promise((r) => setTimeout(r, 40)); // the guest busy: the prefetch runs as far as it may
+      const p = c.stats.prefetch!;
+      assert.equal(p.window, AHEAD_START);
+      assert.ok(p.fetched <= i + 1 + AHEAD_START + 8, `${p.fetched} of the list fetched, the guest at ${i}`);
+    }
+    await new Promise((r) => setTimeout(r, 1));
+  }
+  const twice = list.filter((b) => (times.get(b) ?? 0) > 1);
+  assert.equal(twice.length, 0, `blocks of the list fetched again: ${twice.slice(0, 8).join(', ')}`);
+  c.close?.();
 });

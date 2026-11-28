@@ -20,6 +20,7 @@ fresh profile:
 | Requests in parallel (realtime mode), the device worker never waiting on the network (its longest answer 0.7 s → 17 ms) | 101 s |
 | A boot's reads in the manifest, fetched ahead | **65 s** |
 | The same, paced: a window ahead of the guest, not the whole list at once (20 MiB fetched at the boot menu, not 380; R6, from vmdisks.tny.im (its name then), against 64.6 s there) | 66 s |
+| The same, at its ceiling (128 blocks ahead) once past the boot menu (PERF loop 102, the local server at 47 ms and 20 MB/s, against 65.3 s paced there; the menu's bytes unchanged) | 61.6 s |
 | A local file | 64 s |
 | The next boot (the blocks kept in OPFS): no requests | 63 s |
 
@@ -43,6 +44,16 @@ Findings worth not re-measuring:
   fast the host.
 - **A hosted image's first boot runs its update jobs** (`ldconfig.service` by `ConditionNeedsUpdate`): 2–5 s of the
   guest's time, no extra bytes ([#30](https://github.com/gbl08ma/waarm64/issues/30)).
+- **When the prefetch runs ahead** (PERF loop 102, bench/remote-disk/REPORT.md): a window of 16 blocks while the guest
+  is at its boot menu (it has read 4 of the list there), its ceiling (128) once it has read 16. A window that widens
+  only when it held the guest back reached 40 by the login prompt and cost 3.7 s of 65 on a 20 MB/s link (R6 measured
+  1.5 s from a warm edge, where the network keeps up); the ceiling from the start gains 3 s more by fetching ~50 MiB
+  at the menu, which pacing is there to avoid.
+- **Without the OPFS store** (another tab has the image, no room) the prefetch's blocks share memory's 256 MiB with
+  the guest's, and a chunked image's piece brings two blocks: a window past 16 pushes out what it fetched before the
+  guest gets there (a window of 128: 906 MiB fetched for 590, 91 s). At 16: 684 MiB, 78 s; 8 is no better, nor a bound
+  on what it holds ahead. The rest (78 against 62 s with the store) is memory's size: only a budget hundreds of MiB
+  larger would take it.
 - The deterministic mode reads a remote disk one request at a time with synchronous XHRs, by design (its step
   counts); everything above is realtime mode.
 

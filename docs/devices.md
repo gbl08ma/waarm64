@@ -1006,11 +1006,13 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   boot's reads there: 1 MiB blocks in the order it first read them) is fetched in the background from the opening
   (realtime only): runs of adjacent blocks a request each, at most 4 of the 8 fetches, the guest's reads first in the
   queue (slots granted in order), and into the store alone where there is one. **It runs a window ahead of the guest's
-  place in the list** (`AHEAD_START` 16 blocks), not the whole list: the window widens by 8 each time the guest's read
-  needs a block of the list from the network that the window held back (not fetched while the prefetch sat idle on
-  it, or fetched only once the guest moved), up to 128 and never past half of what can hold the blocks (the store's
-  slots, or memory's). A guest at a boot menu, or one a fast host keeps up with, costs a window; a slow host widens
-  it. It stops if the store gives up. A synchronous read (the
+  place in the list** (`AHEAD_START` 16 blocks) until the guest has read `EAGER_AFTER` (16) blocks of it, so a guest at
+  its boot menu costs a window (the desktop's firmware and menu read 4); past that, over a store, the window is
+  `AHEAD_MAX` (128, never past half of the store's slots), so the boot's fetching runs ahead of it rather than beside
+  it. Without a store (another tab has the image, no room) the blocks it fetches are kept in memory with the guest's,
+  and it stays at `AHEAD_START`: a wider window pushed out what it had fetched before the guest got there (a chunked
+  image's 2 MiB piece brings two blocks), and the guest fetched them again (PERF loop 102). It stops if the store gives
+  up. A synchronous read (the
   image's opening) of a block the prefetch is fetching fetches it itself. A remote desktop boot's first boot: 96 →
   65 s, a local file's time (bench/remote-disk/REPORT.md "R5"). A read that throws is an IOERR, not a failed device.
   **The blocks are kept in OPFS** (`web/diskcache.ts`), in a Storage Bucket of their own where the browser has
