@@ -2,7 +2,7 @@
 
 ## T50. The hosts' own failures (in progress; #119)
 
-**State (2026-11-28).** Fixed and in `tests/deqp/vk.txt`: the M4's 16 `shader_draw_parameters.draw_index` cases
+**State (2026-11-28; 96946fc1 and 9350e777 passed ci.sh and ci-deqp-vk.sh).** Fixed and in `tests/deqp/vk.txt`: the M4's 16 `shader_draw_parameters.draw_index` cases
 (Apple's Metal compiler misreads a thread array of 33–240 u32s at word offsets not a multiple of four: scratch is
 `array<vec4<u32>>`; upstream report #321) and its `depth_stencil_resolve.*_testing_stencil_samplemask` (Metal loses the
 pipeline's sample mask for stencil where the stage writes depth, and for both aspects without a stage: the stage
