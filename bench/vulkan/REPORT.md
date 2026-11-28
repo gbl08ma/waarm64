@@ -771,6 +771,46 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T50: the M4's `draw_index` failures — Apple's Metal compiler misreads a thread array of words; scratch is vec4s
+
+**2026-11-27**, the M4 (Metal, Chrome for Testing 158.0.8127.88, `bench/gpu/sway-mac.sh`, `VIRGL_GPU=virgl,vulkan`) and
+the dev VM (SwiftShader, Chromium 155.0.8059.84). JSON in `results/vk4/t50/`.
+
+- **Where it wasn't.** The driver's draws were right on the M4: a log of the replay (since removed) showed each
+  record of the indirect op in its own push place (0, 512, 1,024), its draw index (0, 1, 2) in the place's words and
+  group 3's dynamic offset following it. With the draw index of place 0 set to 1, record 0's quad moved onto record 1's:
+  the vertex stage read each place's draw index, and the quads' positions (`perDraw[gl_DrawIDARB]`, dEQP's
+  `VertexFetchShaderDrawParametersDrawIndex.vert`) were right, while the colour (`colors[gl_DrawIDARB]`, a local
+  `vec4[4]`) was element 0's for every draw.
+- **The shader.** NIR puts both local arrays in scratch, word-aligned: `perInstance` (`vec2[5]`) at byte 0 and
+  `colors` at byte 40, which the printer read as four adjacent words of `var<private> scratch: array<u32, 34>` from word
+  10 + 4·index. The translated stage alone, drawn by a plain page as three indirect point draws with the push places'
+  dynamic offsets, drew nothing at all on the M4 and was right on SwiftShader. Reduced in a compute shader
+  (`bench/vulkan/metal-scratch.ts`: 16 constant words stored from word `base`, four adjacent words read back from
+  `base` + 4k with k from a uniform; `scratch-m4.json`, `scratch-swiftshader.json`):
+
+| array | from word 0 | from word 2 or 10 |
+|---|---|---|
+| thread `array<u32, n>`, n of 26–2,048 tried | right | **wrong at n = 33–240**; right at 26, 32, 255, 256 and up |
+| thread `array<vec4<u32>, n/4>`, word w at `[w >> 2][w & 3]` | right | right |
+| workgroup `array<u32, n>` | right | right |
+
+  SwiftShader is right in every shape. With Dawn's robustness off (`--enable-dawn-features=disable_robustness`) the
+  same (`scratch-m4-norobust.json`). The MSL Tint makes (`--enable-dawn-features=dump_shaders`) is plain: a
+  zero-initialized `thread array<uint, 34>`, the stores, `min(i, 33u)`-clamped loads, so the miscompile is Apple's.
+- **The fix**: scratch is `array<vec4<u32>, ⌈bytes/16⌉>`, word w at `scratch[(w) >> 2u][(w) & 3u]` (vk/compiler/wgsl_print.c
+  `word_at`; the narrow accesses' too). `tests/wgsl.test.ts` "scratch is an array of vec4<u32>s…" pins the shape and
+  runs `tests/venus/t50/scratch.comp` (a `uvec4[4]` at a word offset not a multiple of four), whose u32 WGSL had 588 of
+  768 words wrong on the M4 and whose vec4 WGSL is right (failing with the printer of before planted).
+- **dEQP-VK on the M4** (`before-m4.json`, `fix-m4.json`): the 16 `shader_draw_parameters.draw_index` cases 16 fail → 16
+  pass; on SwiftShader they pass (`draw-index-swiftshader.json`) and **join `tests/deqp/vk.txt`**. The issue's other M4
+  failures in the same run don't change (`m4-cases.txt`: `early_fragment.discard_no_early_fragment_tests_depth`, the 3
+  `texture.mipmap`, the 3 storage-image cube `image_robustness`, the D24S8/D32S8 `*_testing_stencil_samplemask`: 60
+  fail of 120, the other 60 now pass, NotSupported in T27's run). Every 30th case of the pass list on the M4
+  (`sample30-m4.json`: `grep -v '^#' tests/deqp/vk.txt | awk 'NR % 30 == 7'`, 2,800 cases, 224 s): 2,799 pass; the
+  one failure, `image_robustness.push.notemplate.rgba32ui.unroll.volatile.storage_image.fmt_qual.img.samples_1.3d.vert`,
+  fails with the printer of before too (its cube siblings' kind), and leaves the list.
+
 ## dEQP-VK's processes a machine: two, the whole list 14% faster
 
 2026-11-07, the dev VM (SwiftShader, Chromium 155.0.8059.84). JSON in `results/vk4/jobs/`: `slice.txt` (every 29th case

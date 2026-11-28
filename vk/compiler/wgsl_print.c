@@ -2414,6 +2414,17 @@ atomic_fn(struct ctx *c, nir_atomic_op op)
    }
 }
 
+/* Word `w` of an array of words. Scratch is an array of vec4<u32>, word w its element w / 4's component w % 4 (VK4
+ * T50): Apple's Metal compiler (Chrome for Testing 158 on the M4) reads the wrong words of a thread array of 33 to 240
+ * u32s (of the sizes tried: 32 and under, 255 and over right) whose four adjacent words it reads from a dynamic offset
+ * not a multiple of four (dEQP-VK's gl_DrawIndex indexing a local vec4[4]: every draw read element 0); a workgroup
+ * array is right, and so is scratch as vec4s at every size tried (bench/vulkan/metal-scratch.ts, REPORT.md "VK4 T50"). */
+static const char *
+word_at(struct ctx *c, const char *arr, bool quad, const char *w)
+{
+   return quad ? fmt(c, "%s[(%s) >> 2u][(%s) & 3u]", arr, w, w) : fmt(c, "%s[%s]", arr, w);
+}
+
 /* 16- and 8-bit loads and stores (16- and 8-bit storage) on an array of words, at byte offset `byte`: a half or a byte
  * of a word each. A store to memory other invocations see is an atomicAnd of its part and an atomicOr (the gather made
  * the array atomic), so that a store to the word's other parts by another invocation isn't lost. */
@@ -2427,11 +2438,12 @@ emit_narrow_access(struct ctx *c, nir_intrinsic_instr *intr, const char *arr, bo
    const char *conv_out = signed_atomic ? "bitcast<u32>" : "";
    const bool load = intr->intrinsic == nir_intrinsic_load_ssbo || intr->intrinsic == nir_intrinsic_load_shared ||
                      intr->intrinsic == nir_intrinsic_load_scratch;
+   const bool quad = intr->intrinsic == nir_intrinsic_load_scratch || intr->intrinsic == nir_intrinsic_store_scratch;
    if (load) {
       const char *words[4];
       for (unsigned i = 0; i < intr->def.num_components; i++) {
          const char *b = fmt(c, "(%s + %uu)", byte, step * i);
-         const char *w = fmt(c, "%s[%s >> 2u]", arr, b);
+         const char *w = word_at(c, arr, quad, fmt(c, "%s >> 2u", b));
          if (atomic)
             w = fmt(c, "%s(atomicLoad(&%s))", conv_out, w);
          words[i] = fmt(c, "((%s >> ((%s & 3u) * 8u)) & %s)", w, b, mask);
@@ -2447,7 +2459,7 @@ emit_narrow_access(struct ctx *c, nir_intrinsic_instr *intr, const char *arr, bo
    nir_src *value = &intr->src[0];
    u_foreach_bit(i, nir_intrinsic_write_mask(intr)) {
       const char *b = fmt(c, "(%s + %uu)", byte, step * i);
-      const char *w = fmt(c, "%s[%s >> 2u]", arr, b);
+      const char *w = word_at(c, arr, quad, fmt(c, "%s >> 2u", b));
       const char *sh = fmt(c, "((%s & 3u) * 8u)", b);
       const char *v = fmt(c, "((%s & %s) << %s)", src_comp(c, value, i), mask, sh);
       if (atomic) {
@@ -2536,13 +2548,14 @@ emit_word_access(struct ctx *c, nir_intrinsic_instr *intr, const char *arr, bool
    const char *word = fmt(c, "(%s >> 2u)", byte);
    const char *conv_in = signed_atomic ? "bitcast<i32>" : "";
    const char *conv_out = signed_atomic ? "bitcast<u32>" : "";
+   const bool quad = intr->intrinsic == nir_intrinsic_load_scratch || intr->intrinsic == nir_intrinsic_store_scratch;
    switch (intr->intrinsic) {
    case nir_intrinsic_load_ssbo:
    case nir_intrinsic_load_shared:
    case nir_intrinsic_load_scratch: {
       const char *words[4];
       for (unsigned i = 0; i < intr->def.num_components; i++) {
-         const char *w = fmt(c, "%s[%s + %uu]", arr, word, i);
+         const char *w = word_at(c, arr, quad, fmt(c, "%s + %uu", word, i));
          words[i] = atomic ? fmt(c, "%s(atomicLoad(&%s))", conv_out, w) : w;
       }
       assign_words(c, &intr->def, words);
@@ -2553,7 +2566,7 @@ emit_word_access(struct ctx *c, nir_intrinsic_instr *intr, const char *arr, bool
    case nir_intrinsic_store_scratch: {
       nir_src *value = &intr->src[0];
       u_foreach_bit(i, nir_intrinsic_write_mask(intr)) {
-         const char *w = fmt(c, "%s[%s + %uu]", arr, word, i);
+         const char *w = word_at(c, arr, quad, fmt(c, "%s + %uu", word, i));
          if (atomic)
             line(c, "atomicStore(&%s, %s(%s));", w, conv_in, src_comp(c, value, i));
          else
@@ -3952,7 +3965,7 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
       line(&c, "var<workgroup> shm: array<%s, %u>;", !c.shm_atomic ? "u32" : c.shm_signed ? "atomic<i32>" : "atomic<u32>",
            c.shm_words);
    if (nir->scratch_size)
-      line(&c, "var<private> scratch: array<u32, %u>;", DIV_ROUND_UP(nir->scratch_size, 4));
+      line(&c, "var<private> scratch: array<vec4<u32>, %u>;", DIV_ROUND_UP(nir->scratch_size, 16));
    if (c.uses_helper)
       line(&c, "var<private> wg_helper: bool;");
    if (c.xfb) {

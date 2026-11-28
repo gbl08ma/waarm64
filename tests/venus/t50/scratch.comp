@@ -1,0 +1,17 @@
+#version 450
+// VK4 T50: function-scope arrays in scratch, one at a 16-aligned offset and one past an array of uvec2s (at a word
+// offset that isn't a multiple of four), each read at an index computed in the shader. Apple's Metal compiler read the
+// wrong words of a thread array of 33 to 255 u32s at such offsets; scratch is an array of vec4<u32>s.
+layout(local_size_x = 64) in;
+layout(std430, binding = 0) buffer Out { uvec4 o[]; };
+layout(std430, binding = 1) buffer In { uint k; } pc;
+void main() {
+  uint n = gl_LocalInvocationIndex;
+  uvec4 a[4] = uvec4[4](uvec4(1u, 2u, 3u, 4u), uvec4(5u, 6u, 7u, 8u), uvec4(9u, 10u, 11u, 12u), uvec4(13u, 14u, 15u, 16u));
+  uvec2 p[5] = uvec2[5](uvec2(21u, 22u), uvec2(23u, 24u), uvec2(25u, 26u), uvec2(27u, 28u), uvec2(29u, 30u));
+  uvec4 c[4] = uvec4[4](uvec4(31u, 32u, 33u, 34u), uvec4(35u, 36u, 37u, 38u), uvec4(39u, 40u, 41u, 42u), uvec4(43u, 44u, 45u, 46u));
+  uint i = (n + pc.k) & 3u;
+  o[3u * n] = a[i];
+  o[3u * n + 1u] = uvec4(p[(n + pc.k) % 5u], p[(n + pc.k + 2u) % 5u]);
+  o[3u * n + 2u] = c[i] + uvec4(n);
+}

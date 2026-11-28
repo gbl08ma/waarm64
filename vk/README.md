@@ -265,7 +265,10 @@ two words a component, packed into the value (`split_64bit_access`), so only ALU
 none is left (`lower_64bit`, again after the last optimizations; the options keep `pack_64_2x32_split` whole, which
 the algebraic rules take apart, never as 64-bit shifts). No 64-bit floats and no 64-bit atomics. A function-scope array NIR moves to scratch is
 addressed by its whole offset (scratch has no base: before L5 the printer read the alignment there, and the last
-element's last word of an array past 32 bytes indexed dynamically went past the array). What
+element's last word of an array past 32 bytes indexed dynamically went past the array), in a private
+`array<vec4<u32>, n>`, word w at `[w >> 2][w & 3]` (VK4 T50: Apple's Metal compiler reads the wrong words of a thread
+array of 33 to 240 u32s, four adjacent ones from an offset not a multiple of four; vec4s are right,
+`bench/vulkan/metal-scratch.ts`). What
 WGSL can't express fails the stage with a reason: 16-bit float arithmetic without `shader-f16`, 8-bit floats, 64-bit
 values left (atomics, floats), 8- and 16-bit atomics, descriptors reached through pointers (variable pointers' selects), atomics on images but R32's.
 A pipeline whose vertex stage reads a storage image its fragment stage writes is refused (one layout entry can't match

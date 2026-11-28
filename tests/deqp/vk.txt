@@ -32484,7 +32484,7 @@ dEQP-VK.pipeline.monolithic.sampler.view_type.cube_array.format.x8_d24_unorm_pac
 # VK4 T26: multi-draw (VK_EXT_multi_draw, multiDrawIndirect, drawIndirectCount): every case of the census's sample that
 # asked for one, every indirect-draw and draw-parameters case of draw.*, every 20th multi_draw case, that passes on
 # SwiftShader and the M4 and wasn't in the list (1,344 of 2,757; the rest tessellation, geometry and divisors; 118 s as
-# one list on SwiftShader), in mustpass order, at the end. shader_draw_parameters.draw_index's 16 fail on the M4 (https://github.com/gbl08ma/waarm64/issues/119).
+# one list on SwiftShader), in mustpass order, at the end. shader_draw_parameters.draw_index's 16 failed on the M4: in since VK4 T50.
 dEQP-VK.draw.dynamic_rendering.complete_secondary_cmd_buff.indexed_draw.draw_indexed_count_indirect_count_bindindexbuffer2_maintenance6
 dEQP-VK.draw.dynamic_rendering.complete_secondary_cmd_buff.indexed_draw.draw_indexed_count_indirect_count_bindindexbuffer2_maintenance_5_maintenance6
 dEQP-VK.draw.dynamic_rendering.complete_secondary_cmd_buff.indexed_draw.draw_indexed_count_indirect_count_maintenance6
@@ -59313,7 +59313,6 @@ dEQP-VK.robustness.image_robustness.push.notemplate.rgba32ui.dontunroll.volatile
 dEQP-VK.robustness.image_robustness.push.notemplate.rgba32ui.dontunroll.volatile.storage_image.no_fmt_qual.img.samples_1.1d.vert
 dEQP-VK.robustness.image_robustness.push.notemplate.rgba32ui.unroll.nonvolatile.sampled_image.no_fmt_qual.img.samples_1.cube.comp_compute
 dEQP-VK.robustness.image_robustness.push.notemplate.rgba32ui.unroll.nonvolatile.storage_image.fmt_qual.img.samples_1.2d.vert
-dEQP-VK.robustness.image_robustness.push.notemplate.rgba32ui.unroll.volatile.storage_image.fmt_qual.img.samples_1.3d.vert
 dEQP-VK.robustness.oob_access.robust_on.rba_texel_buffer_storage_r32_uint_read_off_by_one_4096
 dEQP-VK.robustness.oob_access.robust_on.storage_image_r32_uint_write_off_by_one_128x128
 dEQP-VK.robustness.vertex_access.r32g32_sint.draw_indexed.last_index_out_of_bounds
@@ -84172,3 +84171,24 @@ dEQP-VK.glsl.texture_functions.textureprojoffset_pcoffset.repeat.usampler2d_vec4
 dEQP-VK.glsl.texture_functions.textureprojoffset_pcoffset.repeat.usampler3d_bias_fragment
 dEQP-VK.glsl.texture_functions.textureprojoffset_pcoffset.repeat.usampler3d_fragment
 dEQP-VK.glsl.texture_functions.textureprojoffset_pcoffset.repeat.usampler3d_vertex
+# VK4 T50, joined 2026-11-27: shader_draw_parameters.draw_index's 16, which the M4 failed (every draw read element 0 of
+# a local array indexed by gl_DrawIndex: Apple's Metal compiler misreads a thread array of u32s; scratch is vec4s now),
+# passing on SwiftShader and the M4, in mustpass order, at the end. Out: robustness.image_robustness's
+# push.*rgba32ui*storage_image.fmt_qual.img.samples_1.3d.vert, which fails on the M4 as its cube cases do (the printer of
+# before too: https://github.com/gbl08ma/waarm64/issues/119).
+dEQP-VK.draw.dynamic_rendering.complete_secondary_cmd_buff.shader_draw_parameters.draw_index.draw
+dEQP-VK.draw.dynamic_rendering.complete_secondary_cmd_buff.shader_draw_parameters.draw_index.draw_indexed
+dEQP-VK.draw.dynamic_rendering.complete_secondary_cmd_buff.shader_draw_parameters.draw_index.draw_indexed_instanced
+dEQP-VK.draw.dynamic_rendering.complete_secondary_cmd_buff.shader_draw_parameters.draw_index.draw_instanced
+dEQP-VK.draw.dynamic_rendering.partial_secondary_cmd_buff.shader_draw_parameters.draw_index.draw
+dEQP-VK.draw.dynamic_rendering.partial_secondary_cmd_buff.shader_draw_parameters.draw_index.draw_indexed
+dEQP-VK.draw.dynamic_rendering.partial_secondary_cmd_buff.shader_draw_parameters.draw_index.draw_indexed_instanced
+dEQP-VK.draw.dynamic_rendering.partial_secondary_cmd_buff.shader_draw_parameters.draw_index.draw_instanced
+dEQP-VK.draw.dynamic_rendering.primary_cmd_buff.shader_draw_parameters.draw_index.draw
+dEQP-VK.draw.dynamic_rendering.primary_cmd_buff.shader_draw_parameters.draw_index.draw_indexed
+dEQP-VK.draw.dynamic_rendering.primary_cmd_buff.shader_draw_parameters.draw_index.draw_indexed_instanced
+dEQP-VK.draw.dynamic_rendering.primary_cmd_buff.shader_draw_parameters.draw_index.draw_instanced
+dEQP-VK.draw.renderpass.shader_draw_parameters.draw_index.draw
+dEQP-VK.draw.renderpass.shader_draw_parameters.draw_index.draw_indexed
+dEQP-VK.draw.renderpass.shader_draw_parameters.draw_index.draw_indexed_instanced
+dEQP-VK.draw.renderpass.shader_draw_parameters.draw_index.draw_instanced

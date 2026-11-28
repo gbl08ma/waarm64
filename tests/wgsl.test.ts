@@ -783,6 +783,39 @@ test('16-bit storage on every adapter, 16-bit floats with shader-f16, and scratc
   }
 });
 
+test('scratch is an array of vec4<u32>s, read and written a word at a time (VK4 T50)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
+  try {
+    const translate = await translator();
+    // Apple's Metal compiler reads the wrong words of a thread array of 33 to 255 u32s, four adjacent ones from a
+    // dynamic offset not a multiple of four (this shader's uvec4s past its uvec2s; as u32s, 588 of its 768 words were
+    // wrong on the M4, bench/vulkan/REPORT.md "VK4 T50"); vec4s are right. SwiftShader is right either way, so the
+    // shape is pinned here, and the values are checked on whatever adapter runs it.
+    const r = glslStage(translate, tmp, 'tests/venus/t50/scratch.comp');
+    assert.equal(r.rc, 0, r.text);
+    assert.match(r.text, /var<private> scratch: array<vec4<u32>, \d+>;/);
+    // Every access its vec4's and the vec4's component: scratch[(w) >> 2u][(w) & 3u].
+    const all = r.text.match(/\bscratch\[/g)?.length ?? 0;
+    const quads = r.text.match(/\bscratch\[\((?:(?!scratch\[).)*?\) >> 2u\]\[\(/g)?.length ?? 0;
+    assert.ok(all > 20 && quads === all, `${all - quads} of ${all} accesses indexed by word`);
+    const k = new Uint8Array(16);
+    k[0] = 1;
+    const res = await runCompute(r.text, [{ binding: 0, size: 64 * 3 * 16 }, { binding: 2, init: k }]);
+    if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(res.errors, []);
+    const o = new Uint32Array(res.out[0].buffer);
+    const wrong: string[] = [];
+    for (let n = 0; n < 64; n++) {
+      const i = (n + 1) & 3, p = (j: number) => [21 + 2 * j, 22 + 2 * j];
+      const want = [...[1, 2, 3, 4].map((x) => x + 4 * i), ...p((n + 1) % 5), ...p((n + 3) % 5), ...[31, 32, 33, 34].map((x) => x + 4 * i + n)];
+      for (let w = 0; w < 12; w++) if (o[12 * n + w] !== want[w]) wrong.push(`${n}.${w}: ${o[12 * n + w]}, not ${want[w]}`);
+    }
+    assert.deepEqual(wrong.slice(0, 4), [], `of ${wrong.length}`);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('8-bit storage and 8- and 16-bit integer arithmetic at 32 bits, bytes of words (VK4 T29)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
