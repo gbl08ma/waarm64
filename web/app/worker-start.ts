@@ -1,6 +1,16 @@
 // A machine's start in the machine worker (web/app/worker.ts `start`): what it fetches, the machine it makes (the
 // page's, or a snapshot's), the options `bootVm` takes, and the framebuffer's screen.
-import { FLASH_SIZE, splitError, splitRam, type BootOptions, type Restore, type Vm } from '../vm.ts';
+import {
+  FLASH_SIZE,
+  makeMemories,
+  ramViews,
+  splitError,
+  splitRam,
+  type BootOptions,
+  type Memories,
+  type Restore,
+  type Vm,
+} from '../vm.ts';
 import { warmWorkers, type WarmWorkers } from '../warm-workers.ts';
 import { msg, MsgError } from '../msg.ts';
 import { VENUS_RESERVE } from '../ram.ts';
@@ -105,7 +115,9 @@ async function sameOverlays(header: SnapshotHeader, specs: DeviceSpec[]) {
  * has settled: a start that fails before `fill` closes it there). `pooled` is called once the pool is up (or
  * isn't) and the restore not refused: what else starts beside the check pass waits for it (its workers' start slowed
  * the pool's by ~60 ms).
- * `specs`: the devices the restore hands ramdisks their chunks through; `serial`, the terminal's tail.
+ * `specs`: the devices the restore hands ramdisks their chunks through; `serial`, the terminal's tail. `memories`: the
+ * machine's (`BootOptions.memories`), made once the header's refusals are past (`planned` is told the plan first) and
+ * filled with RAM by the file's one pass (docs/platform.md "The snapshot file").
  */
 export async function openRestore(
   snapshot: Blob,
@@ -114,6 +126,7 @@ export async function openRestore(
   resume: boolean,
   lz: Lz,
   pooled?: () => void,
+  planned?: (plan: Plan) => void,
 ) {
   const pool = startPool(lz.module).catch(() => undefined);
   let open = true;
@@ -123,7 +136,7 @@ export async function openRestore(
     open = false;
   };
   try {
-    const r = await restoreOf(snapshot, m, machine, resume, lz, pool);
+    const r = await restoreOf(snapshot, m, machine, resume, lz, pool, planned);
     const restore = r.restore;
     const fill = restore.fill.bind(restore);
     restore.fill = async (ram, spill) => {
@@ -156,6 +169,7 @@ async function restoreOf(
   resume: boolean,
   lz: Lz,
   pool: Promise<SavePool | undefined>,
+  planned?: (plan: Plan) => void,
 ) {
   post({
     type: 'phase',
@@ -170,13 +184,23 @@ async function restoreOf(
   if (other) throw other;
   const h = fromHeader(header, m, machine, name);
   if (resume) await sameOverlays(header, h.specs);
+  const plan: Plan = { ncpus: h.ncpus, ramMiB: h.ramMiB, here: h.slots, cpu: h.cpu, split: h.split };
+  let memories: Memories | undefined;
   const { restore, phases } = await readSnapshot(snapshot, lz, lz.snapshotVersion, {
     devices: h.specs,
     resume,
     plan: m.plan,
     pool: await pool,
+    // The machine's memories, which the file's one pass puts RAM's pages straight into (its split checked first: a
+    // Vulkan machine's that can't be laid out is said as such, not as memory that couldn't be had).
+    ram: () => {
+      planned?.(plan);
+      checkSplit(plan, m, machine, true);
+      const venus = h.specs.some((d) => d.type === 'gpu' && d.virgl && d.venus);
+      memories = makeMemories({ ramSize: plan.split.ramSize, spill: plan.split.spill, venus });
+      return ramViews(memories, plan.split.ramSize);
+    },
   });
-  const plan: Plan = { ncpus: h.ncpus, ramMiB: h.ramMiB, here: h.slots, cpu: h.cpu, split: h.split };
   if (!resume) post({ type: 'phase', text: msg('snapshots:worker-start.phase.restoring') });
   return {
     header,
@@ -184,6 +208,7 @@ async function restoreOf(
     restore,
     phases,
     specs: h.specs,
+    memories,
     serial: typeof header.serial === 'string' ? header.serial : '',
   };
 }

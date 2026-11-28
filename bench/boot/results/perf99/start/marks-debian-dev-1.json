@@ -1,0 +1,44 @@
+{
+ "meta": {
+  "guest": "debian",
+  "mode": "stored",
+  "profile": "persistent",
+  "ops": [
+   "load"
+  ],
+  "file": "/home/gabriel.guest/Development/waarm64/target/snapbench/debian-go.waarm64snap",
+  "bytes": 88778809,
+  "rounds": 1,
+  "settleS": 5,
+  "commit": "9553399d-dirty",
+  "core": "9bf4d885c82c786d",
+  "chromium": "Chromium 155.0.8059.84 stable",
+  "host": "8 CPUs unknown",
+  "date": "2026-11-28T11:58:50.499Z",
+  "wallS": 3
+ },
+ "rounds": [
+  {
+   "round": 0,
+   "load": {
+    "wallMs": 455,
+    "phases": {
+     "check": 66,
+     "checkRead": 44,
+     "checkCrc": 60,
+     "state": 8,
+     "ram": 54,
+     "disk": 36,
+     "pool": 6,
+     "read": 30,
+     "crc": 55,
+     "unpack": 105,
+     "apply": 48,
+     "prepare": 23,
+     "start": 76,
+     "total": 263
+    }
+   }
+  }
+ ]
+}

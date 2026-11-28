@@ -21,6 +21,7 @@ import {
   type Codec,
   type LoadPool,
   type OverlayBlock,
+  type ReadFrame,
   type RamPool,
   type ReadTimes,
   type Sink,
@@ -44,7 +45,17 @@ import {
 } from './overlay.ts';
 import { makeRoom } from './diskcache.ts';
 import { zeroDisk } from './stored.ts';
-import { ABI, bootVm, type BootOptions, type Restore, type Vm, type VmState } from './vm.ts';
+import {
+  ABI,
+  bootVm,
+  makeMemories,
+  ramViews,
+  type BootOptions,
+  type Memories,
+  type Restore,
+  type Vm,
+  type VmState,
+} from './vm.ts';
 import { compileCore, Exit } from './core.ts';
 import type { ConsoleInput } from './test-guests.ts';
 
@@ -201,7 +212,7 @@ export async function writeSnapshot(
       blocks: disks.reduce((n, d) => n + d.blocks.length, 0),
     }),
   );
-  const w = new SnapshotWriter(sink, header, { codec, concurrency: 1, blobs: blobs.length > 0 });
+  const w = new SnapshotWriter(sink, header, { codec, concurrency: 1, blobs: blobs.length > 0, pool: opts.pool });
   let at = performance.now();
   /** The ms since the last call (or `at`'s start). */
   const since = () => {
@@ -287,6 +298,12 @@ export function otherVersion(header: SnapshotHeader, coreVersion: number): Snaps
  *
  * `pool`: workers that take both passes' CRCs and put RAM's frames into the new VM's RAM (docs/platform.md "A load's
  * pool"; a Blob only, else this thread reads it all). The caller closes it once `fill` is done.
+ *
+ * `ram` (a Blob's): the new VM's RAM made ahead (web/vm.ts `makeMemories`, given the header once its own refusals are
+ * past): then the file is read **once** before this returns, its CRCs and structure checked, the state kept and RAM's
+ * pages put into those views as they come (they are the new VM's, which nothing runs on: a refusal leaves them to be
+ * dropped), the DISK frames checked; `fill` is given the same views and reads only the DISK frames, from the first
+ * one's place in the file (docs/platform.md "The snapshot file", "One pass").
  */
 export async function readSnapshot(
   source: ReadableStream<Uint8Array> | Blob,
@@ -298,6 +315,7 @@ export async function readSnapshot(
     resume?: boolean;
     plan?: DiskPlan[];
     pool?: LoadPool;
+    ram?: (header: SnapshotHeader) => RamViews | Promise<RamViews>;
   } = {},
 ): Promise<{ header: SnapshotHeader; restore: Restore; phases: RestorePhases }> {
   let at = performance.now();
@@ -411,10 +429,20 @@ export async function readSnapshot(
   };
   /** The stages of a file's frames, in the order a restore reads them: a frame of an earlier stage after a later one is refused. */
   const STAGE: Record<string, number> = { CORE: 0, DEVS: 0, BLOB: 1, 'RAM ': 2, DISK: 3 };
+  /** One pass (`ram`): the views it placed RAM's frames in, and where the DISK frames begin (none: no DISK frame). */
+  let one: { views: RamViews; disk?: { at: number; count: number } } | undefined;
   if (source instanceof Blob) {
     // Another version's file is refused by its header, before its frames are read (an older file may have frames of a
     // codec no longer read); then whatever else the header alone refuses.
-    await aim(await readHeader(source));
+    const head = await readHeader(source);
+    await aim(head);
+    if (opts.ram) {
+      const views = await opts.ram(head);
+      fits(head, views);
+      one = { views };
+    }
+  }
+  if (source instanceof Blob && !one) {
     // A pass over the whole file first: a restore replaces the disk's changes, so it must not find the file damaged
     // halfway. Its CRCs and structure, and what the restore's disk phase would refuse: the frames' order, and each DISK
     // frame's slot, its place in its disk and its unpacking (docs/platform.md "The snapshot file").
@@ -433,14 +461,28 @@ export async function readSnapshot(
     }
     [phases.check, phases.checkRead, phases.checkCrc] = [since(), check.times.read, check.times.crc];
   }
-  // With a pool, RAM's frames are checked, unpacked and placed by its workers (docs/platform.md "A load's pool").
-  const s = await openSnapshot(source, { codec, pool: opts.pool });
+  // With a pool, RAM's frames are checked, unpacked and placed by its workers (docs/platform.md "A load's pool"). One
+  // pass checks every frame as the check pass does, but RAM's are placed and the state's come with their data.
+  const s = await openSnapshot(source, { codec, pool: opts.pool, check: !!one, keep: !!one });
   phases.pool = s.pooled;
-  /** The restore pass's reading times so far, into `phases`. */
-  const read = () => Object.assign(phases, s.times);
+  /** A one pass's disk pass's reading times. */
+  let diskTimes: ReadTimes | undefined;
+  /** The restore pass's reading times so far (a one pass's and its disk pass's), into `phases`. */
+  const read = () => {
+    Object.assign(phases, s.times);
+    if (diskTimes) for (const k of ['read', 'crc', 'unpack', 'apply'] as const) phases[k] += diskTimes[k];
+  };
   const { header } = s;
   if (!(source instanceof Blob)) await aim(header);
-  const frames = s.frames();
+  /** The frames yielded so far (a one pass's disk pass starts at the first DISK frame, this many before it). */
+  let counted = 0;
+  const counting = async function* (g: AsyncGenerator<ReadFrame>) {
+    for await (const f of g) {
+      counted++;
+      yield f;
+    }
+  };
+  let frames: AsyncGenerator<ReadFrame> = counting(s.frames());
   // CORE and DEVS come first, each in index order.
   const parts: Record<string, Uint8Array[]> = { CORE: [], DEVS: [] };
   let next = await frames.next();
@@ -478,13 +520,17 @@ export async function readSnapshot(
     throw corrupt(msg('snapshots:snapshot.damage.devices'));
   }
   const filled = blobs.map(() => 0);
+  /** A one pass's BLOB frames its pool's workers unpack: each copied into its blob once it comes, by the pass's end. */
+  const blobsLater: Promise<void>[] = [];
   for (; !next.done && next.value.tag === 'BLOB'; next = await frames.next()) {
-    const { index, data } = next.value;
+    const { index, data, later, size } = next.value;
     const n = Math.floor(index / BLOB_CHUNKS),
       at = (index % BLOB_CHUNKS) * 2 ** 20;
-    if (!blobs[n] || at + data.length > blobs[n].length) throw corrupt(msg('snapshots:snapshot.damage.blobFit'));
-    blobs[n].set(data, at);
-    filled[n] += data.length;
+    const length = later ? size! : data.length;
+    if (!blobs[n] || at + length > blobs[n].length) throw corrupt(msg('snapshots:snapshot.damage.blobFit'));
+    if (later) blobsLater.push(later.then((d) => blobs[n].set(d, at)));
+    else blobs[n].set(data, at);
+    filled[n] += length;
   }
   if (filled.some((n, k) => n !== blobs[k]?.length)) throw corrupt(msg('snapshots:snapshot.damage.blobMissing'));
   if (
@@ -495,44 +541,82 @@ export async function readSnapshot(
     throw corrupt(msg('snapshots:snapshot.damage.devices'));
   phases.state = since();
   read();
+  /** RAM's frames from `next` on placed into `ram` and `spill` (memory 0's, then each spill memory's). */
+  const placeRam = async (ram: Uint8Array, spill: Uint8Array[]) => {
+    const views = [ram, ...spill];
+    const starts = ramStarts(views.map((v) => v.length));
+    for (; !next.done && next.value.tag === 'RAM '; next = await frames.next()) {
+      const { index, place } = next.value;
+      let k = views.length - 1;
+      while (k > 0 && index < starts[k]) k--;
+      place!(views[k], index - starts[k]);
+    }
+  };
+  if (one) {
+    // The one pass's RAM, then its DISK frames checked (and where the first is), to its end: every CRC in, every RAM
+    // frame placed. A refusal of the structure here (the frames' order, a DISK frame's slot or place) waits for the
+    // frames before it: an earlier frame's own refusal (a CRC a worker still has) comes first.
+    await placeRam(one.views.ram, one.views.spill);
+    for (; !next.done; next = await frames.next()) {
+      const { tag, index, size, at } = next.value;
+      try {
+        if (tag !== 'DISK') throw corrupt(msg('snapshots:snapshot.damage.unexpected'));
+        diskFrame(index, size!);
+      } catch (e) {
+        try {
+          await s.placed();
+        } finally {
+          void frames.return(undefined);
+        }
+        throw e;
+      }
+      one.disk ??= { at, count: counted - 1 };
+    }
+    await Promise.all(blobsLater);
+    phases.ram = since();
+    read();
+  }
+  /**
+   * The same views as the one pass's, which it placed RAM in: the same bytes in memory (a shared memory's `buffer` is
+   * another object after a grow, so a byte is written through one and read through the other, then put back; nothing
+   * runs on this RAM yet).
+   */
+  const same = (a: Uint8Array, b: Uint8Array) => {
+    if (a.byteOffset !== b.byteOffset || a.length !== b.length || !a.length) return false;
+    const was = a[0];
+    try {
+      return [was ^ 0x5a, was ^ 0xa5].every((x) => ((a[0] = x), b[0] === x));
+    } finally {
+      a[0] = was;
+    }
+  };
   const restore: Restore = {
     core: join(parts.CORE),
     host,
     async fill(ram, spill = []) {
-      if (ram.length !== header.ramSize)
-        throw new SnapshotError(
-          'snapshots:snapshot.otherRam',
-          { had: Number(header.ramSize) / 2 ** 20, has: ram.length / 2 ** 20 },
-          'other-machine',
-        );
-      const had = header.spill === undefined ? [] : header.spill;
-      if (!Array.isArray(had) || had.some((n) => !Number.isSafeInteger(n) || n <= 0))
-        throw corrupt(msg('snapshots:snapshot.damage.memorySizes'));
-      const mib = (sizes: number[]) => sizes.map((n) => `${n / 2 ** 20} MiB`).join(' + '); // i18n-ignore: numbers and their unit
-      if (had.join() !== spill.map((v) => v.length).join()) {
-        throw new SnapshotError(
-          'snapshots:snapshot.otherNuma',
-          {
-            had: had.length
-              ? msg('snapshots:snapshot.otherNuma.had', { sizes: mib(had) })
-              : msg('snapshots:snapshot.otherNuma.hadNone'),
-            has: spill.length ? mib(spill.map((v) => v.length)) : msg('snapshots:snapshot.otherNuma.hasNone'),
-          },
-          'other-machine',
-        );
+      if (one) {
+        if (
+          !same(ram, one.views.ram) ||
+          spill.length !== one.views.spill.length ||
+          spill.some((v, k) => !same(v, one.views.spill[k]))
+        )
+          throw new Error("a one-pass restore's fill is given the RAM its pass filled");
+        // The disks' frames read again, from the first.
+        since();
+        if (one.disk) {
+          const d = await openSnapshot(source, { codec, pool: opts.pool, from: one.disk });
+          frames = d.frames();
+          next = await frames.next();
+          diskTimes = d.times;
+        }
+      } else {
+        fits(header, { ram, spill });
+        since();
+        await placeRam(ram, spill);
+        // Every RAM frame in (a pool's workers placing them): a refusal here comes before the disks are touched.
+        await s.placed();
+        phases.ram = since();
       }
-      const views = [ram, ...spill];
-      const starts = ramStarts(views.map((v) => v.length));
-      since();
-      for (; !next.done && next.value.tag === 'RAM '; next = await frames.next()) {
-        const { index, place } = next.value;
-        let k = views.length - 1;
-        while (k > 0 && index < starts[k]) k--;
-        place!(views[k], index - starts[k]);
-      }
-      // Every RAM frame in (a pool's workers placing them): a refusal here comes before the disks are touched.
-      await s.placed();
-      phases.ram = since();
       // The disks: each overlay written is emptied (a snapshot's blocks are all the disk has written; with `whole`, all
       // the disk has), then takes the file's blocks; a ramdisk's go into chunks for its device.
       // `meta`: an overlay's, whose fill mark is cleared at the end; `disk` set once its files are open and marked.
@@ -634,6 +718,35 @@ export async function readSnapshot(
   return { header, restore, phases };
 }
 
+/** Memory 0's RAM and each spill memory's, as a restore fills them (web/vm.ts `ramViews`). */
+export type RamViews = { ram: Uint8Array; spill: Uint8Array[] };
+
+/** RAM of the sizes the snapshot `header` says (memory 0's, each spill memory's), or the snapshot's refusal. */
+function fits(header: SnapshotHeader, { ram, spill }: RamViews) {
+  if (ram.length !== header.ramSize)
+    throw new SnapshotError(
+      'snapshots:snapshot.otherRam',
+      { had: Number(header.ramSize) / 2 ** 20, has: ram.length / 2 ** 20 },
+      'other-machine',
+    );
+  const had = header.spill === undefined ? [] : header.spill;
+  if (!Array.isArray(had) || had.some((n) => !Number.isSafeInteger(n) || n <= 0))
+    throw corrupt(msg('snapshots:snapshot.damage.memorySizes'));
+  const mib = (sizes: number[]) => sizes.map((n) => `${n / 2 ** 20} MiB`).join(' + '); // i18n-ignore: numbers and their unit
+  if (had.join() !== spill.map((v) => v.length).join()) {
+    throw new SnapshotError(
+      'snapshots:snapshot.otherNuma',
+      {
+        had: had.length
+          ? msg('snapshots:snapshot.otherNuma.had', { sizes: mib(had) })
+          : msg('snapshots:snapshot.otherNuma.hadNone'),
+        has: spill.length ? mib(spill.map((v) => v.length)) : msg('snapshots:snapshot.otherNuma.hasNone'),
+      },
+      'other-machine',
+    );
+  }
+}
+
 /** A disk identity (`diskIdentity`'s JSON) for a message: a file in words, a URL's path as it is. */
 function describe(identity: string): Param {
   try {
@@ -648,7 +761,8 @@ function describe(identity: string): Param {
 
 /**
  * `runToPowerOff` with the VM saved to a snapshot file, closed, and a new one started from the
- * file each time the steps reach one of `at` (ascending): what the tests and benchmarks run a
+ * file each time the steps reach one of `at` (ascending; the first, third, … restored through the one pass, the others
+ * through two: `readSnapshot`'s `ram`): what the tests and benchmarks run a
  * guest through. `options(k)` changes the options of the VM started from snapshot `k` (the tier,
  * say). A deterministic guest takes the steps and prints what an unbroken run does. `files` has
  * each snapshot's size and the ms it took to write and to start from.
@@ -705,10 +819,18 @@ export async function runThroughSnapshots(
       hvc += vm.hvc();
       await vm.close();
       const t1 = performance.now();
+      // Every other restore through the one pass, its memories made ahead (as the page's), the others through two.
+      const next = { ...o, ...options?.(files.length) };
+      const venus = (next.devices ?? []).some((d) => d.type === 'gpu' && d.virgl && d.venus);
+      let memories: Memories | undefined;
       const { restore } = await readSnapshot(new Blob(parts as BlobPart[]), codec, codec.snapshotVersion, {
         devices: o.devices,
+        ram:
+          files.length % 2 === 0
+            ? () => ramViews((memories = makeMemories({ ...next, venus })), next.ramSize)
+            : undefined,
       });
-      vm = await bootVm(module, { ...o, ...options?.(files.length), restore });
+      vm = await bootVm(module, { ...next, restore, memories });
       files.push({ bytes: w.bytes, pages: w.pages, saveMs, restoreMs: performance.now() - t1 });
     }
     if (going) continue;

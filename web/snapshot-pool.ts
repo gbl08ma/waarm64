@@ -7,9 +7,10 @@
 import type { FrameTimes, LoadPool, RamFrame, RamPool } from './snapshot-file.ts';
 import type { PoolInit, PoolJob, PoolReply } from './snapshot-pool-worker.ts';
 import { endWithOwner, type CloseOptions } from './worker-end.ts';
+import { MAX } from './lz.ts';
 
-/** What a load's piece came to: the jobs its worker failed, and the times. */
-type Loaded = { failed: number[] } & FrameTimes;
+/** What a load's piece came to: the jobs its worker failed, the bytes it posted back, and the times. */
+type Loaded = { failed: number[]; data?: (ArrayBuffer | null)[] } & FrameTimes;
 
 /** At most this many workers: past ~6 the pool gave little more (bench/boot/REPORT.md "SNAPZ: compression…"). */
 export const POOL_MAX = 6;
@@ -24,9 +25,10 @@ export function poolSize(cores = globalThis.navigator?.hardwareConcurrency ?? 1)
 /**
  * A pool that is ready: `readyMs` from its start to its last worker's instance; `buffers()`, the frame buffers its
  * workers have made so far for a save (each about 1 MiB; written frames' go back to their worker: `recycle`). `close`
- * ends its workers.
+ * ends its workers; `copies()`, the buffers it has made for bytes jobs' copies (given back with their frames).
  */
-export type SavePool = RamPool & LoadPool & { readyMs: number; buffers(): number; close(o?: CloseOptions): void };
+export type SavePool = RamPool &
+  LoadPool & { readyMs: number; buffers(): number; copies(): number; close(o?: CloseOptions): void };
 
 type Handle = { post(m: PoolInit | PoolJob, transfer?: ArrayBuffer[]): void; terminate(): void };
 /** Makes a worker, its replies to `heard` and its failure to `failed` (tests give their own). */
@@ -112,8 +114,10 @@ export async function startPool(
       const w = waiting.get(m.id);
       waiting.delete(m.id);
       if (m.type === 'done' && w) made[w.worker] = m.buffers;
+      if (m.type === 'done' && m.spent?.byteLength === MAX) spent.push(m.spent);
       if (m.type === 'done') w?.resolve(m);
-      else if (m.type === 'loaded') w?.resolve({ failed: m.failed, crc: m.crc, unpack: m.unpack, apply: m.apply });
+      else if (m.type === 'loaded')
+        w?.resolve({ failed: m.failed, data: m.data, crc: m.crc, unpack: m.unpack, apply: m.apply });
       else w?.reject(new Error(m.message));
       watch();
     }
@@ -138,6 +142,9 @@ export async function startPool(
     return undefined;
   }
   let next = 0;
+  /** The bytes jobs' buffers their workers gave back (`MAX` bytes each). */
+  const spent: ArrayBuffer[] = [];
+  let copies = 0;
   /** Each worker's load pieces not yet done: the next goes to the one with fewest. */
   const busy: number[] = handles.map(() => 0);
   const idlest = () => busy.indexOf(Math.min(...busy));
@@ -166,12 +173,26 @@ export async function startPool(
       const give = back[index % n].splice(0);
       return ask<RamFrame>(index % n, { type: 'ram', id: next++, buffer, off, len, index, give }, give);
     },
+    bytes(tag, index, raw, slot) {
+      if (broken) return Promise.reject(broken);
+      if (raw.length > MAX) return Promise.reject(new RangeError("a frame over the codec's size"));
+      const give = back[slot % n].splice(0);
+      // A copy, transferred (the caller's bytes stay theirs), in a buffer a job gave back: a few a worker, not a copy of
+      // the blobs and the disk's blocks waiting for a GC (64 MiB more at a desktop save's peak, PERF loop 99).
+      const own = spent.pop() ?? (copies++, new ArrayBuffer(MAX));
+      new Uint8Array(own).set(raw);
+      return ask<RamFrame>(slot % n, { type: 'bytes', id: next++, tag, index, raw: own, len: raw.length, give }, [
+        own,
+        ...give,
+      ]);
+    },
     frames(piece, jobs) {
       const k = idlest();
       busy[k]++;
       return ask<Loaded>(k, { type: 'frames', id: next++, piece, jobs }, [piece]).finally(() => busy[k]--);
     },
     buffers: () => made.reduce((a, b) => a + b, 0),
+    copies: () => copies,
     recycle(frame, index) {
       // Only a worker's own buffers (a frame the writer made itself, after a failure, is of its own size).
       const b = frame.buffer;

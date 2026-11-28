@@ -10,7 +10,7 @@
 // no words, it posts messages (web/msg.ts) and errors (`toWire`) for the page to say. This module holds the run's state,
 // the start and the run loop; what a start fetches and makes is web/app/worker-start.ts's, snapshots and suspension
 // web/app/worker-snapshot.ts's.
-import { bootVm, type Restore, type Vm } from '../vm.ts';
+import { bootVm, type Memories, type Restore, type Vm } from '../vm.ts';
 import { compileCore, Exit, PSCI_SYSTEM_OFF } from '../core.ts';
 import { msg, MsgError } from '../msg.ts';
 import { dropSuspend } from '../overlay.ts';
@@ -172,7 +172,8 @@ function running(): Running | undefined {
 
 /** The machine a snapshot (or a suspended copy) says, with its restore. */
 async function fromSnapshot(m: StartMessage, machine: Machine, snapshot: Blob, resume: boolean) {
-  const r = await openRestore(snapshot, m, machine, resume, await codec(), warming.pooled);
+  // The snapshot's RAM (the machine's from here, for a failure to get its memory: `Reached`).
+  const r = await openRestore(snapshot, m, machine, resume, await codec(), warming.pooled, (p) => (ramMiB = p.ramMiB));
   // Its guest's leases renewed once the page's connections are up; a template's identity too (web/snapshot-file.ts `asTemplate`).
   post({ type: 'restored', template: !resume && r.header.template === true });
   ramMiB = r.plan.ramMiB;
@@ -225,12 +226,14 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   let specs: DeviceSpec[] | undefined;
   let header: SnapshotHeader | undefined;
   let restored: RestorePhases | undefined;
+  /** A restore's memories, made and filled with RAM by its one pass. */
+  let memories: Memories | undefined;
   /** The restore's load's pool closed (it is by `fill`'s end; a start that ends before that closes it here). */
   let release: (() => void) | undefined;
   if (snapshot) {
     try {
       const r = await fromSnapshot(m, machine, snapshot, !!resume);
-      ({ plan, restore, specs, header, phases: restored, release } = r);
+      ({ plan, restore, specs, header, phases: restored, release, memories } = r);
     } catch (err) {
       if (resume && !stopped()) return bootInstead(err);
       throw err;
@@ -243,7 +246,10 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
     checkSplit(plan, m, machine, !!snapshot);
     const devices = (liveSpecs = finishSpecs(devicesOf(plan, m, machine, specs), { caps, heads: parts.heads }));
     session = sessionOf(m, plan);
-    booting = bootVm(parts.core, bootOptions(m, machine, plan, parts, devices, restore, warming.take()));
+    booting = bootVm(parts.core, {
+      ...bootOptions(m, machine, plan, parts, devices, restore, warming.take()),
+      memories,
+    });
     try {
       return { devices, v: (vm = await booting) };
     } catch (err) {

@@ -1,0 +1,82 @@
+{
+ "meta": {
+  "guest": "desktop",
+  "mode": "stored",
+  "profile": "persistent",
+  "ops": [
+   "load",
+   "kept"
+  ],
+  "file": "/Users/gabriel/waarm64-snapz-bench.noindex/target/snapbench/pages.waarm64snap",
+  "bytes": 664542411,
+  "rounds": 1,
+  "settleS": 20,
+  "commit": "unknown",
+  "core": "9bf4d885c82c786d",
+  "chromium": "Google Chrome for Testing 158.0.8127.88",
+  "host": "10 CPUs Apple M4",
+  "date": "2026-11-28T12:38:49.179Z",
+  "wallS": 25
+ },
+ "rounds": [
+  {
+   "round": 0,
+   "load": {
+    "wallMs": 993,
+    "phases": {
+     "check": 319,
+     "checkRead": 288,
+     "checkCrc": 346,
+     "state": 42,
+     "ram": 308,
+     "disk": 50,
+     "pool": 6,
+     "read": 95,
+     "crc": 491,
+     "unpack": 670,
+     "apply": 262,
+     "prepare": 20,
+     "start": 52,
+     "total": 791
+    }
+   },
+   "kept": {
+    "wallMs": 825,
+    "kind": "kept",
+    "bytes": 676751364,
+    "pausedMs": 727,
+    "stateMs": 2,
+    "blobBytes": 0,
+    "hintMs": 10,
+    "hinted": 914358272,
+    "id": "096f6acf7775",
+    "phases": {
+     "state": 2,
+     "blobs": 1,
+     "ram": 630,
+     "disk": 90,
+     "pool": 6,
+     "scan": 563,
+     "compress": 2703,
+     "crc": 259,
+     "sink": 185,
+     "poolWait": 18,
+     "poolReady": 35,
+     "pause": 0,
+     "copy": 0,
+     "close": 2
+    },
+    "memory": {
+     "before": {
+      "rssMiB": 0,
+      "pssMiB": 0
+     },
+     "peak": {
+      "rssMiB": 0,
+      "pssMiB": 0
+     }
+    }
+   }
+  }
+ ]
+}

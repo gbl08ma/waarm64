@@ -349,12 +349,15 @@ export type RamFrame = { frame: Uint8Array | null; pages: number; scan: number; 
  * `index`'s frame from the `len` bytes at `off` of `buffer`, encoded whole as this writer encodes one (its codec, the
  * same CRC: the file's bytes don't depend on who made a frame); `size` workers, each taking a chunk at a time.
  * `recycle`, where the pool has it, takes chunk `index`'s frame back once the sink has written it (its buffer goes to
- * the worker's next frame: a save's frames don't wait for a GC, SNAPZ loop 2b).
+ * the worker's next frame: a save's frames don't wait for a GC, SNAPZ loop 2b). `bytes`, where the pool has it, is the
+ * frame of BLOB or DISK bytes `raw` (a copy goes to the worker: `raw` is left as it is), on the worker `slot` picks, as
+ * `recycle`'s `index` does.
  */
 export type RamPool = {
   size: number;
   ram(buffer: SharedArrayBuffer, off: number, len: number, index: number): Promise<RamFrame>;
   recycle?(frame: Uint8Array, index: number): void;
+  bytes?(tag: 'BLOB' | 'DISK', index: number, raw: Uint8Array, slot: number): Promise<RamFrame>;
 };
 
 /** A load's pool's work's times, ms (`ReadTimes`'). */
@@ -369,16 +372,22 @@ export type FrameJob = {
   at: number;
   len: number;
   unpack?: true;
+  /** With `unpack`: its bytes posted back (a one pass's BLOB frame: `ReadFrame.later`). */
+  back?: true;
   place?: { ram: SharedArrayBuffer; off: number; len: number; chunk: number };
 };
 /**
  * Workers that check and unpack a reader's frames (web/snapshot-pool.ts): `frames` gives one of them a piece of the
  * file (transferred) and its frames' jobs, and resolves to the jobs it failed (their positions in `jobs`), which the
- * reader does itself, read again from the file (and refuses as one thread would); a rejection fails them all.
+ * reader does itself, read again from the file (and refuses as one thread would); a rejection fails them all. `data`:
+ * the unpacked bytes of each job with `back` (by its position; null for the others and those it failed).
  */
 export type LoadPool = {
   size: number;
-  frames(piece: ArrayBuffer, jobs: FrameJob[]): Promise<{ failed: number[] } & FrameTimes>;
+  frames(
+    piece: ArrayBuffer,
+    jobs: FrameJob[],
+  ): Promise<{ failed: number[]; data?: (ArrayBuffer | null)[] } & FrameTimes>;
 };
 
 /** Writes a snapshot to a sink, a frame at a time: CORE and DEVS first, then RAM, DISK, and `end()`. */
@@ -399,14 +408,24 @@ export class SnapshotWriter {
   readonly times: WriteTimes = { scan: 0, compress: 0, crc: 0, sink: 0 };
   /** The workers of the pool RAM's frames last went through (`ram()`'s `pool`), 0 for none. */
   pooled = 0;
+  /** The pool BLOB and DISK frames go through (the constructor's `pool`, with `bytes`), and the next one's slot. */
+  #pool: RamPool | undefined;
+  #slot = 0;
 
   /**
    * `codec` makes the frames; `concurrency` of them may be compressed at once (default 4), each at most 1 MiB; they are
-   * written in order. `blobs`: the file will have BLOB frames (version 2; without, version 1).
+   * written in order. `blobs`: the file will have BLOB frames (version 2; without, version 1). `pool` (with `bytes`, of
+   * this codec: web/snapshot-pool.ts): the BLOB and DISK frames are made by its workers, three in flight a worker (RAM's
+   * go through the pool `ram()` is given).
    */
-  constructor(sink: Sink, header: SnapshotHeader, opts: { codec: Codec; concurrency?: number; blobs?: boolean }) {
+  constructor(
+    sink: Sink,
+    header: SnapshotHeader,
+    opts: { codec: Codec; concurrency?: number; blobs?: boolean; pool?: RamPool },
+  ) {
     this.#sink = sink;
     this.#codec = opts.codec;
+    if (opts.pool?.size && opts.pool.bytes && opts.codec.pooled) this.#pool = opts.pool;
     this.#crc = this.#codec.crc32.bind(this.#codec);
     this.#concurrency = Math.max(1, Math.floor(opts.concurrency ?? 4));
     const json = new TextEncoder().encode(JSON.stringify(header));
@@ -453,29 +472,31 @@ export class SnapshotWriter {
 
   async #frame(tag: string, index: number, raw: Uint8Array) {
     if (this.#ended) throw new Error('the snapshot is already ended');
+    // Behind a pool's frames still out, the next is this thread's (they are written in order).
     await this.#drain(this.#concurrency - 1);
     this.#frames++;
-    const codec = this.#codec;
-    this.#push(
-      (async () => {
-        let id = 0;
-        let stored = raw;
-        let t = performance.now();
-        if (codec.id !== 0) {
-          const packed = await codec.compress(raw);
-          if (packed.length < raw.length) {
-            id = codec.id;
-            stored = packed;
-          }
-          this.times.compress += performance.now() - t;
-          t = performance.now();
-        }
-        const frame = encodeFrame(tag, id, index, raw.length, stored, this.#crc);
-        this.times.crc += performance.now() - t;
-        return frame;
-      })(),
-    );
+    this.#push(this.#encode(tag, index, raw));
     await this.#drain(this.#concurrency);
+  }
+
+  /** `raw`'s frame made here: packed by the codec (stored when that doesn't shrink it), its CRC taken. */
+  async #encode(tag: string, index: number, raw: Uint8Array) {
+    const codec = this.#codec;
+    let id = 0;
+    let stored = raw;
+    let t = performance.now();
+    if (codec.id !== 0) {
+      const packed = await codec.compress(raw);
+      if (packed.length < raw.length) {
+        id = codec.id;
+        stored = packed;
+      }
+      this.times.compress += performance.now() - t;
+      t = performance.now();
+    }
+    const frame = encodeFrame(tag, id, index, raw.length, stored, this.#crc);
+    this.times.crc += performance.now() - t;
+    return frame;
   }
 
   /** CORE or DEVS bytes, in frames of at most 1 MiB (call again to continue: the frames follow on). */
@@ -488,12 +509,47 @@ export class SnapshotWriter {
     }
   }
 
-  /** Blob `n` (after DEVS, before RAM), in frames of at most 1 MiB; an empty blob has none. */
+  /**
+   * Blob `n` (after DEVS, before RAM), in frames of at most 1 MiB; an empty blob has none. Through a pool its bytes are
+   * taken as they are until the file is ended (a worker failing a frame has it made here, from them).
+   */
   async blob(n: number, data: Uint8Array): Promise<void> {
     if (!Number.isInteger(n) || n < 0 || n >= 2 ** 29 || data.length > BLOB_CHUNKS * CHUNK)
       throw new RangeError('a blob out of range');
-    for (let k = 0; k * CHUNK < data.length; k++)
-      await this.#frame('BLOB', n * BLOB_CHUNKS + k, data.slice(k * CHUNK, Math.min((k + 1) * CHUNK, data.length)));
+    for (let k = 0; k * CHUNK < data.length; k++) {
+      const part = data.subarray(k * CHUNK, Math.min((k + 1) * CHUNK, data.length));
+      // A copy on this thread: the caller may change its bytes once this returns.
+      if (this.#pool) await this.#pooled('BLOB', n * BLOB_CHUNKS + k, part);
+      else await this.#frame('BLOB', n * BLOB_CHUNKS + k, part.slice());
+    }
+  }
+
+  /**
+   * A BLOB or DISK frame of `raw` made by the pool's worker `this.#slot` picks (a copy of `raw` goes to it), written
+   * in order; one its worker failed is made here, from `raw`.
+   */
+  async #pooled(tag: 'BLOB' | 'DISK', index: number, raw: Uint8Array) {
+    if (this.#ended) throw new Error('the snapshot is already ended');
+    const pool = this.#pool!;
+    await this.#drain(pool.size * 3 - 1);
+    const slot = this.#slot++;
+    this.#frames++;
+    const made = pool.bytes!(tag, index, raw, slot).catch(async (): Promise<RamFrame> => {
+      if (this.#hasFailed) return { frame: null, pages: 0, scan: 0, compress: 0, crc: 0 };
+      const t = performance.now();
+      const frame = await this.#encode(tag, index, raw);
+      return { frame, pages: 0, scan: 0, compress: performance.now() - t, crc: 0 };
+    });
+    this.#push(
+      made.then((r) => {
+        this.times.compress += r.compress;
+        this.times.crc += r.crc;
+        return r.frame;
+      }),
+      (frame) => {
+        if (frame) pool.recycle?.(frame, slot);
+      },
+    );
   }
 
   /**
@@ -648,7 +704,8 @@ export class SnapshotWriter {
       }
       const at = first;
       run = [];
-      await this.#frame('DISK', at, raw);
+      if (this.#pool) await this.#pooled('DISK', at, raw);
+      else await this.#frame('DISK', at, raw);
     };
     let next = -1;
     for await (const { block, data } of blocks) {
@@ -738,10 +795,12 @@ function encodeFrame(
 /** Pulls exact byte counts out of a stream whose chunks come in any size. */
 /**
  * A Blob's bytes are read in pieces of this size, this many ahead: Chromium reads a picked file's stream at ~1.1 GB/s
- * in 64 KiB chunks, and four 4 MiB slices in flight at ~3.2 GB/s (bench/boot/REPORT.md "SNAPZ loop 3").
+ * in 64 KiB chunks, and four 4 MiB slices in flight at ~3.2 GB/s (bench/boot/REPORT.md "SNAPZ loop 3"). Eight: a
+ * load's one pass waited 260-290 ms for its pieces at four, 60-90 at eight, ~20 at sixteen, for a load 4.6% shorter at
+ * eight and none more at sixteen (bench/boot/REPORT.md "PERF loop 99"); 32 MiB in flight.
  */
 const PIECE = 4 << 20;
-const AHEAD = 4;
+const AHEAD = 8;
 
 class Input {
   #reader?: ReadableStreamDefaultReader<Uint8Array>;
@@ -907,6 +966,13 @@ export type ReadFrame = {
   data: Uint8Array;
   size?: number;
   place?: (ram: Uint8Array, chunk: number) => void;
+  /** Where the frame's header is in the file. */
+  at: number;
+  /**
+   * A one pass's BLOB frame through a pool: its data (of `size` bytes) as its worker unpacked it, once it has (`data`
+   * is empty). It never rejects (a frame its worker failed is done here), and comes by the pass's end.
+   */
+  later?: Promise<Uint8Array>;
 };
 
 /** A frame header's fields. */
@@ -964,6 +1030,10 @@ function frameHead(h: Uint8Array, version: number, codec: Codec): Head {
  * the stream once; the end of the file is checked when it finishes. With `check`, frames come
  * without their data but with their raw `size`: their checksums and the file's structure are verified, and DISK frames
  * are unpacked (and dropped), so that a restore's disk phase finds none it refuses (web/snapshot.ts `readSnapshot`).
+ * With `keep` too (a restore's one pass), only DISK frames come so: the others come as without `check` (CORE, DEVS
+ * and BLOB with their data, RAM with `place`), and the pass ends once every frame's CRC is in and every RAM frame is
+ * placed. `from` (a Blob's): the frames from the one at file offset `at`, `count` frames before it (the end marker's
+ * count is the file's): a restore's disk pass, after its one pass.
  * `times`: where the reading's time went so far (`ReadTimes`).
  *
  * `pool`, for a Blob (docs/platform.md "A load's pool"): the file is read in pieces, each given whole to a worker with
@@ -975,7 +1045,14 @@ function frameHead(h: Uint8Array, version: number, codec: Codec): Head {
  */
 export async function openSnapshot(
   source: ReadableStream<Uint8Array> | Blob,
-  opts: { codec: Codec; check?: boolean; pool?: LoadPool; piece?: number },
+  opts: {
+    codec: Codec;
+    check?: boolean;
+    keep?: boolean;
+    from?: { at: number; count: number };
+    pool?: LoadPool;
+    piece?: number;
+  },
 ): Promise<{
   header: SnapshotHeader;
   frames(): AsyncGenerator<ReadFrame>;
@@ -987,25 +1064,45 @@ export async function openSnapshot(
   const crc: Crc = codec.crc32.bind(codec);
   const pool = opts.pool?.size && codec.pooled && source instanceof Blob ? opts.pool : undefined;
   // Through a pool the header is read on its own (the frames are read in pieces).
-  const input = new Input(pool ? (source as Blob).slice(0, 20 + MAX_HEADER) : source);
+  let input = new Input(pool ? (source as Blob).slice(0, 20 + MAX_HEADER) : source);
+  if (opts.from && !(source instanceof Blob)) throw new Error('a stream is read from its start');
+  /** Whether a frame of `tag` is only checked (and dropped): a check pass's, a one pass's DISK frames. */
+  const checked = (tag: string) => !!opts.check && !(opts.keep && tag !== 'DISK');
   const times: ReadTimes = { read: 0, crc: 0, unpack: 0, apply: 0 };
   // The pool's work in file order: each resolves to its first refusal (or undefined) and none rejects, so none goes
-  // unhandled while earlier ones are awaited.
-  const jobs: Promise<unknown>[] = [];
+  // unhandled while earlier ones are awaited; `done` once it has.
+  const jobs: { p: Promise<unknown>; done: boolean }[] = [];
+  /** The work not yet settled, and the reader waiting for any of it to (`room`). */
+  let out = 0;
+  let freed: (() => void) | undefined;
   const settle = (p: Promise<unknown>) => {
-    jobs.push(
-      p.then(
-        () => undefined,
-        (e: unknown) => e ?? new Error('a frame failed'),
-      ),
+    out++;
+    const w = { p: Promise.resolve(), done: false } as { p: Promise<unknown>; done: boolean };
+    w.p = p.then(
+      () => undefined,
+      (e: unknown) => e ?? new Error('a frame failed'),
     );
+    void w.p.then(() => {
+      w.done = true;
+      out--;
+      freed?.();
+    });
+    jobs.push(w);
   };
   /** The refusal `settleOne` threw: the oldest work's, earlier in the file than any still queued. */
   let jobRefusal: unknown;
   /** The oldest work settled; its refusal thrown. */
   const settleOne = async () => {
-    const e = await jobs.shift();
+    const e = await jobs.shift()!.p;
     if (e) throw (jobRefusal = e);
+  };
+  /**
+   * Until less than `limit` work is out, any of it (waiting on the oldest only kept the workers that were done idle
+   * behind a slower one's piece); the oldest work already settled taken off, its refusal thrown.
+   */
+  const room = async (limit: number) => {
+    while (out >= limit) await new Promise<void>((resolve) => (freed = resolve));
+    while (jobs[0]?.done) await settleOne();
   };
   /** The pool's frames of the piece in hand given to a worker now (a copy of the piece: the reader isn't done with it). */
   let flush = async () => {};
@@ -1052,7 +1149,14 @@ export async function openSnapshot(
 
     async function* oneThread(): AsyncGenerator<ReadFrame> {
       let count = 0;
+      let pos = size;
+      if (opts.from) {
+        input.close();
+        input = new Input((source as Blob).slice(opts.from.at));
+        [pos, count] = [opts.from.at, opts.from.count];
+      }
       for (;;) {
+        const at = pos;
         const th = performance.now();
         const hb = await input.take(FRAME_HEADER);
         times.read += performance.now() - th;
@@ -1069,31 +1173,43 @@ export async function openSnapshot(
         const stored = await input.take(h.storedLen);
         times.read += performance.now() - t;
         if (!stored) throw truncated();
+        pos += FRAME_HEADER + h.storedLen;
         t = performance.now();
         const crcOk = frameCrc(headBytes, stored, crc) === h.want;
         times.crc += performance.now() - t;
         if (!crcOk) throw corrupt(msg('snapshots:snapshot-file.damage.checksum'));
         count++;
         // Checked, not unpacked (but DISK's): a pass over a file before a restore touches anything.
-        if (opts.check) {
+        if (checked(h.tag)) {
           if (h.tag === 'DISK') await unpack(h.id, stored, h.rawLen);
-          yield { tag: h.tag, index: h.index, data: new Uint8Array(0), size: h.rawLen };
+          yield { tag: h.tag, index: h.index, data: new Uint8Array(0), size: h.rawLen, at };
         } else if (h.tag === 'RAM ') {
           const data = await unpack(h.id, stored, h.rawLen);
           checkRam(data);
-          yield { tag: h.tag, index: h.index, data, place: (ram, chunk) => apply(ram, chunk, data) };
-        } else yield { tag: h.tag, index: h.index, data: await unpack(h.id, stored, h.rawLen) };
+          yield { tag: h.tag, index: h.index, data, place: (ram, chunk) => apply(ram, chunk, data), at };
+        } else yield { tag: h.tag, index: h.index, data: await unpack(h.id, stored, h.rawLen), at };
       }
     }
 
-    /** A frame for the pool: its job, its header, where it is in the file, and (placed) its RAM here. */
-    type Job = { job: FrameJob; head: Head; at: number; ram?: Uint8Array; chunk?: number };
+    /**
+     * A frame for the pool: its job, its header, where it is in the file, (placed) its RAM here, and (`back`) where
+     * its unpacked bytes go.
+     */
+    type Job = {
+      job: FrameJob;
+      head: Head;
+      at: number;
+      ram?: Uint8Array;
+      chunk?: number;
+      got?: (d: Uint8Array) => void;
+    };
 
     async function* pooled(b: Blob, p: LoadPool): AsyncGenerator<ReadFrame> {
       // Pieces given to the workers and not yet done: two each.
       const limit = p.size * 2;
       const ahead: { at: number; piece: Promise<Uint8Array<ArrayBuffer>> }[] = [];
-      let next = size;
+      const first = opts.from?.at ?? size;
+      let next = first;
       const readAhead = () => {
         while (ahead.length < AHEAD && next < b.size) {
           const at = next;
@@ -1108,7 +1224,7 @@ export async function openSnapshot(
       };
       /** The piece in hand and where it is in the file. */
       let cur = new Uint8Array(0);
-      let curAt = size;
+      let curAt = first;
       const end = () => curAt + cur.length;
       /** The jobs of the frames in the piece in hand. */
       let batch: Job[] = [];
@@ -1121,14 +1237,17 @@ export async function openSnapshot(
           if (j.ram) await placeHere(frame, j.head, j.ram, j.chunk!);
           else {
             checkHere(frame, j.head.want);
-            if (j.job.unpack) await unpack(j.head.id, frame.subarray(FRAME_HEADER), j.head.rawLen);
+            if (j.job.unpack) {
+              const data = await unpack(j.head.id, frame.subarray(FRAME_HEADER), j.head.rawLen);
+              j.got?.(data);
+            }
           }
         }
       };
       /** `mine`, frames of `piece`, given to a worker (waiting while `limit` pieces are with them). */
       const give = async (piece: ArrayBuffer, mine: Job[]) => {
         if (!mine.length) return;
-        while (jobs.length >= limit) await settleOne();
+        await room(limit);
         settle(
           p
             .frames(
@@ -1140,7 +1259,17 @@ export async function openSnapshot(
                 times.crc += r.crc;
                 times.unpack += r.unpack;
                 times.apply += r.apply;
-                return redo(mine, r.failed);
+                // The bytes of the jobs that asked for them (one with none is done again here, as a failed one).
+                const failed = [...r.failed];
+                for (const [k, j] of mine.entries()) {
+                  const d = r.data?.[k];
+                  if (j.got && d?.byteLength === j.head.rawLen) j.got(new Uint8Array(d));
+                  else if (j.got && !failed.includes(k)) failed.push(k);
+                }
+                return redo(
+                  mine,
+                  failed.sort((a, b) => a - b),
+                );
               },
               () =>
                 redo(
@@ -1181,8 +1310,8 @@ export async function openSnapshot(
         batch = [];
         if (mine.length) await give(cur.slice().buffer, mine);
       };
-      let pos = size;
-      let count = 0;
+      let pos = first;
+      let count = opts.from?.count ?? 0;
       for (;;) {
         while (pos >= end()) if (!(await advance())) throw truncated();
         // The frame's header, in the piece in hand or across two.
@@ -1215,17 +1344,26 @@ export async function openSnapshot(
         pos += len;
         count++;
         const j: Job = { job: { at: inPiece ? at - curAt : 0, len: h.storedLen }, head: h, at };
-        if (opts.check) {
+        if (checked(h.tag)) {
           if (h.tag === 'DISK') j.job.unpack = true;
           if (inPiece) batch.push(j);
           else await give(frame.buffer as ArrayBuffer, [j]);
-          yield { tag: h.tag, index: h.index, data: new Uint8Array(0), size: h.rawLen };
+          yield { tag: h.tag, index: h.index, data: new Uint8Array(0), size: h.rawLen, at };
+          continue;
+        }
+        if (h.tag === 'BLOB' && opts.keep) {
+          // A one pass's BLOB frame: checked and unpacked by the piece's worker, its bytes posted back.
+          const later = new Promise<Uint8Array>((resolve) => (j.got = resolve));
+          Object.assign(j.job, { unpack: true, back: true });
+          if (inPiece) batch.push(j);
+          else await give(frame.buffer as ArrayBuffer, [j]);
+          yield { tag: h.tag, index: h.index, data: new Uint8Array(0), size: h.rawLen, at, later };
           continue;
         }
         if (h.tag !== 'RAM ') {
           // Read here (CORE, DEVS, BLOB and DISK: a copy, the piece goes on to a worker).
           checkHere(frame, h.want);
-          yield { tag: h.tag, index: h.index, data: await unpack(h.id, frame.subarray(FRAME_HEADER), h.rawLen) };
+          yield { tag: h.tag, index: h.index, data: await unpack(h.id, frame.subarray(FRAME_HEADER), h.rawLen), at };
           continue;
         }
         let lent = false;
@@ -1238,7 +1376,7 @@ export async function openSnapshot(
           j.job.place = { ram: ram.buffer, off: ram.byteOffset, len: ram.length, chunk };
           if (inPiece) batch.push(j);
         };
-        yield { tag: h.tag, index: h.index, data: new Uint8Array(0), place };
+        yield { tag: h.tag, index: h.index, data: new Uint8Array(0), place, at };
         if (!inPiece && j.job.place) await give(frame.buffer as ArrayBuffer, [j]);
       }
     }
@@ -1253,7 +1391,7 @@ export async function openSnapshot(
         if (e !== jobRefusal) {
           await flush();
           for (const j of jobs.splice(0)) {
-            const f = await j;
+            const f = await j.p;
             if (f) throw f;
           }
         }

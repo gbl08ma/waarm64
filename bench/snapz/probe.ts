@@ -124,7 +124,15 @@ function sampler() {
 
 // ---- the page ----
 
-const server = await startServer(Number(process.env.WAARM64_PORT ?? 8197)); // a kept profile keeps its storage for one origin
+/**
+ * `DIST=<dir>`: a build of the page (`npm run dist -- --out <dir>`) served instead of the source (Vite's preview server:
+ * the bundles a user gets), `MODE=transient` only (the stored machine is made through the source's modules); the
+ * guest's disks must be in it at their paths (hard links: the server serves no symlink out of its root).
+ */
+const DIST = process.env.DIST ? resolve(process.env.DIST) : undefined;
+if (DIST && MODE !== 'transient') throw new Error('DIST takes MODE=transient');
+// A kept profile keeps its storage for one origin.
+const server = await startServer(Number(process.env.WAARM64_PORT ?? 8197), '127.0.0.1', DIST);
 const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 const launch = { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium', headless: true, downloadsPath: resolve(process.env.WAARM64_DOWNLOADS), env: chromiumEnv(), args: [TAG] };
 const ctx = offRecord
@@ -388,7 +396,7 @@ if (MODE === 'transient') {
   }
 }
 
-const meta = { guest, mode: MODE, profile: offRecord ? 'off the record' : 'persistent', ops: [...OPS], file: warm, bytes: (await openAsBlob(warm)).size, rounds: ROUNDS, settleS: SETTLE_S, commit: commit(), core: sha(CORE_PATH), chromium: chromiumVersion, host: `${cpus().length} CPUs ${cpus()[0]?.model ?? ''}`.trim(), date: new Date().toISOString(), wallS: Math.round((performance.now() - t0) / 1000) };
+const meta = { guest, mode: MODE, ...(DIST ? { dist: DIST } : {}), profile: offRecord ? 'off the record' : 'persistent', ops: [...OPS], file: warm, bytes: (await openAsBlob(warm)).size, rounds: ROUNDS, settleS: SETTLE_S, commit: commit(), core: sha(CORE_PATH), chromium: chromiumVersion, host: `${cpus().length} CPUs ${cpus()[0]?.model ?? ''}`.trim(), date: new Date().toISOString(), wallS: Math.round((performance.now() - t0) / 1000) };
 writeFileSync(out, JSON.stringify({ meta, rounds: results }, null, 1) + '\n');
 console.log('wrote', out);
 // Left through a navigation (`pagehide` clears the page's mark of a running machine: web/app/memory.ts), so the next

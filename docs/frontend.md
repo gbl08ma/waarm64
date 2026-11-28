@@ -1470,7 +1470,8 @@ resume; 0 for none). A start from a snapshot or a suspended copy posts `loaded` 
 it is `running`, its vCPUs waiting for the page's answer (`recorded`: a stored machine's restore recorded as loaded,
 machines.md §5.2 "A restore's records"), and `#message`'s `data-load` has its phases (ms; protocol.ts `LoadPhases`, web/snapshot.ts `RestorePhases`):
 `prepare` (the core fetched and compiled, the firmware's files), `check` (the whole file's checksums before anything is
-touched: `checkRead`, `checkCrc`), `state` (the CORE, DEVS and BLOB frames), `ram` (RAM's frames read and placed),
+touched: `checkRead`, `checkCrc`; 0 in the page's one pass, platform.md "One pass", whose `state` is from its start to
+its first RAM frame and `ram` the rest of it, the DISK frames checked), `state` (the CORE, DEVS and BLOB frames), `ram` (RAM's frames read and placed),
 `disk` (the disks' blocks into their overlays), `start` (the rest to `running`: the core instantiated, the
 devices' state put back in the device worker, which is started beside the check pass: web/warm-workers.ts `warmWorkers`; the
 vCPU workers start after, at the first run) and `total` (from the worker's start); over the restore's pass, `read`, `crc`, `unpack` and

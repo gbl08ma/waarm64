@@ -639,7 +639,7 @@ The file's format, what the core saves and the page's toolbar and header fields:
   its undo goes back on (below).
 - **A restore cut off or refused part way** (a closed tab, the storage full, a damaged file, a disk that didn't open
   after the fill): the page commits the restore (its forks made and attached) before the worker opens any overlay,
-  which it does only in the disk phase, after the check pass and the RAM's; the fill marks its overlay (devices.md
+  which it does only in the disk phase, after the whole file is checked and RAM is in (platform.md "One pass"); the fill marks its overlay (devices.md
   "blk", "Crash and refusal") and anything that opens it before the mark is cleared takes it as empty. Until the worker
   says the snapshot loaded, the restore is one that never loaded, and the machine's next load undoes it, whether it was
   cut off before the fill or refused after it: so the machine starts on its disks as they were, except that an

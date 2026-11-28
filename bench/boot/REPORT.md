@@ -9877,3 +9877,116 @@ wake-up between the core's return and the idle lost). The worker passes `idle` t
 rule says (the spin, host-stall and SMP tests ran with the rule on). CI: `scripts/ci.sh` passed (731 s; its first run
 failed only the remote disks' cache test at "cacheBytes before", the known flake #279, which passed alone 3 of 3 right
 after), `scripts/ci-jit.sh` (284 s) and `scripts/ci-debian.sh` (295 s), each alone.
+
+
+## PERF loop 99: a snapshot's load in one pass, its BLOB frames and a save's BLOB and DISK frames on the pool (2026-11-28)
+
+The PERF queue's row 31 ([#209](https://github.com/gbl08ma/waarm64/issues/209),
+[#210](https://github.com/gbl08ma/waarm64/issues/210), [#211](https://github.com/gbl08ma/waarm64/issues/211)): one
+probe pass over all three, then what the counts justified. The dev VM (M4, Lima, 8 vCPUs), Chromium 155.0.8059.84
+headless (SwiftShader), the persistent profile `target/snapz/profile`, `bench/snapz/probe.ts` (`OPS=load,kept`,
+`SETTLE_S=20` unless said); the Mac host through `bench/snapz/probe-mac.sh` (Chrome for Testing on its GPU; the warm
+snapshot loads with 3D off there). Raw: `results/perf99/` (`baseline/`, today's tree before anything; `start/`, the
+start's marks, `marks.py` their patch; `ab-load/` and `ab-load2/`, the variants' A/B, `run-ab.sh` its driver;
+`final/` and `final2/`, base against new, `run-ab2.sh` and `web.patch`; `mac/`; `summary.py` → `summary.json`).
+
+**Today's numbers** (one run each after a warm-up read of the file; the desktop, ms): the load's worker `total`
+930-951: `check` 312, of which waiting for the file's pieces 224-232, `state` 70, `ram` 381-400 (its own reads 230-262:
+the file read a second time), `disk` 66-69, `start` 75-78. The kept save's pause 867-884: `state` 105, `blobs` 44,
+`ram` 621-640, `disk` 90. Debian: `total` 267 (`check` 64, `ram` 55, `disk` 37-41, `start` 73), pause 143-144.
+
+**#209, the load.** Bounded first: the check pass with its RAM frames also unpacked (a diagnostic, nothing placed)
+took 389-406 ms against 312, so one pass that checks and places would take ~450 against `check` + `state` + `ram` ≈
+770. Built:
+1. **One pass** (docs/platform.md "One pass"): the machine worker makes the machine's memories as soon as the header's
+   refusals are past (web/vm.ts `makeMemories`, the layout `bootVm` makes, which takes them as `BootOptions.memories`
+   and refuses another shape's), and `readSnapshot`'s `ram` reads the file once: every frame's CRC and the structure
+   checked as the check pass did, the state kept, RAM's pages put into the new memories, the DISK frames checked; `fill`
+   reads only the DISK frames again, from the first one's place (`openSnapshot`'s `from`). No disk is touched before
+   the whole file is checked; RAM is, but it is the new machine's (a refusal drops it). The memory grows moved ahead
+   of the core's instance: the instance doesn't grow the memory (checked), so RAM's place is the same.
+2. **Eight pieces read ahead** (`AHEAD` 4 → 8): the one pass waited 260-290 ms for its pieces at four, 60-90 at eight,
+   ~20 at sixteen. 32 MiB in flight instead of 16.
+3. **A piece waits for any worker's, not the oldest's**: the reader had waited 216 ms of a 451 ms pass behind the
+   oldest piece while the workers done with theirs sat idle (`room`); a refusal is still the first failing frame's.
+4. **The one pass's BLOB frames on the workers** (the issue's "state on a pool job"): the piece's worker unpacks a BLOB
+   frame and posts its bytes back (transferred: `FrameJob.back`, `ReadFrame.later`); one it fails, or whose bytes
+   don't come, is done on the machine worker. Alone (before 2 and 3) it moved `state` 86 → 24 ms into `ram` and the
+   pass no shorter: the pass was bound by the reads then.
+
+The variants alternated (`ab-load.txt`, `ab-load2.txt`; the desktop, `OPS=load`, `SETTLE_S=5`, worker `total`, medians
+(ranges)):
+
+| arm | rounds | total | pass (`check`+`state`+`ram`) | waiting for pieces |
+|---|---|---|---|---|
+| base (two passes) | 3 | 944 (937-949) | 779 (774-780) | 261-262 (restore pass) |
+| one pass | 3 | 646 (641-657) | 481 (473-485) | 269-290 |
+| + eight ahead | 3 | 616 (608-624) | 445 (441-455) | 60-89 |
+| + any worker | 3 | 605 (603-613) | 437 (435-446) | 183-192 |
+| + sixteen ahead, any worker | 3 | 610 (596-610) | 444 (430-445) | 20-28 |
+| eight ahead, BLOB on the workers | 4 | 628 (608-630) | 458 (439-461) | 54-112 |
+| eight ahead, any worker, BLOB on the workers | 3 + 4 | 587 (586-591), 584 (575-585) | 418, 412 | 163-232 |
+
+Any worker alone overlaps eight ahead (608-624 against 603-613); with the BLOB frames on the workers it counts (584
+against 628, 4 rounds each, apart): kept together. Sixteen ahead gave nothing over eight.
+
+**#211, the save.** Counted first (a diagnostic of the writer's frames, `d99-desktop.log`): the BLOB frames 148, 114 MB
+→ 1.9 MB packed, 21.6 ms of the codec and CRC of their 44; the DISK frames 200, 36 MB → 3.9 MB, 17.7 ms of the codec
+and 12.6 of reading the blocks from the device worker; the rest copies, the sink and OPFS. Built: **BLOB and DISK
+frames as the pool's `bytes` jobs** (the writer's `pool`; three in flight a worker, written in order; a copy of the
+bytes transferred to the worker, in buffers the workers give back with their frames, a frame its worker failed made
+on the machine worker from the caller's bytes). A first version that made a new copy a frame added 64 MiB to the save's
+peak (`final/`: 209 MiB against 145); with the buffers given back it adds ~13 (`final2/`).
+
+**Before and after** (base = 9553399d's web/, new = this loop's; alternated rounds, a browser each, medians (ranges),
+ms; memory = the browser's RSS at the save's peak over the sample before it, MiB):
+
+| | desktop base (`final2/`, 3) | desktop new | Debian base (`final/`, 3) | Debian new |
+|---|---|---|---|---|
+| load: the worker's `total` | 1,012 (977-1,033) | **639** (602-677) | 282 (269-332) | **230** (229-230) |
+| ... the pass(es) | 825 (812-853) | 451 (427-492) | 138 (129-185) | 90 (90-93) |
+| ... `disk` | 66 (65-104) | 78 (78-81) | 39 (39-42) | 42 (41-43) |
+| load: wall (100 ms polls) | 1,157 | 855 | 456 | 355 |
+| kept save: paused | 898 (867-966) | **790** (789-857) | 146 (144-149) | 147 (146-152) |
+| ... `blobs` | 47 (46-48) | 15 | 1 | 1 |
+| ... `disk` | 98 (91-116) | 36 (36-68) | 16 | 15 |
+| ... memory added | 131 (129-136) | 144 (135-151) | 98 | 105 |
+
+The first session (`final/`, 4 desktop rounds, before the buffers were given back) had the load 1,095 → 628 and the
+pause 974 → 822. The disk pass costs ~8 ms to its first frame (its own reads); `disk`'s spread is OPFS's flush (60 ms
+either way, two passes too). **On the Mac** (`mac/`, 3 rounds an arm, 3D off): the load's `total` 796 (791-797) → 466
+(418-472), −41%; the pause 679 (670-727) → 638 (626-639) (no 3D state there: its BLOB frames are 1 ms), its `disk` 90
+→ 44. The load's memory: eight pieces ahead hold 16 MiB more while it reads; the BLOB frames' copies are 1 MiB each,
+transient, as the machine worker's own were.
+
+**#210, the start** (closed by its counts; `start/`): the machine worker's module load (the page's `new Worker` to its
+module's first statement) is 64-66 ms on the dev server and **16-26 on a build** (`npm run dist -- --out`, served by
+the new `DIST=` of the probe); the vCPU workers run 25-39 ms after the machine worker's `loaded` answer on the dev
+server and **17-18 on a build** (the issue's ~95-110 and ~120 were the dev server's of their time). The build's start
+shows another 360-420 ms in `prepare`: the preview server's HEAD of a disk URL reads the whole file (sirv's; Debian's
+400 MB: 380 ms by curl), a bench artifact (a user's disks are files or another server's), now in
+docs/benchmarking.md. The desktop's 3D state `load` isn't on the path to `running`: Debian's `start`, without 3D, is the
+same 73-76 ms as the desktop's. The memories' grows (12-18) now run before the pass, not in `start`. Nothing left
+there worth building.
+
+**Not built:** a frame index at the file's end (#209: the pass is no longer bound by one thread's reads but by the
+workers' RAM work; the reader's wait is 160-230 ms of a ~420 ms pass spent with every worker busy); the 3D state sent
+to the GPU worker before RAM (#210: not on the path).
+
+**Tests:** tests/snapshot.test.ts "a load's one pass" (new: RAM in the views made ahead and the blobs whole before
+`readSnapshot` returns, for one thread and pools of 1, 3 and 6, a pool failing every third piece, one returning no
+bytes or bytes of the wrong size, one closed halfway; the overlay untouched until `fill`, which refuses other views;
+a damaged RAM frame refused by the pass itself with the disk untouched, before a later DISK frame's refusal of its
+slot, which alone is refused as that; RAM of another size refused; the pass's frames through pieces of 4,099 bytes to
+the default, the disk pass's blocks from the first DISK frame and the end's count), "memories made ahead…" (new:
+another shape refused, three ways; its RAM the machine's), "a save's pool" (now with BLOB frames, a run of 300
+blocks in one buffer and blocks of their own, through pools of 1-6, a pool failing every third BLOB or DISK frame and
+one closed among them, the caller's blobs as they were, the copies' buffers at most those in flight);
+`runThroughSnapshots` restores every other snapshot through the one pass (the step-exact boots through snapshots).
+**Planted bugs**, each caught, the source restored: the pass not placing RAM, the disk pass's count one off, a DISK
+frame's refusal not waiting for the frames before it, the refusal of the oldest work read as the work, a BLOB frame's
+bytes taken at any size, a `bytes` frame of the wrong tag, a failed `bytes` frame not made here, the copy one byte
+short, the copies' buffers not given back, the memories' shape not checked, `fill`'s views not checked.
+
+CI: `scripts/ci.sh` (729 s), `scripts/ci-machines.sh` (327 s), `scripts/ci-debian.sh` (266 s) and
+`scripts/ci-graphics.sh` (320 s) passed, each alone, on the first run.

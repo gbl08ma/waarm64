@@ -236,6 +236,13 @@ and a Suspend, then the page opened
 - **A run leaves the page by a navigation** (`about:blank`): its `pagehide` clears the mark of a running machine
   (frontend.md "Errors": a tab that went away with its machine running), which a closed browser leaves and which holds the next run's autostart on "the tab closed while
   it was running"; a run killed before its end leaves it, and the next one drops it first.
+- **A build's bundles:** `DIST=<dir>` serves a build of the page (`npm run dist -- --out <dir>`, never target/dist:
+  the user's `npm start` serves that) with Vite's preview server instead of the source, `MODE=transient` only (the
+  stored machine is made through the source's modules); the guest's disks hard-linked into it at their paths (the
+  server serves no symlink out of its root). The preview server answers a HEAD by reading the whole file (sirv's; the
+  dev server answers from `stat` since SNAPZ loop 7), ~380 ms for Debian's 400 MB disk, all in the start's `prepare`
+  there: subtract it, it isn't a user's (their disks are files or another server's). PERF loop 99 measured the start's
+  workers so (bench/boot/REPORT.md).
 - **On the Mac's GPU:** `bench/snapz/probe-mac.sh <outdir> <name>=<web dir>...` (arms by their web/ trees, alternated
   by rounds; the desktop's disks copied there, hard links to `bench/gpu/sway-mac.sh`'s copies when they're the same
   files, and the warm snapshot, `SNAPSHOT` (default `target/snapbench/pages.waarm64snap`), each at its fixed path; no

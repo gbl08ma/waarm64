@@ -4,9 +4,10 @@
 // taken by the core's crc32fast where the codec left the bytes; the frame goes back whole, as web/snapshot-file.ts's
 // writer encodes one, in a buffer of the frames' largest size: the coordinator gives each buffer back with a later job
 // once the frame is written, so a save's frames are a few buffers a worker, not a file's worth of garbage waiting for a
-// GC (SNAPZ loop 2b). For a load: a piece of the file (transferred) and its frames' jobs, each frame's CRC checked and
-// a RAM frame's unpacked and its pages put straight into guest RAM, nothing posted back but the frames it failed and the
-// times.
+// GC (SNAPZ loop 2b); a save's BLOB and DISK bytes (a copy, transferred) made into their frames alike. For a load: a
+// piece of the file (transferred) and its frames' jobs, each frame's CRC checked and a RAM frame's unpacked and its
+// pages put straight into guest RAM, a one pass's BLOB frame unpacked and its bytes posted back (transferred), nothing
+// else posted back but the frames it failed and the times.
 import { codecCore, DEFLATE, MAX } from './lz.ts';
 import {
   applyRam,
@@ -25,6 +26,16 @@ import {
 export type PoolInit = { type: 'init'; module: WebAssembly.Module };
 export type PoolJob =
   | { type: 'ram'; id: number; buffer: SharedArrayBuffer; off: number; len: number; index: number; give: ArrayBuffer[] }
+  | {
+      type: 'bytes';
+      id: number;
+      tag: 'BLOB' | 'DISK';
+      index: number;
+      /** The bytes, the first `len` of a buffer that goes back with the frame (`spent`), for the next bytes job. */
+      raw: ArrayBuffer;
+      len: number;
+      give: ArrayBuffer[];
+    }
   | { type: 'frames'; id: number; piece: ArrayBuffer; jobs: FrameJob[] };
 /**
  * Worker → coordinator: ready (or why not; `frame`: the size of its frames' buffers), and each job's frame (or why
@@ -33,8 +44,8 @@ export type PoolJob =
 export type PoolReply =
   | { type: 'ready'; frame: number }
   | { type: 'failed'; message: string }
-  | ({ type: 'done'; id: number; buffers: number } & RamFrame)
-  | ({ type: 'loaded'; id: number; failed: number[] } & FrameTimes)
+  | ({ type: 'done'; id: number; buffers: number; spent?: ArrayBuffer } & RamFrame)
+  | ({ type: 'loaded'; id: number; failed: number[]; data: (ArrayBuffer | null)[] } & FrameTimes)
   | { type: 'error'; id: number; message: string };
 
 const BITMAP = 32;
@@ -59,25 +70,29 @@ async function init(module: WebAssembly.Module): Promise<Core> {
 
 /** Chunk `index`'s frame (null: zero pages only) from the `len` bytes at `off` of `buffer`. */
 function ram(c: Core, buffer: SharedArrayBuffer, off: number, len: number, index: number): RamFrame {
-  let t = performance.now();
+  const t = performance.now();
   const bitmap = new Uint8Array(BITMAP);
   const pages = scanChunk(new Uint32Array(buffer, off, len >>> 2), 0, len, bitmap);
   if (!pages) return { frame: null, pages, scan: performance.now() - t, compress: 0, crc: 0 };
   const mem = new Uint8Array(c.memory.buffer);
   mem.set(bitmap, c.src);
   gatherPages(new Uint8Array(buffer, off, len), 0, len, bitmap, mem, c.src + BITMAP);
-  const rawLen = BITMAP + pages * PAGE;
   const scan = performance.now() - t;
-  t = performance.now();
+  return { ...encode(c, 'RAM ', index, BITMAP + pages * PAGE), pages, scan };
+}
+
+/** Frame `tag` `index` of the `rawLen` bytes at `c.src` (the writer's rule: stored when packing doesn't shrink them). */
+function encode(c: Core, tag: string, index: number, rawLen: number) {
+  let t = performance.now();
+  const mem = new Uint8Array(c.memory.buffer);
   const n = c.ex.lz_compress(c.src, rawLen, c.dst + 32, c.cap) >>> 0;
   if (!n) throw new Error('lz_compress failed');
   const compress = performance.now() - t;
   t = performance.now();
-  // Stored as it is when compressing doesn't shrink it (the writer's rule).
   const packed = n < rawLen;
   const stored = packed ? n : rawLen;
   if (!packed) mem.copyWithin(c.dst + 32, c.src, c.src + rawLen);
-  const head = frameHeader('RAM ', packed ? 2 : 0, index, rawLen, stored);
+  const head = frameHeader(tag, packed ? 2 : 0, index, rawLen, stored);
   mem.set(head.subarray(0, 24), c.dst);
   const crc = c.ex.crc32(c.ex.crc32(0, c.dst, 24), c.dst + 32, stored) >>> 0;
   // In a buffer given back (all are the largest frame's size), else a new one.
@@ -85,14 +100,24 @@ function ram(c: Core, buffer: SharedArrayBuffer, off: number, len: number, index
   frame.set(mem.subarray(c.dst, c.dst + 32 + stored));
   frame.set(head.subarray(24), 24);
   new DataView(frame.buffer).setUint32(24, crc, true);
-  return { frame, pages, scan, compress, crc: performance.now() - t };
+  return { frame, compress, crc: performance.now() - t };
+}
+
+/** The frame of the BLOB or DISK bytes in `raw`'s first `len` (at most `MAX`). */
+function bytes(c: Core, tag: string, index: number, raw: ArrayBuffer, len: number): RamFrame {
+  const t = performance.now();
+  if (len > MAX || len === 0 || len > raw.byteLength) throw new Error('a frame of another size');
+  new Uint8Array(c.memory.buffer).set(new Uint8Array(raw, 0, len), c.src);
+  const scan = performance.now() - t;
+  return { ...encode(c, tag, index, len), pages: 0, scan };
 }
 
 /**
- * Job `j`'s frame in `piece` checked (its CRC), with `unpack` unpacked (and dropped), with `place` unpacked and its pages put into guest RAM; the times
- * added to `t`. Throws for a frame that fails (the reader does it again, and refuses it as one thread would).
+ * Job `j`'s frame in `piece` checked (its CRC), with `unpack` unpacked (and dropped; with `back`, returned in a buffer
+ * of its own), with `place` unpacked and its pages put into guest RAM; the times added to `t`. Throws for a frame that
+ * fails (the reader does it again, and refuses it as one thread would).
  */
-function frame(c: Core, piece: ArrayBuffer, j: FrameJob, t: FrameTimes) {
+function frame(c: Core, piece: ArrayBuffer, j: FrameJob, t: FrameTimes): ArrayBuffer | null {
   let t0 = performance.now();
   if (j.len > c.cap || j.at + 32 + j.len > piece.byteLength) throw new Error('a frame past its piece');
   const mem = new Uint8Array(c.memory.buffer);
@@ -101,7 +126,7 @@ function frame(c: Core, piece: ArrayBuffer, j: FrameJob, t: FrameTimes) {
   if (c.ex.crc32(c.ex.crc32(0, c.dst, 24), c.dst + 32, j.len) >>> 0 !== head.getUint32(24, true))
     throw new Error("the frame's checksum fails");
   t.crc += performance.now() - t0;
-  if (!j.place && !j.unpack) return;
+  if (!j.place && !j.unpack) return null;
   t0 = performance.now();
   const [id, rawLen] = [head.getUint32(4, true), head.getUint32(16, true)];
   let at = c.dst + 32;
@@ -115,26 +140,33 @@ function frame(c: Core, piece: ArrayBuffer, j: FrameJob, t: FrameTimes) {
     if (n !== rawLen) throw new Error('the frame does not unpack to its size');
     at = c.src;
   } else if (id !== 0 || j.len !== rawLen) throw new Error('a frame of another codec');
+  if (j.back) {
+    const out = new Uint8Array(new Uint8Array(c.memory.buffer, at, rawLen));
+    t.unpack += performance.now() - t0;
+    return out.buffer;
+  }
   t.unpack += performance.now() - t0;
-  if (!j.place) return; // a check pass's: unpacked and dropped
+  if (!j.place) return null; // a check pass's: unpacked and dropped
   t0 = performance.now();
   const { ram, off, len, chunk } = j.place;
   applyRam(new Uint8Array(ram, off, len), chunk, new Uint8Array(c.memory.buffer, at, rawLen));
   t.apply += performance.now() - t0;
+  return null;
 }
 
-/** A piece's jobs done: the ones that failed (their positions), and the times. */
+/** A piece's jobs done: the ones that failed (their positions), the bytes of those with `back`, and the times. */
 function frames(c: Core, piece: ArrayBuffer, jobs: FrameJob[]) {
   const t: FrameTimes = { crc: 0, unpack: 0, apply: 0 };
   const failed: number[] = [];
+  const data: (ArrayBuffer | null)[] = jobs.map(() => null);
   for (const [k, j] of jobs.entries()) {
     try {
-      frame(c, piece, j, t);
+      data[k] = frame(c, piece, j, t);
     } catch {
       failed.push(k);
     }
   }
-  return { failed, ...t };
+  return { failed, data, ...t };
 }
 
 function serve(
@@ -155,10 +187,18 @@ function serve(
     if (!core) return post({ type: 'error', id, message: 'a job before the core' }); // i18n-ignore: never shown (the writer makes a failed chunk itself)
     core
       .then((c) => {
-        if (m.type === 'frames') return post({ type: 'loaded', id, ...frames(c, m.piece, m.jobs) });
+        if (m.type === 'frames') {
+          const r = frames(c, m.piece, m.jobs);
+          return post(
+            { type: 'loaded', id, ...r },
+            r.data.filter((d) => d !== null),
+          );
+        }
         for (const b of m.give ?? []) if (b.byteLength === c.cap + 32) c.free.push(b);
-        const r = ram(c, m.buffer, m.off, m.len, m.index);
-        post({ type: 'done', id, ...r, buffers: c.made }, r.frame ? [r.frame.buffer as ArrayBuffer] : []);
+        const r = m.type === 'bytes' ? bytes(c, m.tag, m.index, m.raw, m.len) : ram(c, m.buffer, m.off, m.len, m.index);
+        const spent = m.type === 'bytes' ? m.raw : undefined; // back to the pool, for its next bytes job
+        const transfer = [...(r.frame ? [r.frame.buffer as ArrayBuffer] : []), ...(spent ? [spent] : [])];
+        post({ type: 'done', id, ...r, buffers: c.made, spent }, transfer);
       })
       .catch((e: unknown) => post({ type: 'error', id, message: String((e as Error)?.message ?? e) }));
   });

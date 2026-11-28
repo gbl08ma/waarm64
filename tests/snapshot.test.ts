@@ -12,10 +12,10 @@ import { dropSuspend, openOverlay, overlay, overlayMeta, removeOverlay, suspende
 import { diskIdentity } from '../web/devices.ts';
 import { zeroDisk } from '../web/stored.ts';
 import { crc32 as zlibCrc32 } from 'node:zlib';
-import { applyRam, crc32, frameHeader, openSnapshot, SnapshotError, SnapshotWriter, type LoadPool, type RamPool, type SnapshotHeader } from '../web/snapshot-file.ts';
+import { applyRam, crc32, diskBlocks, frameHeader, openSnapshot, SnapshotError, SnapshotWriter, type LoadPool, type RamPool, type SnapshotHeader } from '../web/snapshot-file.ts';
 import { poolSize, startPool } from '../web/snapshot-pool.ts';
 import { STEPS } from './steps.ts';
-import { ABI, bootVm, type BootOptions } from '../web/vm.ts';
+import { ABI, bootVm, makeMemories, ramViews, type BootOptions } from '../web/vm.ts';
 import { explain } from '../web/app/worker-errors.ts';
 import { MACHINES } from '../web/app/machine.ts';
 import { msgOf } from '../web/msg.ts';
@@ -177,15 +177,29 @@ function poolRam(chunks: number) {
 async function poolFile(views: Uint8Array[], codec: Awaited<ReturnType<typeof lzCodec>>, pool?: RamPool, later = false) {
   const parts: Uint8Array[] = [];
   const sink = later ? async (b: Uint8Array) => { await new Promise((r) => setTimeout(r, 0)); parts.push(b.slice()); } : (b: Uint8Array) => { parts.push(b.slice()); };
-  const w = new SnapshotWriter(sink, HEADER, { codec, concurrency: 1 });
+  // The pool makes the BLOB and DISK frames too (where it has `bytes`).
+  const w = new SnapshotWriter(sink, HEADER, { codec, concurrency: 1, blobs: true, pool });
   await w.bytes('CORE', new Uint8Array(3000).fill(9));
+  for (const [n, b] of SAVE_BLOBS.entries()) await w.blob(n, b);
   const seen: number[] = [];
   const counts = [];
   for (const [k, v] of views.entries()) counts.push(await w.ram(v, (done) => seen.push(done), k * 64, pool));
-  await w.disk([{ block: 3, data: new Uint8Array(4096).fill(1) }]);
+  // A lone block, a run of 300 (frames of 256 and 44) in one buffer as `vm.diskBlocks` gives them, blocks from buffers
+  // of their own (a frame of a copy), an incompressible block (stored).
+  const run = new Uint8Array(300 * 4096).map((_, i) => (i >> 12) * 3 + (i & 7));
+  const noise = new Uint8Array(4096).map((_, i) => (i * 2654435761) >>> 24);
+  await w.disk([
+    { block: 3, data: new Uint8Array(4096).fill(1) },
+    ...Array.from({ length: 300 }, (_, k) => ({ block: 10 + k, data: run.subarray(k * 4096, (k + 1) * 4096) })),
+    { block: 400, data: new Uint8Array(4096).fill(4) }, { block: 401, data: new Uint8Array(4096).fill(5) }, { block: 402, data: noise },
+  ]);
   await w.end();
   return { file: Buffer.concat(parts), seen, counts, pooled: w.pooled, times: w.times };
 }
+
+/** The blobs a pool's test file carries (a 3 MiB + 5 one, compressible, and a small incompressible one): not changed by a save. */
+const SAVE_BLOBS = [new Uint8Array(3 * 2 ** 20 + 5).map((_, i) => (i * 31) >> 9), new Uint8Array(5000).map((_, i) => (i * 2654435761) >>> 24)];
+const SAVE_BLOBS_COPY = SAVE_BLOBS.map((b) => b.slice());
 
 test('a save\'s pool: the file is byte-identical for any pool size and for none, a failed pool or worker falls back to this thread', async () => {
   const codec = await lzCodec(WASM);
@@ -216,6 +230,8 @@ test('a save\'s pool: the file is byte-identical for any pool size and for none,
       // last job), not one a frame.
       const frames = r.counts.reduce((a, c) => a + c.frames, 0);
       assert.ok(pool.buffers() <= n * 5 && (n > 2 || pool.buffers() < frames / 2), `a pool of ${n} made ${pool.buffers()} buffers for ${frames} frames`);
+      // The BLOB and DISK frames' copies go in buffers given back too: at most those in flight (three a worker).
+      assert.ok(pool.copies() <= n * 3 + 1, `a pool of ${n} made ${pool.copies()} buffers for its copies`);
     } finally {
       pool.close();
     }
@@ -236,8 +252,24 @@ test('a save\'s pool: the file is byte-identical for any pool size and for none,
     same(await poolFile(views, codec, flaky), 'a pool failing every third chunk');
     const closing: RamPool = { size: 3, ram: (b, o, l, i) => { if (++asked === 10) pool.close(); return pool.ram(b, o, l, i); } };
     same(await poolFile(views, codec, closing), 'a pool closed halfway');
+    // BLOB and DISK frames whose worker fails (every third), and a pool closed among them: made here, from the caller's
+    // bytes, which the pool's copies left as they were.
+    const bytes = pool.bytes!.bind(pool);
+    const flakyBytes: RamPool = { size: 3, ram: (b, o, l, i) => pool.ram(b, o, l, i), bytes: (t, i, r, k) => (k % 3 === 1 ? Promise.reject(new Error('planted')) : bytes(t, i, r, k)) };
+    same(await poolFile(views, codec, flakyBytes), 'a pool failing every third BLOB or DISK frame');
   } finally {
     pool.close();
+  }
+  const again = await startPool(WASM, 3);
+  assert.ok(again);
+  try {
+    let asked = 0;
+    const bytes = again.bytes!.bind(again);
+    const closing: RamPool = { size: 3, ram: (b, o, l, i) => again.ram(b, o, l, i), bytes: (t, i, r, k) => { if (++asked === 3) again.close(); return bytes(t, i, r, k); } };
+    same(await poolFile(views, codec, closing), 'a pool closed among the BLOB frames');
+    for (const [n, b] of SAVE_BLOBS.entries()) assert.ok(Buffer.compare(b, SAVE_BLOBS_COPY[n]) === 0, `blob ${n} as it was`);
+  } finally {
+    again.close();
   }
   // A view not on shared memory is written here (the pool reads shared memory only).
   const plain = await poolFile(views.map((v) => v.slice()), codec, { size: 2, ram: () => Promise.reject(new Error('asked')) });
@@ -397,6 +429,202 @@ test('a load\'s pool: RAM placed as on one thread for any pool size, a failing w
     await assert.rejects(async () => r.restore.fill(ram[0], [ram[1]]), (e: unknown) => e instanceof SnapshotError && e.problem === 'corrupt', 'a stream\'s restore refuses it');
   } finally {
     p?.close();
+  }
+});
+
+/**
+ * A file for the one pass: CORE, DEVS naming two blobs, their BLOB frames, RAM of `views` (memory 0's, then a spill
+ * memory's), DISK frames of slot `slots` (0: the pinned disk; another slot, unlisted, is refused), END. `blobs`: the
+ * blobs' bytes.
+ */
+async function onePassFile(
+  views: Uint8Array[],
+  codec: Awaited<ReturnType<typeof lzCodec>>,
+  disk: { spec: { type: 'blk'; url: string; overlay: string }; size: number; blocks: number[]; slot?: number },
+) {
+  const blobs = [new Uint8Array(3 * 2 ** 20 + 5).map((_, i) => (i * 31) >> 9), new Uint8Array(100).map((_, i) => i + 1)];
+  const header: SnapshotHeader = {
+    ...HEADER, coreVersion: codec.snapshotVersion, ramSize: views[0].length, spill: views.slice(1).map((v) => v.length),
+    disks: [{ slot: 0, identity: diskIdentity(disk.spec, disk.size), size: disk.size, blocks: disk.blocks.length }],
+  };
+  const parts: Uint8Array[] = [];
+  const w = new SnapshotWriter((b) => { parts.push(b.slice()); }, header, { codec, concurrency: 1, blobs: true });
+  await w.bytes('CORE', new Uint8Array(3000).fill(9));
+  const devs = { devices: [{ gpu: { data: { $blob: 0, length: blobs[0].length } } }, { x: { $blob: 1, length: blobs[1].length } }], input: [4] };
+  await w.bytes('DEVS', new TextEncoder().encode(JSON.stringify(devs)));
+  for (const [n, b] of blobs.entries()) await w.blob(n, b);
+  const starts = ramStarts(views.map((v) => v.length));
+  for (const [k, v] of views.entries()) await w.ram(v, undefined, starts[k]);
+  const slot = (disk.slot ?? 0) * 2 ** 40;
+  await w.disk(disk.blocks.map((b) => ({ block: slot + b, data: new Uint8Array(4096).fill((b % 200) + 1) })));
+  await w.end();
+  return { file: Buffer.concat(parts), blobs };
+}
+
+test('a load\'s one pass (`ram`): RAM placed into the views made ahead and the state kept before `readSnapshot` returns, BLOB frames unpacked by the pool, the DISK frames read again from the first; a damaged frame refused by the pass itself, an earlier frame\'s refusal first', async () => {
+  const codec = await lzCodec(WASM);
+  const name = 'snapshot-test-one-pass';
+  const size = 64 * 4096;
+  const spec = { type: 'blk', url: 'file:///one/disk.img', overlay: name } as const;
+  const blocks = [1, 2, 3, 40, 63];
+  const views = [poolRam(23), poolRam(9).subarray(65536 * 16)];
+  const { file, blobs } = await onePassFile(views, codec, { spec, size, blocks });
+  const fresh = () => [new Uint8Array(new SharedArrayBuffer(views[0].length)), new Uint8Array(new SharedArrayBuffer(views[1].length + 65536 * 16)).subarray(65536 * 16)];
+  const sameRam = (ram: Uint8Array[], what: string) => {
+    for (const [k, v] of views.entries()) assert.ok(Buffer.compare(ram[k], v) === 0, `${what}: memory ${k}'s RAM differs`);
+  };
+  /** The overlay with a block of its own (7s at block 10), which a restore's disks replace. */
+  const scribbled = async () => {
+    await removeOverlay(name);
+    const f = await openOverlay(name, diskIdentity(spec, size));
+    const o = overlay(zeroDisk(size), f.data, f.map, f.meta);
+    assert.ok(await o.write(10 * 4096, new Uint8Array(4096).fill(7)));
+    o.flush();
+    f.close();
+  };
+  /** The overlay's blocks: the file's (and with `kept`, the block it had of its own instead). */
+  const overlayHas = async (what: string, kept = false) => {
+    const f = await openOverlay(name, diskIdentity(spec, size));
+    try {
+      const o = overlay(zeroDisk(size), f.data, f.map);
+      assert.deepEqual([...o.written()], kept ? [10] : blocks, `${what}: the overlay's blocks`);
+      if (!kept) for (const b of blocks) assert.ok(o.block(b)!.every((x) => x === (b % 200) + 1), `${what}: block ${b}`);
+    } finally {
+      f.close();
+    }
+  };
+  const restore = async (what: string, pool?: LoadPool) => {
+    await scribbled();
+    const ram = fresh();
+    let asked: SnapshotHeader | undefined;
+    const r = await readSnapshot(new Blob([file]), codec, codec.snapshotVersion, { devices: [spec], pool, ram: (h) => ((asked = h), { ram: ram[0], spill: [ram[1]] }) });
+    assert.equal(asked?.machine, 'pool', `${what}: the views are asked for with the header`);
+    sameRam(ram, `${what}, before fill`);
+    assert.equal(r.phases.check, 0, `${what}: no check pass`);
+    const devices = r.restore.host.devices as [{ gpu: { data: Uint8Array } }, { x: Uint8Array }];
+    assert.ok(Buffer.compare(devices[0].gpu.data, blobs[0]) === 0 && Buffer.compare(devices[1].x, blobs[1]) === 0, `${what}: the blobs`);
+    assert.deepEqual(r.restore.host.input, [4]);
+    await overlayHas(`${what}, before fill`, true);
+    // Other views than those it filled: refused (a caller's mistake, not the file's).
+    await assert.rejects(async () => r.restore.fill(new Uint8Array(new SharedArrayBuffer(views[0].length)), [ram[1]]), /the RAM its pass filled/);
+    await r.restore.fill(ram[0], [ram[1]]);
+    await overlayHas(what);
+    sameRam(ram, what);
+  };
+  await restore('on one thread');
+  for (const n of [1, 3, 6]) {
+    const pool = await startPool(WASM, n);
+    assert.ok(pool);
+    try {
+      await restore(`a pool of ${n}`, pool);
+    } finally {
+      pool.close();
+    }
+  }
+  const pool = await startPool(WASM, 3);
+  assert.ok(pool);
+  try {
+    // A worker failing every third piece, one returning no unpacked bytes (its BLOB frames done here), one closed halfway.
+    let asked = 0;
+    await restore('a pool failing every third piece', { size: 3, frames: (piece, jobs) => (++asked % 3 === 0 ? Promise.reject(new Error('planted')) : pool.frames(piece, jobs)) });
+    await restore('a pool returning no bytes', { size: 3, frames: (piece, jobs) => pool.frames(piece, jobs).then((r) => ({ ...r, data: undefined })) });
+    await restore('a pool returning the wrong bytes\' size', { size: 3, frames: (piece, jobs) => pool.frames(piece, jobs).then((r) => ({ ...r, data: r.data?.map((d) => (d ? d.slice(1) : d)) })) });
+    asked = 0;
+    await restore('a pool closed halfway', { size: 3, frames: (piece, jobs) => { if (++asked === 2) pool.close(); return pool.frames(piece, jobs); } });
+  } finally {
+    pool.close();
+  }
+
+  // A byte flipped in a RAM frame: refused by the pass itself (before `readSnapshot` returns), the disk untouched; and
+  // before a later DISK frame's refusal (an unlisted slot), which alone is refused as that.
+  const ramOf = framesOf(file).filter((f) => f.tag === 'RAM ');
+  const hit = ramOf[ramOf.length >> 1];
+  const damaged = Buffer.from(file);
+  damaged[hit.at + (hit.len >> 1)] ^= 0x40;
+  const unlisted = (await onePassFile(views, codec, { spec, size, blocks, slot: 1 })).file;
+  const both = Buffer.from(unlisted);
+  both[hit.at + (hit.len >> 1)] ^= 0x40;
+  const why = (key: string) => (e: unknown) => e instanceof SnapshotError && e.problem === 'corrupt' && (e.msg.params?.what as { key?: string })?.key === key;
+  for (const n of [0, 3]) {
+    const p = n ? await startPool(WASM, n) : undefined;
+    try {
+      for (const [f, key] of [[damaged, 'checksum'], [both, 'checksum'], [unlisted, 'unlistedDisk']] as const) {
+        await scribbled();
+        const ram = fresh();
+        await assert.rejects(readSnapshot(new Blob([f]), codec, codec.snapshotVersion, { devices: [spec], pool: p, ram: () => ({ ram: ram[0], spill: [ram[1]] }) }),
+          why(key === 'checksum' ? 'snapshots:snapshot-file.damage.checksum' : 'snapshots:snapshot.damage.unlistedDisk'), `a pool of ${n}: ${key}`);
+        await overlayHas(`a pool of ${n}, refused (${key})`, true);
+      }
+      // RAM of another size than the header's: refused before a frame is read.
+      await assert.rejects(readSnapshot(new Blob([file]), codec, codec.snapshotVersion, { devices: [spec], pool: p, ram: () => ({ ram: new Uint8Array(new SharedArrayBuffer(65536)), spill: [] }) }),
+        (e: unknown) => e instanceof SnapshotError && e.problem === 'other-machine');
+    } finally {
+      p?.close();
+    }
+  }
+
+  // The pass's frames through small pieces (frames and headers across pieces, a BLOB frame given alone), and the disk
+  // pass from the first DISK frame: its frames, then the end's count (another count before it is refused).
+  const small = await startPool(WASM, 2);
+  assert.ok(small);
+  const starts = ramStarts(views.map((v) => v.length));
+  try {
+    for (const piece of [4099, 65536 + 7, (1 << 20) + 17, undefined]) {
+      for (const p of [small, undefined]) {
+        const s = await openSnapshot(new Blob([file]), { codec, check: true, keep: true, pool: p, piece });
+        const ram = fresh();
+        const later: Promise<void>[] = [];
+        const back = new Uint8Array(blobs[0].length + blobs[1].length);
+        let disk: { at: number; count: number } | undefined;
+        let count = 0;
+        for await (const f of s.frames()) {
+          count++;
+          if (f.tag === 'RAM ') {
+            const k = f.index >= starts[1] ? 1 : 0;
+            f.place!(ram[k], f.index - starts[k]);
+          } else if (f.tag === 'BLOB') {
+            const at = (f.index >= 2 ** 24 ? blobs[0].length : 0) + (f.index % 2 ** 24) * 2 ** 20;
+            if (f.later) later.push(f.later.then((d) => back.set(d, at)));
+            else back.set(f.data, at);
+            assert.equal(!!f.later, !!p, `pieces of ${piece}: a BLOB frame comes later through a pool only`);
+          } else if (f.tag === 'DISK') {
+            assert.equal(f.data.length, 0, 'a DISK frame is checked only');
+            disk ??= { at: f.at, count: count - 1 };
+          } else assert.ok(f.data.length > 0);
+        }
+        await Promise.all(later);
+        sameRam(ram, `pieces of ${piece}${p ? ', pooled' : ''}`);
+        assert.ok(Buffer.compare(back, Buffer.concat(blobs)) === 0, `pieces of ${piece}: the blobs`);
+        const d = await openSnapshot(new Blob([file]), { codec, pool: p, from: disk!, piece });
+        const got: number[] = [];
+        for await (const f of d.frames()) got.push(...[...diskBlocks(f.index, f.data)].map((b) => b.block));
+        assert.deepEqual(got, blocks, `pieces of ${piece}: the disk pass's blocks`);
+        await assert.rejects(async () => {
+          for await (const _ of (await openSnapshot(new Blob([file]), { codec, pool: p, from: { ...disk!, count: disk!.count + 1 }, piece })).frames()) void _;
+        }, why('snapshots:snapshot-file.damage.endCount'), `pieces of ${piece}: the end's count`);
+      }
+    }
+  } finally {
+    small.close();
+  }
+  await removeOverlay(name);
+});
+
+test('memories made ahead (a restore\'s one pass) are taken only for a machine of their shape', async () => {
+  const o = { ramSize: 64 << 20, kernel: new Uint8Array(64), cmdline: '' };
+  await assert.rejects(bootVm(WASM, { ...o, memories: makeMemories({ ramSize: 32 << 20, venus: false }) }), /another machine's/);
+  await assert.rejects(bootVm(WASM, { ...o, memories: makeMemories({ ramSize: 64 << 20, spill: [1 << 20], venus: false }) }), /another machine's/);
+  await assert.rejects(bootVm(WASM, { ...o, memories: makeMemories({ ramSize: 64 << 20, venus: true }) }), /another machine's/);
+  // Of its shape: its RAM is the machine's (what the pass wrote there is what the guest finds).
+  const m = makeMemories({ ramSize: 64 << 20, venus: false });
+  const { ram } = ramViews(m, 64 << 20);
+  ram.fill(0x5a, 4096, 8192);
+  const vm = await bootVm(WASM, { ...o, kernelOffset: 1 << 20, memories: m });
+  try {
+    assert.equal(vm.ram, m.ram);
+    assert.ok(new Uint8Array(vm.memory.buffer, vm.ram + 4096, 4096).every((b) => b === 0x5a));
+  } finally {
+    await vm.close();
   }
 });
 

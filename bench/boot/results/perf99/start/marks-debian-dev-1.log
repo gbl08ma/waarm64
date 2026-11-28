@@ -1,0 +1,49 @@
+11:58:49 AM [vite] (client) [console.error] [m99] page.start 1795867129414.6
+[page console] [m99] page.start 1795867129414.6
+11:58:49 AM [vite] (client) [console.error] [m99] page.newWorker 1795867129416.3
+[page console] [m99] page.newWorker 1795867129416.3
+[page console] [m99] mw.eval 1795867129532.1
+[page console] [m99] mw.start 1795867129533.1
+[page console] [m99] mw.booted 1795867129634.1
+[page console] [m99] mw.answered 1795867129634.2
+[page console] [m99] vcpu.new 1795867129634.7
+[page console] [m99] vcpu.new 1795867129634.9
+[page console] [m99] vcpu.new 1795867129635.0
+[page console] [m99] vcpu.new 1795867129635.0
+[page console] [m99] vcpu.eval 1795867129653.2
+[page console] [m99] vcpu.eval 1795867129655.1
+[page console] [m99] vcpu.instantiated 1795867129655.8
+[page console] [m99] vcpu.eval 1795867129657.4
+[page console] [m99] vcpu.eval 1795867129659.1
+[page console] [m99] vcpu.instantiated 1795867129659.8
+[page console] [m99] vcpu.instantiated 1795867129661.0
+[page console] [m99] vcpu.go 1795867129661.8
+[page console] [m99] vcpu.instantiated 1795867129661.8
+[page console] [m99] vcpu.go 1795867129661.8
+[page console] [m99] vcpu.go 1795867129661.8
+[page console] [m99] vcpu.go 1795867129661.8
+11:58:49 AM [vite] (client) [console.error] [m99] page.start 1795867129967.1
+[page console] [m99] page.start 1795867129967.1
+11:58:49 AM [vite] (client) [console.error] [m99] page.newWorker 1795867129967.9
+[page console] [m99] page.newWorker 1795867129967.9
+[page console] [m99] mw.eval 1795867130033.4
+[page console] [m99] mw.start 1795867130034.3
+[page console] [m99] mw.booted 1795867130297.4
+[page console] [m99] mw.answered 1795867130308.3
+[page console] [m99] vcpu.new 1795867130308.9
+[page console] [m99] vcpu.new 1795867130309.2
+[page console] [m99] vcpu.new 1795867130309.3
+[page console] [m99] vcpu.new 1795867130309.4
+[page console] [m99] vcpu.eval 1795867130326.8
+[page console] [m99] vcpu.eval 1795867130328.3
+[page console] [m99] vcpu.eval 1795867130329.2
+[page console] [m99] vcpu.eval 1795867130330.2
+[page console] [m99] vcpu.instantiated 1795867130332.4
+[page console] [m99] vcpu.instantiated 1795867130332.6
+[page console] [m99] vcpu.instantiated 1795867130332.8
+[page console] [m99] vcpu.instantiated 1795867130333.2
+[page console] [m99] vcpu.go 1795867130333.3
+[page console] [m99] vcpu.go 1795867130333.3
+[page console] [m99] vcpu.go 1795867130333.9
+[page console] [m99] vcpu.go 1795867130333.9
+round 0 load {"wallMs":455,"phases":{"check":66,"checkRead":44,"checkCrc":60,"state":8,"ram":54,"disk":36,"pool":6,"read":30,"crc":55,"unpack":105,"apply":48,"prepare":23,"start":76,"total":263}}

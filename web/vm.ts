@@ -284,6 +284,11 @@ export type BootOptions = {
    */
   restore?: Restore;
   /**
+   * The machine's memories made ahead (`makeMemories`, of this machine's shape or `bootVm` throws): a restore's, whose
+   * RAM the snapshot's pass filled (web/snapshot.ts `readSnapshot`'s `ram`); else `bootVm` makes them.
+   */
+  memories?: Memories;
+  /**
    * An xHCI with 4 root connectors (`VmConfig.xhci`, ABI 38; docs/usb.md): `port` carries the
    * contract's messages (web/usb-device.ts `UsbToWorker`/`UsbFromWorker`: `usb-attach`, `usb-detach`,
    * one `usb-state` back for each) to the device worker, which takes them whenever they come, before
@@ -367,6 +372,88 @@ export function fixedPages(ramSize: number, heapReserve?: number): number | unde
   return pages <= 65536 ? pages : undefined;
 }
 
+/** What a machine's memories are made from (`BootOptions`' fields, and whether it has a Venus GPU: its window). */
+export type MemoryOptions = Pick<
+  BootOptions,
+  'ramSize' | 'spill' | 'window' | 'windowAt' | 'fixedMemory' | 'heapReserve'
+> & {
+  venus: boolean;
+};
+
+/**
+ * A machine's memories, as `bootVm` lays them out: memory 0 (shared; at its final size when fixed) with the scratch
+ * page at `scratch` and RAM at `ram` (zeros), and memories 1 and up (docs/spill-memories.md), each at its final size:
+ * the spill memories' RAM, memory 1's after what it holds before it (`VmConfig::memory_sizes`). `shape` says what they
+ * were made for ({@link memoryShape}).
+ */
+export type Memories = ReturnType<typeof makeMemories>;
+
+/** The fields memories are made of, as a string: those made ahead (`BootOptions.memories`) must be the machine's. */
+export function memoryShape(o: MemoryOptions): string {
+  const windowBytes = o.window ?? (o.venus ? VENUS_WINDOW : 0);
+  return JSON.stringify([
+    o.ramSize,
+    o.spill ?? [],
+    windowBytes,
+    windowBytes ? (o.windowAt ?? (o.venus ? VENUS_ARENA : 0)) : 0,
+    o.fixedMemory !== false ? fixedPages(o.ramSize, o.heapReserve) : undefined,
+  ]);
+}
+
+/**
+ * The memories of a machine of `o`'s shape, as `bootVm` makes them; made ahead of it by a restore whose snapshot's pass
+ * puts RAM's pages straight into them (web/app/worker-start.ts; `BootOptions.memories`). Throws a RangeError when
+ * they can't be had (a grow refused: the page's "couldn't reserve").
+ */
+export function makeMemories(o: MemoryOptions) {
+  // The memory's final size when it is fixed: RAM and the heap reserve, which holds the scratch page and fw_cfg's files.
+  // The host-visible window: a Venus GPU's (web/devices.ts VENUS_WINDOW) unless the caller says. It is in memory 1,
+  // after a Venus machine's renderer arena there (web/venus-host.ts, vk/README.md), before node 1's RAM.
+  const windowBytes = o.window ?? (o.venus ? VENUS_WINDOW : 0);
+  const windowAt = windowBytes ? (o.windowAt ?? (o.venus ? VENUS_ARENA : 0)) : 0;
+  const spillAt = windowBytes ? windowAt + windowBytes : 0;
+  const fixedAt = o.fixedMemory !== false ? fixedPages(o.ramSize, o.heapReserve) : undefined;
+  const fixed = fixedAt !== undefined;
+  const pages = fixedAt ?? 65536;
+  const spillSizes = o.spill ?? [];
+  if (spillSizes.length > MAX_SPILL || spillSizes.some((s) => !s || s % 65536 || s > MAX_SPILL_BYTES))
+    throw new RangeError(
+      `spill memories ${spillSizes.join(', ')}: at most ${MAX_SPILL}, each 64 KiB to 4 GiB in 64 KiB steps`,
+    );
+  const memSizes = spillAt ? [spillAt + (spillSizes[0] ?? 0), ...spillSizes.slice(1)] : spillSizes;
+  if (memSizes[0] > MAX_SPILL_BYTES)
+    throw new RangeError(`memory 1 holds the window at ${windowAt} and node 1's ${spillSizes[0]} bytes: past 4 GiB`);
+  const memory = new WebAssembly.Memory({ initial: 32, maximum: pages, shared: true });
+  const spill = memSizes.map((s) => new WebAssembly.Memory({ initial: s / 65536, maximum: s / 65536, shared: true }));
+  // Scratch page for VmConfig and the command line, then RAM (the core's instance doesn't grow the memory: what it
+  // allocates later comes after RAM).
+  const scratch = memory.grow(1) * 65536;
+  const ram = memory.grow(o.ramSize / 65536) * 65536;
+  return {
+    memory,
+    spill,
+    scratch,
+    ram,
+    pages,
+    fixed,
+    windowBytes,
+    windowAt,
+    spillAt,
+    spillSizes,
+    shape: memoryShape(o),
+  };
+}
+
+/** Each spill memory's RAM, memory 1 first (node 1's after the window there, at `spillAt`). */
+export const spillViews = (spill: WebAssembly.Memory[], sizes: number[], spillAt: number) =>
+  spill.slice(0, sizes.length).map((m, k) => new Uint8Array(m.buffer, k ? 0 : spillAt, sizes[k]));
+
+/** Memory 0's RAM in `m` (`ramSize` bytes at `ram`) and each spill memory's: what a restore's `fill` is given. */
+export const ramViews = (m: Memories, ramSize: number) => ({
+  ram: new Uint8Array(m.memory.buffer, m.ram, ramSize),
+  spill: spillViews(m.spill, m.spillSizes, m.spillAt),
+});
+
 export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
   try {
     return await boot(wasm, o);
@@ -391,31 +478,14 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
       );
   }
   const fwCfg = o.firmware?.fwCfg?.length ? fwCfgBuffer(o.firmware.fwCfg) : undefined;
-  // The memory's final size when it is fixed: RAM and the heap reserve, which holds the scratch page and fw_cfg's files.
-  // The host-visible window: a Venus GPU's (web/devices.ts VENUS_WINDOW) unless the caller says. It is in memory 1,
-  // after a Venus machine's renderer arena there (web/venus-host.ts, vk/README.md), before node 1's RAM.
   const venus = (o.devices ?? []).some((d) => d.type === 'gpu' && d.virgl && d.venus);
-  const windowBytes = o.window ?? (venus ? VENUS_WINDOW : 0);
-  const windowAt = windowBytes ? (o.windowAt ?? (venus ? VENUS_ARENA : 0)) : 0;
-  const spillAt = windowBytes ? windowAt + windowBytes : 0;
-  const fixedAt = o.fixedMemory !== false ? fixedPages(o.ramSize, o.heapReserve) : undefined;
-  const fixed = fixedAt !== undefined;
-  const pages = fixedAt ?? 65536;
-  const memory = new WebAssembly.Memory({ initial: 32, maximum: pages, shared: true });
-  // Memories 1 and up (docs/spill-memories.md), each at its final size: the spill memories' RAM, memory 1's after
-  // what it holds before it (`VmConfig::memory_sizes`).
-  const spillSizes = o.spill ?? [];
-  if (spillSizes.length > MAX_SPILL || spillSizes.some((s) => !s || s % 65536 || s > MAX_SPILL_BYTES))
-    throw new RangeError(
-      `spill memories ${spillSizes.join(', ')}: at most ${MAX_SPILL}, each 64 KiB to 4 GiB in 64 KiB steps`,
-    );
-  const memSizes = spillAt ? [spillAt + (spillSizes[0] ?? 0), ...spillSizes.slice(1)] : spillSizes;
-  if (memSizes[0] > MAX_SPILL_BYTES)
-    throw new RangeError(`memory 1 holds the window at ${windowAt} and node 1's ${spillSizes[0]} bytes: past 4 GiB`);
-  const spill = memSizes.map((s) => new WebAssembly.Memory({ initial: s / 65536, maximum: s / 65536, shared: true }));
+  const shape = memoryShape({ ...o, venus });
+  // Made ahead (a restore's, whose RAM the snapshot's pass filled: `makeMemories`), they must be of this machine's shape.
+  if (o.memories && o.memories.shape !== shape) throw new Error("the memories made ahead are another machine's");
+  const { memory, spill, scratch, ram, pages, fixed, windowBytes, windowAt, spillAt, spillSizes } =
+    o.memories ?? makeMemories({ ...o, venus });
   /** Each spill memory's RAM, memory 1 first (node 1's after the window there). */
-  const spillRam = () =>
-    spill.slice(0, spillSizes.length).map((m, k) => new Uint8Array(m.buffer, k ? 0 : spillAt, spillSizes[k]));
+  const spillRam = () => spillViews(spill, spillSizes, spillAt);
   const first = wasm instanceof WebAssembly.Module ? wasm : await compileCore(wasm);
   // The core that runs a fixed memory declares its exact size: compiled while the first instance lays the memory out.
   const exact = fixed && o.exactCore !== false ? exactCore(first, pages) : undefined;
@@ -427,9 +497,6 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
   let ex = unsigned(instance.exports) as unknown as Exports;
   if (ex.abi_version() !== ABI) throw new Error(`core ABI ${ex.abi_version()}, expected ${ABI}`);
 
-  // Scratch page for VmConfig and the command line, then RAM.
-  const scratch = memory.grow(1) * 65536;
-  const ram = memory.grow(o.ramSize / 65536) * 65536;
   const bytes = () => new Uint8Array(memory.buffer);
   const specs = await Promise.all(
     (o.devices ?? []).map(async (d) => {

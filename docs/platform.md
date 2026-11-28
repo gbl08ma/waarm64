@@ -527,9 +527,15 @@ container is streamed both ways (RAM is up to GiBs) and knows nothing of the cor
   loop 2b"). Chunk c
   goes to worker c mod n, three in flight a worker; the machine worker writes the frames in order. Each frame is
   compressed alone with the same codec and rule (stored when it doesn't shrink), so **the file's bytes don't depend on
-  the pool's size**, nor on whether there is one (`tests/snapshot.test.ts` "a save's pool"). The pool covers RAM
-  only: CORE, DEVS, BLOB and DISK frames (the desktop's: 46 ms and ~110-180 ms of a 1.1 s pause; the disk's blocks
-  are read in runs of consecutive slots since SNAPZ loop 5) stay on the machine worker. It is started **per save, when the save is asked for** (Snapshot, a kept
+  the pool's size**, nor on whether there is one (`tests/snapshot.test.ts` "a save's pool"). **BLOB and DISK frames
+  go through it too** (`bytes` jobs, the writer's `pool`: a copy of each frame's bytes transferred to the worker, which
+  packs it, takes its CRC and posts the frame back in one of its buffers, as for RAM; one a worker fails is made on the
+  machine worker from the caller's bytes, which the copy leaves as they were: a blob's are taken as they are until the
+  file ends), three in flight a worker, written in order; CORE and DEVS (the desktop's ~1.4 MB) stay on the machine
+  worker. The bytes go in buffers the workers give back with their frames (a few a worker: copies of every blob and
+  block had added 64 MiB at a desktop save's peak). The desktop's BLOB frames (114 MB, 1.9 MB packed) went from 46-48
+  to 15 ms, its disk's blocks (36 MB, 3.9 MB packed; ~13 ms of reading them from the device worker) from 91-116 to
+  36-68, its pause from 898 to 790 ms (PERF loop 99). It is started **per save, when the save is asked for** (Snapshot, a kept
   snapshot, Suspend: `web/app/worker-snapshot.ts`), beside the balloon's hint, and closed once the file is written:
   its start (~35-45 ms to six instances) is not paused time, and no worker stays between saves. **The fallback:**
   a pool that can't start (no worker, a failed instance, none ready in 10 s, one CPU) is none, and the save runs on
@@ -546,9 +552,12 @@ container is streamed both ways (RAM is up to GiBs) and knows nothing of the cor
   `web/app/worker-start.ts`), beside the header's checks; it is that restore's, closed once `bootVm` has filled RAM (or
   failed to), at a refusal, or when the start ends before `fill` (`bootVm` failed earlier: a resume then boots instead,
   without it). A Blob is read in 4 MiB
-  slices, four ahead (Chromium reads a picked file's stream at ~1.1 GB/s in 64 KiB chunks, four slices in flight at
-  ~3.2 GB/s; the one-thread reader reads a Blob so too). Through the pool each piece goes **whole to a worker**
-  (transferred, the least busy one, two pieces a worker at most) with the jobs of the frames in it; a frame across two
+  slices, eight ahead (Chromium reads a picked file's stream at ~1.1 GB/s in 64 KiB chunks, four slices in flight at
+  ~3.2 GB/s; the one pass below waited 260-290 ms for its pieces at four, 60-90 at eight; the one-thread reader reads a
+  Blob so too). Through the pool each piece goes **whole to a worker**
+  (transferred, the least busy one, two pieces a worker at most: the next piece waits for **any** worker's to be done,
+  not the oldest's, which had kept the workers that were done idle behind a slower one's piece, 216 of a 451 ms pass)
+  with the jobs of the frames in it; a frame across two
   pieces is copied out and given alone. The machine worker parses every frame header and checks the file's structure
   in file order, as on one thread; the workers take each frame's CRC in their own core instance and, for the restore
   pass's RAM frames, unpack them and put their pages straight into guest RAM and the spill memories (`applyRam` on
@@ -566,6 +575,23 @@ container is streamed both ways (RAM is up to GiBs) and knows nothing of the cor
   measured first: V8 copies into shared memory word by word, ~220 ms of the machine worker's time a pass for the
   desktop's file, which whole pieces avoid. The desktop's load spends 1.13 s in the check pass, the state and RAM
   against 3.13 s on one thread (wall 9.5 to 7.6 s), Debian's 0.13 s against 0.35 ("SNAPZ loop 3").
+- **One pass** (the page's restores since PERF loop 99; `readSnapshot`'s `ram`): the machine worker makes the new
+  machine's memories once the header's refusals are past (web/vm.ts `makeMemories`, the layout `bootVm` makes:
+  memory 0 with the scratch page and RAM, the spill memories; `BootOptions.memories` takes them, refused when they are
+  another shape than the machine's), and the file is read **once** before `readSnapshot` returns: every frame's CRC and
+  the file's structure checked as the check pass does, CORE and DEVS kept, the BLOB frames unpacked by the piece's
+  worker and their bytes posted back (transferred) into the blobs, RAM's pages put straight into those memories, the
+  DISK frames checked and unpacked (and dropped) and the first one's place in the file kept; `fill` (given the same
+  views: a byte written through one is read through the other, as a shared memory's `buffer` is another object after a
+  grow) then reads only the DISK frames from there (`openSnapshot`'s `from`, the frames before it counted for the end's
+  count) into the overlays. What the rule above protects still holds: **a disk is never touched before the whole file
+  is checked**, and a refusal is the first failing frame's (a DISK frame's refusal of its slot waits for the frames
+  before it). RAM is touched, but it is the new machine's, which nothing runs on: a refusal drops it with the start (a
+  suspended machine that can't resume boots on memories of its own; until a GC the dropped ones' touched pages stay
+  committed, up to the RAM's non-zero pages). The desktop's load: the worker's `total` 1,012 → 639 ms (−37%), Debian's
+  282 → 230 (−18%), alternated rounds on the dev VM (the one pass −32%, eight slices ahead −4.6%, waiting for any
+  worker with the BLOB frames on the workers −7% more; bench/boot/REPORT.md "PERF loop 99"). The two passes stay for a caller without the
+  memories (the tests, `runThroughSnapshots`' every other restore) and a stream has one pass of its own, as before.
 - **Refusals** (`SnapshotError`, a `MsgError` with its `problem` and a message of the `snapshots` catalog that names
   what the user can do: docs/i18n.md) come before anything is touched: not a snapshot,
   a newer format, a core state version this core doesn't read, another machine, another disk, a checksum that fails,

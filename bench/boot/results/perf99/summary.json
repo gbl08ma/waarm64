@@ -1,0 +1,358 @@
+{
+ "desktop": {
+  "base": {
+   "loadWall": {
+    "median": 1260.0,
+    "min": 1258,
+    "max": 1263,
+    "n": 4
+   },
+   "loadTotal": {
+    "median": 1095.0,
+    "min": 1072,
+    "max": 1121,
+    "n": 4
+   },
+   "pass": {
+    "median": 924.5,
+    "min": 897,
+    "max": 937,
+    "n": 4
+   },
+   "disk": {
+    "median": 73.0,
+    "min": 68,
+    "max": 83,
+    "n": 4
+   },
+   "paused": {
+    "median": 973.5,
+    "min": 881,
+    "max": 1068,
+    "n": 4
+   },
+   "blobs": {
+    "median": 46.5,
+    "min": 46,
+    "max": 58,
+    "n": 4
+   },
+   "saveDisk": {
+    "median": 110.5,
+    "min": 91,
+    "max": 208,
+    "n": 4
+   },
+   "saveMemAddedMiB": {
+    "median": 145.0,
+    "min": 124,
+    "max": 156,
+    "n": 4
+   }
+  },
+  "new": {
+   "loadWall": {
+    "median": 807.5,
+    "min": 760,
+    "max": 1058,
+    "n": 4
+   },
+   "loadTotal": {
+    "median": 627.5,
+    "min": 590,
+    "max": 903,
+    "n": 4
+   },
+   "pass": {
+    "median": 452.0,
+    "min": 418,
+    "max": 705,
+    "n": 4
+   },
+   "disk": {
+    "median": 79.0,
+    "min": 75,
+    "max": 91,
+    "n": 4
+   },
+   "paused": {
+    "median": 822.5,
+    "min": 813,
+    "max": 896,
+    "n": 4
+   },
+   "blobs": {
+    "median": 27.0,
+    "min": 26,
+    "max": 29,
+    "n": 4
+   },
+   "saveDisk": {
+    "median": 45.5,
+    "min": 43,
+    "max": 53,
+    "n": 4
+   },
+   "saveMemAddedMiB": {
+    "median": 209.0,
+    "min": 207,
+    "max": 210,
+    "n": 4
+   }
+  },
+  "new2": {
+   "loadWall": {
+    "median": 1010.5,
+    "min": 958,
+    "max": 1063,
+    "n": 2
+   },
+   "loadTotal": {
+    "median": 878.0,
+    "min": 846,
+    "max": 910,
+    "n": 2
+   },
+   "pass": {
+    "median": 669.0,
+    "min": 629,
+    "max": 709,
+    "n": 2
+   },
+   "disk": {
+    "median": 96.0,
+    "min": 96,
+    "max": 96,
+    "n": 2
+   },
+   "paused": {
+    "median": 844.5,
+    "min": 813,
+    "max": 876,
+    "n": 2
+   },
+   "blobs": {
+    "median": 15.5,
+    "min": 15,
+    "max": 16,
+    "n": 2
+   },
+   "saveDisk": {
+    "median": 41.5,
+    "min": 37,
+    "max": 46,
+    "n": 2
+   },
+   "saveMemAddedMiB": {
+    "median": 135.0,
+    "min": 133,
+    "max": 137,
+    "n": 2
+   }
+  }
+ },
+ "debian": {
+  "base": {
+   "loadWall": {
+    "median": 456,
+    "min": 455,
+    "max": 457,
+    "n": 3
+   },
+   "loadTotal": {
+    "median": 282,
+    "min": 269,
+    "max": 332,
+    "n": 3
+   },
+   "pass": {
+    "median": 138,
+    "min": 129,
+    "max": 185,
+    "n": 3
+   },
+   "disk": {
+    "median": 39,
+    "min": 39,
+    "max": 42,
+    "n": 3
+   },
+   "paused": {
+    "median": 146,
+    "min": 144,
+    "max": 149,
+    "n": 3
+   },
+   "blobs": {
+    "median": 1,
+    "min": 1,
+    "max": 1,
+    "n": 3
+   },
+   "saveDisk": {
+    "median": 16,
+    "min": 15,
+    "max": 16,
+    "n": 3
+   },
+   "saveMemAddedMiB": {
+    "median": 98,
+    "min": 94,
+    "max": 98,
+    "n": 3
+   }
+  },
+  "new": {
+   "loadWall": {
+    "median": 355,
+    "min": 355,
+    "max": 367,
+    "n": 3
+   },
+   "loadTotal": {
+    "median": 230,
+    "min": 229,
+    "max": 230,
+    "n": 3
+   },
+   "pass": {
+    "median": 90,
+    "min": 90,
+    "max": 93,
+    "n": 3
+   },
+   "disk": {
+    "median": 42,
+    "min": 41,
+    "max": 43,
+    "n": 3
+   },
+   "paused": {
+    "median": 147,
+    "min": 146,
+    "max": 152,
+    "n": 3
+   },
+   "blobs": {
+    "median": 1,
+    "min": 1,
+    "max": 2,
+    "n": 3
+   },
+   "saveDisk": {
+    "median": 15,
+    "min": 13,
+    "max": 16,
+    "n": 3
+   },
+   "saveMemAddedMiB": {
+    "median": 105,
+    "min": 90,
+    "max": 109,
+    "n": 3
+   }
+  }
+ },
+ "desktop2": {
+  "base": {
+   "loadWall": {
+    "median": 1157,
+    "min": 1154,
+    "max": 1167,
+    "n": 3
+   },
+   "loadTotal": {
+    "median": 1012,
+    "min": 977,
+    "max": 1033,
+    "n": 3
+   },
+   "pass": {
+    "median": 825,
+    "min": 812,
+    "max": 853,
+    "n": 3
+   },
+   "disk": {
+    "median": 66,
+    "min": 65,
+    "max": 104,
+    "n": 3
+   },
+   "paused": {
+    "median": 898,
+    "min": 867,
+    "max": 966,
+    "n": 3
+   },
+   "blobs": {
+    "median": 47,
+    "min": 46,
+    "max": 48,
+    "n": 3
+   },
+   "saveDisk": {
+    "median": 98,
+    "min": 91,
+    "max": 116,
+    "n": 3
+   },
+   "saveMemAddedMiB": {
+    "median": 131,
+    "min": 129,
+    "max": 136,
+    "n": 3
+   }
+  },
+  "new": {
+   "loadWall": {
+    "median": 855,
+    "min": 754,
+    "max": 858,
+    "n": 3
+   },
+   "loadTotal": {
+    "median": 639,
+    "min": 602,
+    "max": 677,
+    "n": 3
+   },
+   "pass": {
+    "median": 451,
+    "min": 427,
+    "max": 492,
+    "n": 3
+   },
+   "disk": {
+    "median": 78,
+    "min": 78,
+    "max": 81,
+    "n": 3
+   },
+   "paused": {
+    "median": 790,
+    "min": 789,
+    "max": 857,
+    "n": 3
+   },
+   "blobs": {
+    "median": 15,
+    "min": 15,
+    "max": 15,
+    "n": 3
+   },
+   "saveDisk": {
+    "median": 36,
+    "min": 36,
+    "max": 68,
+    "n": 3
+   },
+   "saveMemAddedMiB": {
+    "median": 144,
+    "min": 135,
+    "max": 151,
+    "n": 3
+   }
+  }
+ }
+}

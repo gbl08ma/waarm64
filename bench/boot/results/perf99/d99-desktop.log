@@ -1,0 +1,14 @@
+[page console] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page console] Manifest fetch from http://127.0.0.1:8231/manifest.webmanifest failed, code 404
+[page console] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page console] Manifest fetch from http://127.0.0.1:8231/manifest.webmanifest failed, code 404
+[page console] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page console] Manifest fetch from http://127.0.0.1:8231/manifest.webmanifest failed, code 404
+[page console] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page console] Manifest fetch from http://127.0.0.1:8231/manifest.webmanifest failed, code 404
+[page console] [d99] frames {"CORE":{"n":2,"raw":1211695,"stored":154519,"ms":0.9449999332427979},"DEVS":{"n":1,"raw":566,"stored":402,"ms":0.09000015258789062},"reads":15.019999980926514,"blocks":8708,"DISK":{"n":201,"raw":35667968,"stored":3850786,"ms":18.305000066757202}} sink 4.175000429153442
+stored machine 78ac2ddece9c file /home/gabriel.guest/Development/waarm64/target/snapz/desktop-956ac0ce5360.waarm64snap
+round 0 load {"wallMs":1258,"phases":{"check":354,"checkRead":265,"checkCrc":392,"state":83,"ram":430,"disk":123,"pool":6,"read":265,"crc":441,"unpack":781,"apply":452,"prepare":23,"start":73,"total":1086}}
+[page console] [d99] frames {"CORE":{"n":2,"raw":1214596,"stored":160319,"ms":0.6800000667572021},"DEVS":{"n":1,"raw":225718,"stored":70445,"ms":0.5950000286102295},"BLOB":{"n":148,"raw":114309668,"stored":1864870,"ms":21.59000015258789},"reads":12.640000104904175,"blocks":8747,"DISK":{"n":200,"raw":35827712,"stored":3879532,"ms":17.665003299713135}} sink 307.9750006198883
+round 0 kept {"wallMs":1227,"kind":"kept","bytes":664515698,"pausedMs":833,"stateMs":108,"blobBytes":114309668,"hintMs":12,"hinted":914358272,"id":"a36bfca8829c","phases":{"state":108,"blobs":44,"ram":635,"disk":44,"pool":6,"scan":242,"compress":2917,"crc":271,"sink":308,"poolWait":3,"poolReady":33,"pause":0,"copy":0,"close":286},"memory":{"before":{"rssMiB":3142,"pssMiB":2525},"peak":{"rssMiB":3272,"pssMiB":2652}}}
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/perf99/d99-desktop.json

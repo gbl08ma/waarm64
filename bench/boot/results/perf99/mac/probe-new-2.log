@@ -1,0 +1,15 @@
+[page console] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page console] Manifest fetch from http://127.0.0.1:8231/manifest.webmanifest failed, code 404
+[page console] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page console] Manifest fetch from http://127.0.0.1:8231/manifest.webmanifest failed, code 404
+[page console] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page console] Manifest fetch from http://127.0.0.1:8231/manifest.webmanifest failed, code 404
+[page console] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page console] Manifest fetch from http://127.0.0.1:8231/manifest.webmanifest failed, code 404
+stored machine 1ee48939f920 file /Users/gabriel/waarm64-snapz-bench.noindex/target/snapz/desktop-c2b519e3ffde.waarm64snap
+[page console] virtio-gpu: 3D is off: this browser can't back the 3D the machine was started with (max_vertex_outputs is below 31)
+[page console] virtio-gpu: the machine's 3D state isn't restored (this browser can't back the 3D the machine was started with (max_vertex_outputs is below 31)): its GL programs will fail
+round 0 load {"wallMs":644,"phases":{"check":0,"checkRead":0,"checkCrc":0,"state":18,"ram":335,"disk":51,"pool":6,"read":281,"crc":516,"unpack":784,"apply":237,"prepare":16,"start":45,"total":466}}
+round 0 kept {"wallMs":724,"kind":"kept","bytes":676675301,"pausedMs":626,"stateMs":2,"blobBytes":0,"hintMs":10,"hinted":914358272,"id":"7de3cf67f3a4","phases":{"state":2,"blobs":1,"ram":576,"disk":43,"pool":6,"scan":293,"compress":2706,"crc":256,"sink":199,"poolWait":20,"poolReady":38,"pause":0,"copy":0,"close":2},"memory":{"before":{"rssMiB":0,"pssMiB":0},"peak":{"rssMiB":0,"pssMiB":0}}}
+fatal: not a git repository (or any of the parent directories): .git
+wrote /Users/gabriel/waarm64-snapz-bench.noindex/bench/results/local/probe-new-2.json

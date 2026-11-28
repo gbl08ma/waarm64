@@ -1,0 +1,44 @@
+{
+ "meta": {
+  "guest": "desktop",
+  "mode": "stored",
+  "profile": "persistent",
+  "ops": [
+   "load"
+  ],
+  "file": "/home/gabriel.guest/Development/waarm64/target/snapbench/pages.waarm64snap",
+  "bytes": 664542411,
+  "rounds": 1,
+  "settleS": 5,
+  "commit": "9553399d-dirty",
+  "core": "9bf4d885c82c786d",
+  "chromium": "Chromium 155.0.8059.84 stable",
+  "host": "8 CPUs unknown",
+  "date": "2026-11-28T12:01:45.051Z",
+  "wallS": 4
+ },
+ "rounds": [
+  {
+   "round": 0,
+   "load": {
+    "wallMs": 1260,
+    "phases": {
+     "check": 343,
+     "checkRead": 259,
+     "checkCrc": 385,
+     "state": 72,
+     "ram": 426,
+     "disk": 123,
+     "pool": 6,
+     "read": 253,
+     "crc": 449,
+     "unpack": 779,
+     "apply": 433,
+     "prepare": 29,
+     "start": 77,
+     "total": 1071
+    }
+   }
+  }
+ ]
+}

@@ -1,0 +1,22 @@
+
+added 56 packages in 3s
+mac_chrome: Chrome for Testing 158.0.8127.88
+base 0 rc=0
+round 0 load {"wallMs":993,"phases":{"check":319,"checkRead":288,"checkCrc":346,"state":42,"ram":308,"disk":50,"pool":6,"read":95,"crc":491,"unpack":670,"apply":262,"prepare":20,"start":52,"total":791}}
+round 0 kept {"wallMs":825,"kind":"kept","bytes":676751364,"pausedMs":727,"stateMs":2,"blobBytes":0,"hintMs":10,"hinted":914358272,"id":"096f6acf7775","phases":{"state":2,"blobs":1,"ram":630,"disk":90,"pool":6,"scan":563
+new 0 rc=0
+round 0 load {"wallMs":548,"phases":{"check":0,"checkRead":0,"checkCrc":0,"state":17,"ram":290,"disk":48,"pool":6,"read":97,"crc":505,"unpack":752,"apply":241,"prepare":16,"start":46,"total":418}}
+round 0 kept {"wallMs":731,"kind":"kept","bytes":676612877,"pausedMs":639,"stateMs":2,"blobBytes":0,"hintMs":11,"hinted":914358272,"id":"8db1b4a955d7","phases":{"state":2,"blobs":1,"ram":587,"disk":45,"pool":6,"scan":326
+base 1 rc=0
+round 0 load {"wallMs":961,"phases":{"check":388,"checkRead":360,"checkCrc":330,"state":40,"ram":257,"disk":50,"pool":6,"read":30,"crc":411,"unpack":612,"apply":183,"prepare":17,"start":46,"total":797}}
+round 0 kept {"wallMs":767,"kind":"kept","bytes":676690738,"pausedMs":670,"stateMs":2,"blobBytes":0,"hintMs":12,"hinted":914358272,"id":"85c2217068f1","phases":{"state":2,"blobs":1,"ram":576,"disk":88,"pool":6,"scan":270
+new 1 rc=0
+round 0 load {"wallMs":649,"phases":{"check":0,"checkRead":0,"checkCrc":0,"state":18,"ram":341,"disk":49,"pool":6,"read":279,"crc":513,"unpack":786,"apply":242,"prepare":17,"start":47,"total":472}}
+round 0 kept {"wallMs":717,"kind":"kept","bytes":676553323,"pausedMs":638,"stateMs":2,"blobBytes":0,"hintMs":7,"hinted":914358272,"id":"8ce8a6ad72e1","phases":{"state":2,"blobs":1,"ram":588,"disk":44,"pool":6,"scan":327,
+base 2 rc=0
+round 0 load {"wallMs":967,"phases":{"check":393,"checkRead":364,"checkCrc":335,"state":39,"ram":254,"disk":49,"pool":6,"read":44,"crc":414,"unpack":618,"apply":186,"prepare":16,"start":46,"total":796}}
+round 0 kept {"wallMs":769,"kind":"kept","bytes":676612739,"pausedMs":679,"stateMs":2,"blobBytes":0,"hintMs":7,"hinted":914358272,"id":"4fd2e3a34dd4","phases":{"state":2,"blobs":1,"ram":582,"disk":91,"pool":6,"scan":299,
+new 2 rc=0
+round 0 load {"wallMs":644,"phases":{"check":0,"checkRead":0,"checkCrc":0,"state":18,"ram":335,"disk":51,"pool":6,"read":281,"crc":516,"unpack":784,"apply":237,"prepare":16,"start":45,"total":466}}
+round 0 kept {"wallMs":724,"kind":"kept","bytes":676675301,"pausedMs":626,"stateMs":2,"blobBytes":0,"hintMs":10,"hinted":914358272,"id":"7de3cf67f3a4","phases":{"state":2,"blobs":1,"ram":576,"disk":43,"pool":6,"scan":293
+rc=0
