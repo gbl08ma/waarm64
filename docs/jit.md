@@ -129,8 +129,13 @@ the interpreter's own code.
   regions (bench/boot/REPORT.md "PERF loop 69"): 500/1000 loses `node` 2.6%; 2000/4000 wins it 1.2% and `smp` 4.2% for
   24% less wasm and 3-7% fewer cycles, but loses the parallel boot on one and two vCPUs 1.8-2.9%, ties Firefox's pages
   session in time, and runs 1.4 points fewer steps compiled in its churn windows (the worst second 3 points): 1000
-  stays; 4000/8000 loses `node` too. No workload measured reaches 120 MiB without a flush, so the maximum seldom
-  binds. JIT-stress, JIT-check, the dispatcher-only mode and the
+  stays; 4000/8000 loses `node` too. No benchmark workload reaches 120 MiB without a flush (`node` 48, `smp` 85,
+  the cut pages session 93, the parallel boots 10-16), so the maximum binds only in a real session, 4-5 minutes into
+  one (live code at 40 MiB 20 s in, 80 MiB 30-40 s, 120 MiB 240-280 s: loop 63's long sessions). **The knee's place
+  was swept by those counts** (bench/boot/REPORT.md "PERF loop 89"): a knee of 0 or 1 is loop 69's 2000 on part of
+  each workload (the same trade, declined); a knee of 3 or more changes only the session past 120 MiB, where 98-99.5%
+  of the steps already run compiled, for ~+15-17 MiB of wasm an hour (~90-170 MiB of the renderer) and loop 69's tie
+  in time at 1000 against 2000. Two stays. JIT-stress, JIT-check, the dispatcher-only mode and the
   user-mode `jit_new` keep a fixed threshold.
   Fewer, larger modules run faster (chains stay within a module) and cost V8 ~16 KB less each
   ([Memory](#memory)): Alpine's userspace benchmark makes 970 modules (3,860 with the 1M-step
@@ -810,6 +815,10 @@ guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions)
   slots on the host nor smaller modules would free anything worth their cost (a module costs ~16 KB besides its
   functions, above); writing the table from an active element segment (no exports object) bounds at ~19 MB of the
   pages session's renderer (~1.7 KB an instance, 2,768 modules on 4 tables), and wasn't built.
+- **The host's table grows at each install** by the module's functions (web/jit-host.ts `install`), never past the
+  slots the epoch used. The grows are cheap (~0.5 µs each in Chromium: 0.6-0.9 ms over `node`'s 1,461 installs,
+  2.5-3.9 ms over a Firefox hour's 4,744), and a table pre-grown to the cache's 262,144 slots at bind would cost ~8
+  MiB a vCPU for < 0.01% (bench/boot/REPORT.md "PERF loop 89"), so it isn't.
 - **Measured** (mixed load, 450 s; `bench/mem/results/summary.json`, made by `bench/mem/summarize.mjs` from raw samples kept in bench/results/local): without the budget
   the renderer is 4.3 / 3.9 GB (median of two runs) and climbing, at 615K regions: 1486 MB
   PartitionAlloc, 1391 MB wasm code, 1283 MB linear memory (guest 1024 + the core's heap ~150), 221 MB

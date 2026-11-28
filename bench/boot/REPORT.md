@@ -9383,3 +9383,59 @@ signal-byte check moves no step (a host signal's latency only), as for the inlin
 
 CI: `scripts/ci.sh` (752 s) and `scripts/ci-jit.sh` (248 s) passed, each alone. No device exit changed (an MMIO
 access's abort still goes to the run loop), so not `ci-debian.sh` or `ci-usb.sh`.
+
+## PERF loop 89: three small sweeps by their counts — the pressure knee, the vCPU's yield, the table's growth (2026-11-28)
+
+The queue's row 23: `PRESSURE_KNEE` (core/src/jit/mod.rs: the eighths of the 320 MiB budget the live modules fill
+before the compile threshold leaves its floor of 1000 for 2000), `VCPU_YIELD_MS` (web/vm.ts: a busy vCPU worker's
+return to its event loop, 100 ms) and the host's function table, grown at each install by the module's functions
+(web/jit-host.ts `install`) rather than once at bind. **Each closed by its counts, nothing built, no Mac run**: every
+arm's reach is under the floor or is a trade a measured loop already declined. No code changed (ABI 74,
+`tests/steps.txt` unchanged). Data: `results/perf89/` (`knee.py` and `knee.txt` over loop 63's long sessions;
+`micro.ts` and `micro-vm.json`, five rounds in headless Chromium 155.0.8059.84 on the dev VM; `tablemem.mjs`).
+
+**`PRESSURE_KNEE` (2).** Where the live modules reach each eighth (loop 63's browse sessions, the Mac, 320 MiB, no
+flush; `knee.txt`) against what the benchmarks compile:
+
+| | 40 MiB (knee 1) | 80 MiB (knee 2: past it 1000 → 2000 by 120) | 120 MiB (threshold 2000) | 160 MiB |
+|---|---|---|---|---|
+| one Firefox, 62 min | 20 s | 40 s | 240 s | 2,040 s |
+| Firefox restarted every 150 s, 62 min | 20 s | 30 s | 280 s | 3,182 s |
+| the benchmarks' whole runs (loop 69) | `node` 48, `smp` 85, the cut pages session 93; the parallel boots 10-16 MiB | | never | never |
+
+- *Flat 2000* (the floor at the maximum) is what loop 69's 2000/4000 arm ran in every workload (none reached its
+  120 MiB step): `node` −1.2%, `smp` −4.2%, the parallel boots +1.8-2.9% on one and two vCPUs, the pages session a tie
+  in time with the compiled share under churn 1.4 points lower. Not kept there; nothing to re-run.
+- *A lower knee* (0 or 1) puts the threshold at 2000 past 40 or 80 MiB: the parallel boots never get there; `node`'s
+  last ~17% of code at knee 0, `smp`'s last ~6% at knee 1 (~half at 0), and Firefox's code from 20-40 s into a session
+  on: loop 69's trade again, on less of each workload (`node`'s share of its −1.2% ~0.2%, under the floor; the pages
+  session still a tie in time with its compiled share lower from Firefox's first page on), so declined for the same
+  reason.
+- *A higher knee* (3 or more) changes only a session past 120 MiB of live code, 4-5 minutes into a real one (no
+  benchmark gets there). Past it 98.0-99.5% of the steps already run compiled (3.6 and 15.0 G steps interpreted of
+  772 and 753 G in 58 minutes, a guest averaging ~220 MIPS), and 47-56 MiB of wasm are compiled at 2000. At 1000
+  instead, loop 69's ratio (wasm +31% at 1000 against 2000, on `node` and the pages session alike) makes that
+  +15-17 MiB of wasm an hour, ~90-170 MiB of the renderer at V8's 6-10× (docs/jit.md "Memory"), past the line where
+  the user is asked, for what loop 69's pages session measured at 1000 against 2000: the same busy MIPS and page
+  times, the renderer's CPU +3.4%. Nothing to gain in time; not built.
+
+**`VCPU_YIELD_MS` (100).** A vCPU yields at most once per period, and only when busy (an idle wait's return resets
+it), so ≤ 10, 20 or 4 times a second at 100, 50 or 250 ms. One yield (`yieldTurn`'s 1 µs `Atomics.waitAsync` in a
+worker that otherwise spins, as a vCPU's BUDGET exit does) takes 5-15 µs at the median at 50 and 100 ms and 10-25 µs
+at 250, so the period costs ≤ 0.03% of a busy vCPU at 50 ms and saves ≤ 0.02% at 250; the spinning worker's work in
+3 s against a worker that never yields moved −0.9 to +1.2% in every arm (the VM's noise, no order). In some 3 s
+rounds of every period one yield took 17-18 ms: work queued to the thread that runs whenever the loop is visited,
+not a cost of how often. What the period is for, the stalls (Oilpan's sweep tasks, "M8: V8's GC on the
+vCPU threads"), is already gone at 100: no stall of 20 ms in loop 69's pages sessions, 0-2 in loop 83's, and what
+that entry's traces left past 50 ms is the wasm code GC (every vCPU at once), which a yield doesn't touch. 50 has nothing to remove and 250 nothing to
+gain past its risk of the sweep's stalls; no pages session run.
+
+**The table's growth.** Each install grows the core's table by its module's functions (`table.grow(at + n −
+length)`), and the grows are cheap (~0.5 µs each, so V8 doesn't copy the table at each): in the micro-benchmark
+(a table defined by a module like the core's, modules importing it and using it in a `call_indirect`, as the JIT's)
+`node`'s shape (1,461 modules of 13 functions, 21K entries) spends 0.61-0.93 ms growing in all, a long Firefox hour's
+(4,744 of 16, 78K entries) 2.5-3.9 ms, against installs of 7.8 and 28 ms in that loop alone; pre-growing to the
+cache's 262,144 slots at bind costs 2.2-3.0 ms once and ~8 MiB a table (Node 26: 6.0 MiB of heap, 8.2 of RSS), ~32
+MiB on four vCPUs, to save < 1 ms of a 9 s workload (< 0.01%). Not built.
+
+No CI (results and docs only).

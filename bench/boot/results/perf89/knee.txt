@@ -1,0 +1,5 @@
+one: 61.7 min, budget 320 MiB, live at the end 176 MiB, flushes 0; live crosses 40 MiB at 20 s, 80 MiB at 40 s, 120 MiB at 240 s, 160 MiB at 2040 s
+  past 120 MiB: 3468 s, 772.1 G steps, 99.53% compiled, 3.61 G interpreted, 56.2 MiB of wasm, 223 MIPS; before: 96.68% compiled
+restart: 62.2 min, budget 320 MiB, live at the end 166 MiB, flushes 0; live crosses 40 MiB at 20 s, 80 MiB at 30 s, 120 MiB at 280 s, 160 MiB at 3182 s
+  past 120 MiB: 3463 s, 753.2 G steps, 98.01% compiled, 15.00 G interpreted, 46.6 MiB of wasm, 218 MIPS; before: 96.30% compiled
+j128: 41.7 min, budget 128 MiB, live at the end 103 MiB, flushes 1; live crosses 40 MiB at 20 s, 80 MiB at 70 s, 120 MiB at 1230 s, 160 MiB at never

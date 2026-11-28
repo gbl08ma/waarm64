@@ -183,7 +183,10 @@ indexes of their instance).
   it due for a later exit, and once it has been due 100 ms more (`OVERDUE_MS`: a vCPU whose idles are all short) the
   next idle takes it anyway. Before, the half-time wait ended past short deadlines: in Chromium on the Mac a vCPU saw
   its timer in WFI 205 µs late on average on one vCPU (17-19 µs on 2-4), 49 µs (10-13) since (bench/boot/REPORT.md
-  "PERF loop 60").
+  "PERF loop 60"). **The period, 100 ms (`VCPU_YIELD_MS`), was swept by its counts** (bench/boot/REPORT.md "PERF loop
+  89"): a yield takes 5-25 µs (headless Chromium, a worker that otherwise spins), so 50 ms costs a busy vCPU ≤ 0.03%
+  and 250 saves ≤ 0.02%, and at 100 the stalls it is for are gone already (0-2 of 20 ms a pages session in loops 69 and
+  83; what the M8 traces left past 50 ms is the wasm code GC, which no yield touches).
 - **CPU_ON:** the caller records the request under the lock and wakes the target; the target's
   own thread applies it (no thread writes another's registers), marking itself on under the same
   lock (between taking the request and marking itself on, a second CPU_ON once saw it off: the

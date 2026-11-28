@@ -129,12 +129,12 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried and lost: polled code without `acc`").
 
-## State (2026-11-28, after loop 88)
+## State (2026-11-28, after loop 89)
 
-**The track resumed 2026-11-28 (paused after loop 86).** Loop 87 did row 21 (bench/gpu/REPORT.md "PERF loop 87"): #57
-closed as a finding. Loop 88 did row 22 (bench/boot/REPORT.md "PERF loop 88"): round-robin publishes the JIT's and
-TLBs' counters every 64K steps and finishes ERETs, SVCs and aborts in place (`vm::rr_fast`), the gates 0.4-0.8%
-faster, `node` the same; the next row is 23.
+**The track resumed 2026-11-28 (paused after loop 86).** Loop 88 did row 22 (bench/boot/REPORT.md "PERF loop 88"):
+round-robin publishes the JIT's and TLBs' counters every 64K steps and finishes ERETs, SVCs and aborts in place
+(`vm::rr_fast`). Loop 89 did row 23 (bench/boot/REPORT.md "PERF loop 89"): the three sweeps closed by their counts,
+nothing changed; the next row is 24.
 
 **The rule since 2026-11-24 (the user): spend as little time in benchmarks and CI as the answers allow
 ("Batching", above).** Loop 75's notes still hold: `bench/boot/results/perf75/diag.patch` applies to 3a08fdf3; loop
@@ -174,11 +174,14 @@ every row:
 
 | # | Entry | Kind | Notes |
 |---|---|---|---|
-| 23 | **Next**: Small sweeps, each one screen: `PRESSURE_KNEE` (mod.rs:297; flat 2000 against 1000/2000, the memory side), `VCPU_YIELD_MS` 50/100/250 (web/vm.ts:118; stalls), the table pre-grown at install (web/jit-host.ts:115) | sweep | none swept on the Mac; small expectations |
-| 24 | Host, per event: virgl uploads across backing entries join into a fresh buffer (web/virgl-renderer.ts:694; count the joins first), an import's serial 1 MiB reads from a server (web/stored.ts:105), frame ports taking batches (P7 of the old backlog's "The network, per packet", which no issue carries), the checksum two bytes at a time (web/offload.ts:54), `Devices.poll`'s closures per request (web/devices.ts:887) | count, build | each by its own micro-benchmark; with other work in the file |
+| 24 | **Next**: Host, per event: virgl uploads across backing entries join into a fresh buffer (web/virgl-renderer.ts:694; count the joins first), an import's serial 1 MiB reads from a server (web/stored.ts:105), frame ports taking batches (P7 of the old backlog's "The network, per packet", which no issue carries), the checksum two bytes at a time (web/offload.ts:54), `Devices.poll`'s closures per request (web/devices.ts:887) | count, build | each by its own micro-benchmark; with other work in the file |
 | 25 | JIT, likely under the floor: late-compiled successors through a reserved table slot (`via_jc`, emit.rs:2220; relinking and rebinding lost: try `results/perf54/` `chain2.mjs` with a constant index first), SP's alignment guard folded into the tag compare (emit.rs:4297; five wasm ops a probe), `refresh` storing every vCPU's IRQ byte (parallel.rs:814) | count | x64 and arm64 static counts (`bench/jit/codestats.ts`) decide the second |
 
-Swept, measured or counted on the Mac recently, not to redo: round-robin's chunk ends (loop 88: a full publication
+Swept, measured or counted on the Mac recently, not to redo: `PRESSURE_KNEE`, `VCPU_YIELD_MS` and the table's
+growth (loop 89, by counts: a knee of 0-1 is loop 69's declined 2000 on part of each workload, 3+ only touches a
+session past 120 MiB live, 4-5 min into a real one, 98-99.5% compiled there, for ~90-170 MiB; a yield 5-25 µs, ≤ 10 a
+second, the stalls already gone at 100 ms; the table's grows ~0.5 µs each, ≤ 4 ms a Firefox hour, pre-growing ~8 MiB
+a vCPU), round-robin's chunk ends (loop 88: a full publication
 ~41 ns, ~0.5% of the gates alone and under the floor on the Mac; after the in-place completions the userspace gate's
 0.72 M ends are the chunks' steps 0.34 M and the GIC's IAR/EOIR exits 0.34 M, two an IRQ), a key's glyph on each screen (loop 87: every virtio-gpu screen 26-29 ms, the simple framebuffer 35-37, VM and Mac; the 2D presenter's upper quartile ~8 ms over the GPU worker's on the Mac, not worth a device worker with animation frames), the start message's wait for the GPU worker (loop 85: hidden behind the machine worker's own module load on the dev server, −7 ms on the VM and −10 ms on the Mac's load once removed; a fresh browser's first WebGL2 context on the Mac's GPU 27-178 ms), device completions and host signals waking every vCPU (loop 83: ~300 empty `IDLE` exits a second on the pages session, ≤1.7% of a core, none in an idle guest; one taker or no poll after them not built), the idle poll's `SPIN_MS` 0/10/20/50/100 µs (loop 83: 20 kept, renderer CPU −2.8%; 0 slows futex hand-offs 2.5×; an adaptive poll is [#134](https://github.com/gbl08ma/waarm64/issues/134)), virgl's GL calls a draw (loop 79: 79 before a draw, 80% repeats; the framebuffer's points and draw buffers, the vertex arrays and the uniforms now kept; the rest, global state ~0.5 µs a draw, left: bench/gpu/REPORT.md "PERF loop 79"), the blk path on a persistent profile (loop 76: `ORDERED`'s flushes, the copies, the bulk writes), probes a region's earlier block already made, the translation memo and X registers sharing locals at 64 blocks (loop 75: closed under the floor), what entries cost a loop through another page (loop 75: ≤ 0.2%), entries at every member of the head's page and the helper's one decode (loop 74: kept; left without entries: loop regions' members and other pages', ~0.3% of the page at most), the jump cache's size (loop 73: `JC` 131,072 and 262,144), the sibling fill over another page's entry (loop 73: it thrashes a copy between two pages of one index), loop 72's closed counts (the transfer cache at 65,536 entries and a per-ASID generation, `TLB_ENTRIES` 32,768 and 65,536, a last-level table cache, a fill of the neighbour's PTE, `NG_SLOTS`, a longer TLBI queue, the interpreter under live host frames, the helper histogram: nothing to inline, FlagM never runs), the repeated last emission (loop 71: kept), XZR's write sink (kept) and one probe for an LdO/StO pair (loop 70), the compile threshold (loop 69: 500/1000 to 4000/8000), region sizes 16/32/64 and 96/128/256 (loop 64), the decoded blocks' budget and slots (loops 1, 38), the block map's constants (loop
 41), the parallel chunk (loop 32), `BATCH_STEPS` (loop 65), `REGION_AFTER` (loop 66), the compile worker's warm-up (loops 67, 67b), `WARM` with `REPORT` (loop 68), the 320 MiB budget (loop 63), the idle wait's constants (loops 53, 58, 60), a
