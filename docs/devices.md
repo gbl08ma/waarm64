@@ -1434,6 +1434,10 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   drains its 64 at once; long text goes through the agent's TYPE, which paces itself). In deterministic mode they land
   where the device worker gets them, not at a step; the native runners inject theirs at the guest's LED, and the page's
   input test runs in realtime. LED status events go to the port (the page lights the on-screen keyboard's lock keys by them). The page's mouse lock and touches: docs/frontend.md "Input".
+  The nested arrays stay (PERF loop 103, `bench/io/pointer.ts`): a tablet's move costs ~4.0 µs from the listener to
+  the guest's buffers in headless Chromium against ~2.4 µs as a transferred flat `Int32Array`, and Chromium
+  delivers `pointermove` at most once an animation frame (the page doesn't listen to `pointerrawupdate`), so the flat
+  shape would save under 0.05% of a thread at 240 Hz (0.17% at 1000).
 
 ### virtio-gpu (ID 16): 2D, and 3D through virgl
 What the guests do with it, and why it is built as it is: [graphics.md](graphics.md) "The 2D display".

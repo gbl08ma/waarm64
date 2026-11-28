@@ -229,6 +229,18 @@ gives activation in Firefox's BiDi, so Firefox's activation rules were measured 
   one of ours (the dev VM's newer xclip doesn't, so only the page test sees it). **xclip keeps one INCR per requestor
   window**, so the child has six conversion windows. An owner that never answers is given 10 s (`OWNER_WAIT`) before
   the conversion ends as refused.
+- **Three costs counted and left as they are** (PERF loop 103, bench/boot/REPORT.md "PERF loop 103"). *The agent's
+  restarts* gunzip its binary out of fw_cfg anew, ~65 ms of a vCPU each (the read 45, the gunzip 20), but the agent
+  never exits by itself (`run` connects again whenever a connection ends, a restore's too): the unit restarts it only
+  after an abort or a kill, none in a session, and at its limit (5 in 10 minutes) 0.05% of a vCPU; keeping the binary
+  past the unit's tmpfs isn't worth a file left in `/run`. *`splice`* between the connection and the pipes would save
+  user-space copies only: the frames carry headers through the parent, and the host's text is hashed and kept
+  (`hash`, `copy`) on its way, so the bytes pass through the agent's memory anyway; the copies it would save run at
+  7-21 GB/s under the JIT (cpu.md), ~0.1-0.2 ms for a 1.58 MB PNG whose paste takes ~1.7 s. *A dropped answer's
+  data* (a guest reader that stops: MORE 0) still crosses, at most the credit, 4 chunks (256 KiB), which the link's
+  `WINDOW` (256 KiB) has already posted to the device by then, so the page has nothing left to hold back; the agent
+  drops DATA for an ended transfer (a session child's ids only grow), so it is a few hundred ms of the
+  channel once per such paste, not a defect.
 - **The serial tests' `run(cmd)`** matches `<<N:…>>` in the terminal for the command's output. A command with `>>` in
   it matches its own echo while it is typed (page-agent's slow reader did, and its long paste raced the reader's
   start). Keep `>>` out of such commands (use `tee -a`).

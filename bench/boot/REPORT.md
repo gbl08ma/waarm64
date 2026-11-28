@@ -10109,3 +10109,45 @@ new 652 (581-662), 616 (609-633), 595 (585-603); all nine 596 against 609. The r
 spread is the pass's wait for the file's pieces (`read` 138-526 in either arm), which the fixes don't touch (a Set of
 the BLOB frames' indices, a flag read on the fallback, the options copied once a boot). The kept save's pause 782, 783,
 789 against 774, 780, 793: the same. No memory change.
+
+## PERF loop 103: the host's small items, counted (2026-11-28)
+
+Queue row 33 ([#272](https://github.com/gbl08ma/waarm64/issues/272), [#266](https://github.com/gbl08ma/waarm64/issues/266),
+[#264](https://github.com/gbl08ma/waarm64/issues/264)). **All three closed as findings; nothing built.** Tree 234ddfe1
+(ABI 74). Data: `bench/boot/results/perf103/pointer.json` (`bench/io/pointer.ts`).
+
+**Pointer events as a flat `Int32Array` (#272).** `bench/io/pointer.ts`: a tablet's move (ABS_X, ABS_Y, SYN) from a
+page's sender to a worker on a MessageChannel (the page and the machine worker), the worker doing what
+web/input-device.ts `inject` and `deliver` do (today's: push, shift, a fresh 8-byte DataView an event; flat: one kept
+buffer), in bursts of 2,000; headless Chromium 155.0.8059.84 in the dev VM (aarch64, 8 vCPUs), 11 rounds alternating
+the arms, medians (IQR):
+
+| µs a message | nested (today) | flat, cloned | flat, transferred |
+|---|---|---|---|
+| the sender's (build and post) | 1.50 (1.30-1.75) | 1.65 (1.55-1.95) | 1.65 (1.60-1.65) |
+| the whole (both threads and the hop) | 4.00 (3.55-4.40) | 3.05 (2.65-3.20) | 2.35 (2.30-2.40) |
+
+**The count**: the page listens to `pointermove` (not `pointerrawupdate`), which Chromium coalesces to at most one
+an animation frame, so ≤ 60-240 messages a second while the pointer moves (wheel and touch alike). The flat shape's
+~1.65 µs is ≤ 0.4 ms a second at 240 Hz, 0.04% of one thread (0.17% even at 1000 Hz), split between the page and the
+machine worker, and its sender is no cheaper. Under the floor: closed, the nested shape kept (docs/devices.md
+"input (ID 18)").
+
+**The agent's restarts gunzipping anew (#264).** One costs ~65 ms of a vCPU (the fw_cfg read's 45, the gunzip's 20:
+docs/clipboard.md "What it costs"). The count: the agent's `run` never returns (it connects again whenever a
+connection ends, a restore's too), so the unit restarts it only after an abort or a kill; a session has none, and at
+the unit's limit (5 starts in 10 minutes) it is 0.05% of one vCPU. Closed (docs/clipboard.md "Findings").
+
+**The clipboard's copies and a dropped answer (#266).** *`splice`*: the bytes pass through the agent's memory anyway
+(the frames' headers through the parent and its child; the host's text hashed and kept on its way), so it saves
+user-space copies only, which run at 7-21 GB/s under the JIT (docs/cpu.md "MOPS"): ~0.1-0.2 ms each for a 1.58 MB
+PNG whose paste takes ~1.7 s on the page test (the 2026-11-13 ci-debian log: 1,728 ms, the test's own commands
+included). *A dropped answer*: a guest reader that stops makes the agent send MORE 0, and what still crosses is at
+most the credit, 4 chunks of 64 KiB, which the link's `WINDOW` (256 KiB) has posted to the device before the MORE 0
+can come back, so the page holds nothing it could drop. Not a defect: the agent drops DATA whose transfer ended
+(`page_data` matches only a live, unended id; a session child's ids only grow), the page drops a MORE for an answer it
+no longer has. A few hundred ms of the channel once per such paste: closed (docs/clipboard.md "Findings").
+
+Memory: none. Compiled code and `tests/steps.txt` unchanged (nothing built). The runs: one micro-benchmark in Chromium
+(~20 s). CI: `scripts/ci-fast.sh` for the new benchmark (tsc, the linters, the areas map); the loop changes no
+product code.
