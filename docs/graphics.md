@@ -219,8 +219,9 @@ buffer until it stops changing would hide the race for unmodified guests: not bu
 `bench/gpu/REPORT.md` "G1 exit" and "A 2D machine on WebGL2": the first pixel 7.5 s after the page's load (the
 firmware) instead of 18.7 s (the kernel's console), and `virtio_gpu` costs the boot nothing measurable; a transfer
 ~0.7 ms a megapixel on the 2D context, a flush with its draw 1.4 and 2.6 ms for a full 1080p and 1440p frame; host
-memory 4 bytes a pixel per resource, capped at 64 MiB each and 256 MiB together; a key's glyph ~13 ms later on the
-screen than on the simple framebuffer ([#57](https://github.com/gbl08ma/waarm64/issues/57)).
+memory 4 bytes a pixel per resource, capped at 64 MiB each and 256 MiB together. A key's glyph on the screen
+(bench/gpu/REPORT.md "PERF loop 87", 2026-11-28): 26-29 ms to the page on every virtio-gpu screen (the GPU worker's,
+the 2D presenter's on WebGL2 or a 2D context), 35-37 ms on the simple framebuffer, the dev VM and the Mac alike.
 
 ## The guest's 3D: Mesa's virgl
 
@@ -1305,8 +1306,12 @@ Worth not re-discovering:
   through `transferToImageBitmap` moved the same wait into the transfer. Judge fence latency and GL frame rates on a
   real GPU (the Mac host, `bench/gpu/sway-mac.sh`), never on the dev VM.
 - **A worker's canvas commits a frame at the end of every task that draws**, held to the display's rate: draw once, in
-  an animation frame (the device worker, nested in the machine worker, has no `requestAnimationFrame` and draws on a
-  timer: the 13 ms key-to-glyph suspect of [#57](https://github.com/gbl08ma/waarm64/issues/57)).
+  an animation frame. The device worker, nested in the machine worker, has no `requestAnimationFrame`, so a 2D
+  machine's presenter draws a lone damage at once and the rest on a timer: that costs a key's glyph nothing at the
+  median (PERF loop 87: 27 ms against the GPU worker's 28 on the Mac, both ahead of the simple framebuffer's 35, which
+  waits for the machine worker's frame); its upper quartile is ~8 ms (under a frame) above the GPU worker's on the
+  Mac. G1's "13 ms later than the simple framebuffer" ([#57](https://github.com/gbl08ma/waarm64/issues/57)) no longer
+  holds; a device worker with animation frames (made by the page) wasn't built for that tail.
 - **Most renderer bugs were WebGL refusing silently what GLES allows, or protocol meanings that are vrend's rather than
   Gallium's** (query numbers, stride 0, index offsets, the append mask): read `vrend_decode.c`/`vrend_renderer.c` and
   Mesa's encoder (`src/gallium/drivers/virgl/`) before assuming the Gallium meaning.

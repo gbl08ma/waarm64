@@ -1,25 +1,29 @@
-// The page's Debian on virtio-gpu against the simple framebuffer (M8 graphics G1's exit numbers): the time from
-// the page's load to the first lit pixel on the screen and to `running`, and key to glyph on the screen (bash on
-// tty1, fbcon) and on the serial terminal (bash on ttyAMA0). Boots Debian on the page (needs `npm start`'s
-// images) once per configuration and round, alternating.
+// The page's Debian on its screens (M8 graphics G1's exit numbers, PERF loop 87's): the time from the page's load to
+// the first lit pixel on the screen and to `running`, and key to glyph on the screen (bash on tty1, fbcon) and on the
+// serial terminal (bash on ttyAMA0). Boots Debian on the page (needs `npm start`'s images) once per configuration and
+// round, alternating. The configurations: `gpu3d` (virtio-gpu with virgl: the GPU worker draws), `gpu2d` (virtio-gpu
+// 2D: the device worker's presenter, WebGL2 on a GPU), `gpu2dc` (the same on its 2D context), `simple` (the simple framebuffer: the machine worker's display.ts).
 //   node bench/gpu/page.ts [out.json] [rounds=2]
+//   SCRIPT=page.ts ROUNDS=n bench/gpu/sway-mac.sh - target/images/debian/disk.qcow2 <name>   (the Mac: <name>/page.json)
 // Key to glyph is from the keydown event's timestamp to the first animation frame that sees the screen's canvas
 // changed (a frame's resolution), or to the mutation of xterm.js's rows.
 import { execFileSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium, type Page } from 'playwright-core';
 import { startServer } from '../../tools/serve.ts';
 import { unattendedQuery } from '../../tests/debian-unattended.ts';
 
 const server = await startServer();
 const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
+const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium', args: process.env.CHROMIUM_ARGS?.split(' ').filter(Boolean) ?? [] });
 const KEYS = 40;
 
 type W = { __lit?: number; __keys: number[]; __k: { t0: number; base: number } | null; __what: 'screen' | 'terminal' | null };
 
 async function run(extra: string) {
   const page: Page = await (await browser.newContext({ viewport: { width: 1400, height: 900 } })).newPage();
+  const consoleLines: string[] = []; // what says which screen ran (the 2D presenter's WebGL2 or 2D context, the GPU worker's)
+  page.on('console', (m) => { if (/screen|webgl|renderer/i.test(m.text())) consoleLines.push(m.text().slice(0, 200)); });
   // The first lit pixel: the screen's canvas sampled every 100 ms from the page's load.
   await page.addInitScript(() => {
     const w = window as never as W;
@@ -35,7 +39,7 @@ async function run(extra: string) {
       for (let i = 0; i < d.length; i += 4) if (d[i] | d[i + 1] | d[i + 2]) { w.__lit = performance.now(); clearInterval(timer); return; }
     }, 100);
   });
-  await page.goto(`${base}/web/app/?ncpus=4&view=both&gpu=2d&${extra}&${unattendedQuery()}`); // virtio-gpu 2D (G1's measurement)
+  await page.goto(`${base}/web/app/?ncpus=4&view=both&${extra}&${unattendedQuery()}`);
   await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 240_000, polling: 100 });
   const runningMs = await page.evaluate(() => performance.now());
   const shows = (re: RegExp) => page.waitForFunction((s) => new RegExp(s).test(document.querySelector('.xterm-rows')?.textContent ?? ''), re.source, { timeout: 60_000, polling: 100 });
@@ -79,8 +83,13 @@ async function run(extra: string) {
   };
   const screen = await keys('screen');
   const terminal = await keys('terminal');
+  const gpu = await page.evaluate(() => {
+    const gl = new OffscreenCanvas(1, 1).getContext('webgl2');
+    const ext = gl?.getExtension('WEBGL_debug_renderer_info');
+    return gl ? String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER)) : null;
+  });
   await page.close();
-  return { firstLit, running: runningMs, screen, terminal };
+  return { firstLit, running: runningMs, screen, terminal, gpu, console: consoleLines };
 }
 
 const stat = (xs: number[]) => {
@@ -88,10 +97,14 @@ const stat = (xs: number[]) => {
   const q = (p: number) => s[Math.min(s.length - 1, Math.floor(s.length * p))];
   return { n: s.length, median: +q(0.5).toFixed(1), q1: +q(0.25).toFixed(1), q3: +q(0.75).toFixed(1) };
 };
-const rounds = Number(process.argv[3] ?? 2);
+// `<out.json> [rounds]`, or sway-mac.sh's `<disk> <outdir>` (ROUNDS from the environment; the disk is the page's own).
+const macForm = !!process.argv[3] && !/^\d+$/.test(process.argv[3]);
+const outFile = macForm ? `${process.argv[3]}/page.json` : process.argv[2];
+if (macForm) mkdirSync(process.argv[3], { recursive: true });
+const rounds = Number((macForm ? process.env.ROUNDS : process.argv[3]) ?? 2);
 // WAARM64_PAGE_CONFIGS='name=query name=query': other configurations than the two (an experiment's).
-const CONFIGS: string[][] = process.env.WAARM64_PAGE_CONFIGS ? process.env.WAARM64_PAGE_CONFIGS.split(' ').map((c) => [c.slice(0, c.indexOf('=')), c.slice(c.indexOf('=') + 1)]) : [['gpu', ''], ['simple', 'display=simple']];
-const runs: { config: string; firstLit: number | null; running: number; screen: number[]; terminal: number[] }[] = [];
+const CONFIGS: string[][] = process.env.WAARM64_PAGE_CONFIGS ? process.env.WAARM64_PAGE_CONFIGS.split(' ').map((c) => [c.slice(0, c.indexOf('=')), c.slice(c.indexOf('=') + 1)]) : [['gpu3d', 'gpu=virgl'], ['gpu2d', 'gpu=2d'], ['gpu2dc', 'gpu=2d,canvas2d'], ['simple', 'gpu=2d&display=simple']];
+const runs: { config: string; firstLit: number | null; running: number; screen: number[]; terminal: number[]; gpu: string | null; console: string[] }[] = [];
 for (let r = 0; r < rounds; r++) {
   for (const [config, extra] of CONFIGS) {
     const x = await run(extra);
@@ -101,7 +114,7 @@ for (let r = 0; r < rounds; r++) {
 }
 const out = {
   date: new Date().toISOString(), chromium: browser.version(), host: `${execFileSync('uname', ['-srm']).toString().trim()}`,
-  commit: execFileSync('git', ['rev-parse', '--short', 'HEAD']).toString().trim(),
+  commit: (() => { try { return execFileSync('git', ['rev-parse', '--short', 'HEAD'], { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch { return null; } })(), // none in the Mac's copy
   summary: Object.fromEntries(CONFIGS.map(([c]) => {
     const mine = runs.filter((x) => x.config === c);
     return [c, { firstLitS: mine.map((x) => x.firstLit && +(x.firstLit / 1000).toFixed(1)), runningS: mine.map((x) => +(x.running / 1000).toFixed(1)), screenMs: stat(mine.flatMap((x) => x.screen)), terminalMs: stat(mine.flatMap((x) => x.terminal)) }];
@@ -109,6 +122,6 @@ const out = {
   runs,
 };
 console.log(JSON.stringify(out.summary));
-if (process.argv[2]) writeFileSync(process.argv[2], JSON.stringify(out, null, 1) + '\n');
+if (outFile) writeFileSync(outFile, JSON.stringify(out, null, 1) + '\n');
 await browser.close();
 server.close();

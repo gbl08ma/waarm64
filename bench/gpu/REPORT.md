@@ -510,3 +510,43 @@ depth-stencil point emptied before it's attached, the other point left on, the s
 not compared, the screen binding past the renderer, a blend color's sign lost, the draw buffers' count not compared, an
 attribute's offset not compared, a forget's programs kept (the bound shader's and every object's).
 Its commit passed `scripts/ci.sh`, `ci-graphics.sh` and `ci-deqp.sh`.
+
+## PERF loop 87: a key's glyph on each screen, today (2026-11-28)
+
+[#57](https://github.com/gbl08ma/waarm64/issues/57) (G1 exit, above: the virtio-gpu screen ~13 ms later than the
+simple framebuffer, the nested device worker's draws outside animation frames the suspect) measured again on today's
+tree (de23ab7f), on the dev VM and on the Mac's GPU. **Which thread draws what today:** a 3D machine's screen (the
+default wherever the browser has WebGL2, the console's scanouts too) is the page's top-level GPU worker's
+(`web/virgl-screen.ts`, once per animation frame); a 2D machine's (`?gpu=2d`, or the Machine menu's 2D) is still the
+device worker's, nested in the machine worker with no `requestAnimationFrame` (`web/gpu-present.ts`
+`canvasPresenter`: a damage a frame after the last draw is drawn at once, else on a timer; WebGL2 on a GPU, a 2D
+context on software GL); the simple framebuffer's is the machine worker's (`web/display.ts`, its animation frames).
+
+`node bench/gpu/page.ts` (the G1 instrument: a key's `keydown` to the first page animation frame that sees the
+canvas changed, so a frame's resolution; Debian's bash on tty1, 4 vCPUs, the Both view), now with the arms `gpu3d`
+(`?gpu=virgl`), `gpu2d` (`?gpu=2d`), `gpu2dc` (`?gpu=2d,canvas2d`, the Mac only) and `simple` (`?gpu=2d&display=simple`),
+two rounds alternating, 40 keys an arm a round; on the Mac through `SCRIPT=page.ts bench/gpu/sway-mac.sh -
+target/images/debian/disk.qcow2 <name>`. Key to glyph on the screen, ms, median (quartiles), n:
+
+| | gpu3d (GPU worker) | gpu2d (device worker) | gpu2dc (device worker, 2D context) | simple (machine worker) |
+|---|---|---|---|---|
+| dev VM, Chromium 155.0.8059.84, SwiftShader (`results/perf87/vm-page.json`) | 28.6 (23.3–35.1), 80 | 26.2 (20.9–32.6), 80 (a 2D context: software GL) | | 36.8 (31.7–40.8), 74 |
+| Mac (M4, ANGLE on Metal), Chrome for Testing 158.0.8127.88, macOS 26.6.2 (`results/perf87/mac-page.json`) | 27.7 (19.0–33.2), 80 | 27.3 (19.9–41.0), 80 (WebGL2) | 29.4 (21.0–41.4), 80 | 34.8 (32.4–39.5), 76 |
+
+Per round (medians): VM gpu3d 29.2 / 28.0, gpu2d 24.1 / 27.2, simple 36.8 / 36.8; Mac gpu3d 25.5 / 28.8,
+gpu2d 26.8 / 28.2, gpu2dc 30.0 / 29.3, simple 36.3 / 34.5. The serial terminal: 7.2-7.3 ms on the VM, 3.9-4.1 on the
+Mac, every arm. A first Mac session (the same tree, three arms, its JSON lost to the harness's `git` call in the
+Mac's copy, now caught) gave the same picture: gpu3d 26.7 / 24.2, gpu2d 25.3 / 28.7, simple 34.6 / 35.8.
+
+- **The gap is gone, and the other way round**: both virtio-gpu screens show a key ~7-10 ms *earlier* than the simple
+  framebuffer, on both hosts, every round (the rounds don't overlap). The simple framebuffer waits for the machine
+  worker's next animation frame and its scan; the 2D presenter draws a key's lone damage at once in the flush's task.
+  So drawing outside animation frames costs a 2D machine nothing at the median. What made October's 52.8 against
+  39.2 ms isn't identified (the presenter's draw-at-once rule was already there; Chromium was 153 then): not
+  re-measurable on that tree's browser, and nothing of it is left to fix.
+- **The 2D screen's upper quartile on the Mac is ~8 ms above the 3D screen's** (41.0 / 41.4 against 33.2), the
+  medians equal: under a frame of the instrument, WebGL2 and the 2D context alike, so it is the worker's commit
+  outside a frame being shown a frame later some of the time, not the context. A 2D machine on a GPU is the user's
+  choice (3D is the default there), so a device worker with animation frames (made by the page, a redesign of the
+  machine worker's start and every device's plumbing) isn't justified by a quarter of keys a frame later on a
+  non-default path. Not built; #57 closed.

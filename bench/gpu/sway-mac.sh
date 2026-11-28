@@ -23,7 +23,7 @@ rsync -a --delete --exclude results bench/gpu bench/audio bench/video bench/vulk
 ssh "$HOST" "mkdir -p $DEST/bench" && rsync -a bench/procstat.ts bench/mac "$HOST:$DEST/bench/" && ssh "$HOST" "cd $DEST && { [ procstat -nt bench/mac/procstat.c ] || cc -O2 -Wall -o procstat bench/mac/procstat.c; }"   # the counters' helper (bench/procstat.ts)
 rsync -a bench/snapshot-start.ts "$HOST:$DEST/bench/"   # guest-session.ts imports it and bench/mem/probe.ts
 rsync -a --delete web "$HOST:$DEST/"
-ssh "$HOST" "mkdir -p $DEST/tests" && rsync -a tests/page-ask.ts "$HOST:$DEST/tests/"   # guest-session.ts answers the page's dialogs with it
+ssh "$HOST" "mkdir -p $DEST/tests" && rsync -a tests/page-ask.ts tests/debian-unattended.ts "$HOST:$DEST/tests/"   # guest-session.ts answers the page's dialogs with it; page.ts boots Debian unattended
 # The dev server (Vite: tools/serve.ts) and the packages, installed there (bench/mac-packages.sh).
 . bench/mac-packages.sh && mac_packages "$HOST" "$DEST"
 . bench/mac-chrome.sh && mac_chrome "$HOST"   # the current Stable Chrome for Testing there

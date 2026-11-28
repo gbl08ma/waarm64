@@ -2130,13 +2130,14 @@ On the terminal the rest is the guest (key to echo in the TX ring: ~3 ms on Buil
 Debian) and the page (~2 ms to xterm.js's DOM). On the screen it's the guest's fbcon drawing plus
 up to a frame until the next draw.
 
-With Debian's screen on virtio-gpu (`node bench/gpu/page.ts`, 2026-10-02, another instrument for the screen: the page
-reads the canvas back, so its numbers compare with each other only; bench/gpu/REPORT.md "G1 exit"): the terminal is
-where it was (10.8 ms; 11.6 with `?display=simple`), the screen takes 52.8 ms against the simple framebuffer's 39.2.
-The device isn't the difference (the guest's flush arrives 12 ms after the key and is drawn within 1 ms); what
-happens to a canvas drawn in the device worker after that is [#57](https://github.com/gbl08ma/waarm64/issues/57). The first pixel is on the screen
-7.5 s after the page's load (EDK2's graphics output) instead of 18.7 s (the kernel's console), and `running` comes
-at the same ~52 s.
+Debian's screen on each path (`node bench/gpu/page.ts`, another instrument for the screen: the page reads the canvas
+back at its animation frames, so its numbers compare with each other only; bench/gpu/REPORT.md "PERF loop 87",
+2026-11-28, medians of 80 keys): the 3D machine's screen (the GPU worker) 28.6 ms on the dev VM and 27.7 on the Mac, a
+2D machine's (the device worker's presenter) 26.2 and 27.3, the simple framebuffer 36.8 and 34.8 (it waits for the
+machine worker's next frame; the presenter draws a key's damage at once). The terminal: 7.3 ms on the VM, 4 on the
+Mac. G1's numbers (2026-10-02, the screen 52.8 ms on virtio-gpu against the simple framebuffer's 39.2) no longer
+hold. The first pixel is on the screen ~1 s after the page's load (EDK2's graphics output) instead of ~13 s (the
+kernel's console), and `running` comes at the same ~20-24 s.
 
 ## The serial terminal
 
