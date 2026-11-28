@@ -9500,3 +9500,53 @@ on the Mac (`results/perf90/ab/`, Chrome for Testing 158.0.8127.88, 12 pairs eac
 No difference.
 
 CI: `scripts/ci.sh` (758 s) and `scripts/ci-jit.sh` (282 s) passed at this commit.
+
+## PERF loop 92: late-compiled successors, SP's alignment guard and `refresh`'s stores, counted (2026-11-28)
+
+Queue row 25: three small costs, each counted before anything is built. **All three close as findings; nothing
+kept.** Tree 5e1e1700; M4, macOS, Chrome for Testing 158.0.8127.88, the Mac's Node 26.10.0. Data:
+`bench/boot/results/perf92/` (its README). The counts are a diagnostic core's (`diag.patch`): the gates in the dev
+VM's Node (`preempt-counts.json`) and one Firefox pages session on the Mac (`pages-diag/`: 97.3 G steps, 442 busy
+MIPS, ~220 busy vCPU-seconds).
+
+**1. A static successor compiled after its block, through the jump cache** (`emit::via_jc` with a key). Per 1000
+steps, hits / fall-throughs: Alpine's boot 2.95 / 0.33, the userspace gate 4.57 / 0.13, parallel boot on 4 vCPUs
+2.61 / 0.44, parallel userspace 6.30 / 0.07; **the pages session 3.31 / 0.21 (322 M hits, 20.6 M fall-throughs)**,
+half PERF loop 54's 6.3 with 16-block regions. What a reserved table slot (`i32.const slot; return_call_indirect`)
+would save a hit, `chain3.mjs` on the Mac (ns an entry, four runs of each, every kind's memory written alike): at
+1,000 functions the jump cache's tail 8.6-10.3 against the constant index's 4.7-5.1 (+3.5-5.5 ns), at 32,768 35-38
+against 24-28, at 131,072 95-99 against 78-85 (+12-18 ns); with the entry at a constant address (no load of the JC
+pointer) 8.0-8.1, 27 and 91-92: the cost is the entry's load ahead of the index, not the pointer's. **The bound:**
+322 M hits at 4 ns (a warm entry) is 1.3 s, 0.6% of busy time; at 13 ns (an entry missing every cache) 1.9%; the fall-throughs could gain only where the successor was compiled by then (PERF loop 54's dispatcher count
+bounds those, ≤0.55%). The micro-benchmark's bodies are ~20 instructions, so it shows the tail's latency more than
+a 64-block region's exit does: the gain is nearer the low end. **Not built:** a slot named before its block is
+compiled needs a reservation per key that outlives the block (kept while any tail names it, reset to a stub on
+invalidation and flushes, the chain graph's bookkeeping the jump cache spares today), a stub of the tail's type in
+every table at every reserved index (a host ABI change), and polled code only: counted code checks `left` against
+the successor's length, which the slot doesn't carry, and round-robin's code stays byte for byte. So `node` (counted)
+can't rank it and the pages session resolves ~1%: a redesign for ~0.5% that no measure here can see. (The miss in
+`chain3.mjs`: one write to a wasm memory whose pages the bodies read but never wrote moved `indirect` from 5 to
+22 ns in the dev VM; its kinds now write the same memory.)
+
+**2. SP's alignment guard on a probe** (`emit::guard`'s `Guard::Sp`, five wasm ops ANDed into the TLB's tag
+compare). Per 1000 steps, probes with SP's guard / all probes: the gates 37-50 / 185-294; **the pages session 59.4
+/ 238 (25%)**; of SP's, 21.6 (36%) have the form a two-op fold can take (the address SP + 16k, the access within 16
+bytes: `((ADDR | 0xff0) + 15) == tag` checks both page and alignment). **The bound, the guard dropped outright**
+(unsound, a measurement core): Alpine's boot's 300 modules −0.43% wasm (11.77 → 11.72 MB), per TurboFan function
+**arm64 −0.5% instructions** (−0.5% code bytes, −0.6% frame memory operands) and **x64 −1.1%** (−0.9%, −0.5%)
+(`codestats-nosp.json`); the paired A/B on `node` (`ab-nosp/`, 10 pairs): **wall −0.35% [−0.69%, −0.01%] `LOWER`**,
+cycles −0.35%, instructions −0.38%, emit −0.6%, the JIT's wasm −0.3%, modules and interpreted steps the same. A
+sound fold gets part of that: it covers 36% of the SP probes and puts back two ops of its own, ~0.1-0.2%. And the
+two-op fold isn't sound as it stands: an SP misaligned by one in the top page wraps `(Y | 0xff0) + 15` to 0, an
+empty TLB entry's tag (the default 0) at that index; the XOR and add-after forms collide with spill memory 1's tag
+(bits 10:3 inverted, 0xff7) at a misalignment of 8. It would need the TLB's empty tag moved off zero. Not built.
+
+**3. `Vm::refresh` storing every vCPU's IRQ byte** (a SeqCst swap of each, under the platform lock). The pages
+session: 2.46 M refreshes (~11,400 a second), 9.85 M swaps, 1.15 M (11.7%) changing the byte; the parallel gates
+~16,000 refreshes a second, 9-11% changing. What a swap of an unchanged byte other cores read costs against a load
+first (`swap.c` on the Mac, three readers spinning on their bytes, one writer): 84 ns a refresh of four bytes against
+2-4, the readers' loads unchanged at a refresh every 20 µs (48.97 M/s both ways; −1% at every 2 µs, far above the
+real rate). **The bound:** 2.46 M × ~80 ns = 0.2 s, 0.09% of busy time: under the floor; not built.
+
+Memory: none (nothing kept). Compiled code unchanged (no kept code: the x64 counts above are the bound's). No CI:
+the loop changes only docs, REPORTs and results.

@@ -1,0 +1,8 @@
+mode 0 (swap): 3 readers, a refresh every 2000 ns: 84.6 ns a refresh (1437139), readers' loads 48.48 M/s
+mode 1 (load first): 3 readers, a refresh every 2000 ns: 3.4 ns a refresh (1496716), readers' loads 48.97 M/s
+mode 0 (swap): 3 readers, a refresh every 20000 ns: 83.3 ns a refresh (149364), readers' loads 48.97 M/s
+mode 1 (load first): 3 readers, a refresh every 20000 ns: 1.9 ns a refresh (149966), readers' loads 48.97 M/s
+mode 0 (swap): 3 readers, a refresh every 2000 ns: 84.7 ns a refresh (1435776), readers' loads 48.96 M/s
+mode 1 (load first): 3 readers, a refresh every 2000 ns: 3.6 ns a refresh (1496643), readers' loads 48.97 M/s
+mode 0 (swap): 3 readers, a refresh every 20000 ns: 83.3 ns a refresh (149365), readers' loads 48.97 M/s
+mode 1 (load first): 3 readers, a refresh every 20000 ns: 1.7 ns a refresh (149964), readers' loads 48.97 M/s

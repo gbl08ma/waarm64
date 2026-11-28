@@ -1,0 +1,200 @@
+diff --git a/bench/boot/preempt-counts.ts b/bench/boot/preempt-counts.ts
+index 0c15922b..937a78df 100644
+--- a/bench/boot/preempt-counts.ts
++++ b/bench/boot/preempt-counts.ts
+@@ -21,7 +21,7 @@ import { DISTROS } from '../../web/test-guests.ts';
+ /** core/src/tally.rs's slots. */
+ const JIT = ['back-edge', 'forward edge', 'transfer cache hit', 'miss function', 'jump cache hit (MMU off)', 'chain back', 'chain fwd', 'chain via jc back', 'chain via jc fwd', 'by-VA link back', 'by-VA link fwd', 'host call', 'host return', 'poll (polled code)', 'Resync done in place', 'exception in place'];
+ const END = ['budget', 'early (stop word, park)', 'Resync (ISB/DSB/ERET/unmask)', 'Invalidate (IC)', 'WFI', 'WFE', 'SEV', 'TLBI IS', 'HVC', 'counter read', 'platform (timer/GIC regs)', 'device (MMIO)', 'SVC', 'exception', 'other'];
+-const N = 80, END_AT = 16, END_STEPS = 32, BETWEEN = 31, BETWEEN_NS = 47, TIMER_LATE = 48, IRQ_LATE = 54, IRQ_HIST = 60, TIMER_SET = 64, IRQS = 67, PLATFORM_BY = 68, TIMER_ACC = 72;
++const N = 96, END_AT = 16, END_STEPS = 32, BETWEEN = 31, BETWEEN_NS = 47, TIMER_LATE = 48, IRQ_LATE = 54, IRQ_HIST = 60, TIMER_SET = 64, IRQS = 67, PLATFORM_BY = 68, TIMER_ACC = 72;
+ 
+ type Tallies = number[];
+ type Phase = { name: string; steps: number; t: Tallies };
+@@ -69,6 +69,8 @@ function print(r: Run) {
+   const rows: [string, number, Tallies][] = [['all', r.steps, r.t], ...r.phases.map((p) => [p.name, p.steps, p.t] as [string, number, Tallies])];
+   console.log(`${'per 1000 steps'.padEnd(24)} ${rows.map(([n]) => n.slice(0, 9).padStart(9)).join(' ')}`);
+   JIT.forEach((n, i) => console.log(`${n.padEnd(24).slice(0, 24)} ${rows.map(([, s, t]) => ((1000 * t[i]) / s).toFixed(3).padStart(9)).join(' ')}`));
++  [[80, 'p92 jc chain miss'], [81, 'p92 probe SP'], [82, 'p92 probe all'], [83, 'p92 probe SP c0'], [88, 'p92 refresh'], [89, 'p92 refresh swaps'], [90, 'p92 refresh changed']].forEach(([i, n]) => console.log(`${(n as string).padEnd(24)} ${rows.map(([, s, t]) => ((1000 * t[i as number]) / s).toFixed(4).padStart(9)).join(' ')}`));
++  console.log(`p92 refresh a second: ${(r.t[88] / (r.ms / 1000)).toFixed(0)}`);
+   const chunks = END.reduce((s, _, k) => s + r.t[END_AT + k], 0);
+   console.log(`chunks: ${chunks} (${(r.steps / chunks).toFixed(0)} steps each); by how they ended: count, share, mean steps`);
+   END.forEach((n, k) => {
+diff --git a/core/src/jit/emit.rs b/core/src/jit/emit.rs
+index e1dfb0e5..38804b31 100644
+--- a/core/src/jit/emit.rs
++++ b/core/src/jit/emit.rs
+@@ -2275,6 +2275,31 @@ pub fn via_jc(
+     }
+     transfer(c, x, len, ty, To::Load(JCE, 8), 1);
+     c.end();
++    if key.is_some() {
++        dbump(c, crate::tally::JC_CHAIN_MISS);
++    }
++}
++
++/// PERF loop 92 (diag only): tallies a probe about to run (`guards` its guards, `len` its span).
++fn dprobe(c: &mut Func, guards: &[Guard], len: u32) {
++    #[cfg(feature = "diag")]
++    {
++        dbump(c, crate::tally::PROBE_ALL);
++        if guards.contains(&Guard::Sp) {
++            dbump(c, crate::tally::PROBE_SP);
++            let o = (offset_of!(Vcpu, diag) + 8 * crate::tally::PROBE_SP_C0 as usize) as u32;
++            c.local_get(VCPU).local_get(VCPU).i64_load(o);
++            if len <= 16 {
++                c.local_get(ADDR).local_get(BASE).op(SUB + W);
++                c.i64_const(15).i64_and().op(EQZ + WC).op(0xad);
++            } else {
++                c.i64_const(0);
++            }
++            c.i64_add().i64_store(o);
++        }
++    }
++    #[cfg(not(feature = "diag"))]
++    let _ = (c, guards, len);
+ }
+ 
+ /// Pushes an i32 that is non-zero iff X30 is the entry PC + `off`: a return
+@@ -3637,6 +3662,7 @@ fn access(
+             base
+         }
+         Bus::Tlb { read } => {
++            dprobe(c, guards, len);
+             let arr = read + if write { 16 } else { 0 };
+             c.local_get(ADDR);
+             tlb_entry(c);
+@@ -3752,10 +3778,11 @@ fn lead(
+     c.vzx = vz;
+     c.chain_open(written | vw);
+     let arr = read + if write { 16 } else { 0 };
+-    c.local_get(ADDR);
+     if lo != 0 {
+-        c.i64_const(lo).i64_add().local_tee(ADDR);
++        c.local_get(ADDR).i64_const(lo).i64_add().local_set(ADDR);
+     }
++    dprobe(c, guards, span);
++    c.local_get(ADDR);
+     tlb_entry(c);
+     c.i64_load(arr).local_get(ADDR);
+     c.i64_const(span as i64 - 1).i64_add();
+diff --git a/core/src/tally.rs b/core/src/tally.rs
+index 16a02593..af366ae2 100644
+--- a/core/src/tally.rs
++++ b/core/src/tally.rs
+@@ -9,7 +9,22 @@
+ //! IRQ), and round-robin's timer reprogramming ([`TIMER_SET`]).
+ 
+ /// Words in each table.
+-pub const N: usize = 80;
++pub const N: usize = 96;
++/// PERF loop 92 (temporary): compiled code's extra tallies, published like the JIT's, from here to [`P92_CORE`].
++pub const P92: usize = 80;
++/// A static chain through the jump cache (a successor compiled after the block) that fell through (missed).
++pub const JC_CHAIN_MISS: u32 = 80;
++/// A TLB probe with SP's alignment guard (an access off SP), run.
++pub const PROBE_SP: u32 = 81;
++/// Every TLB probe of a load or store (`access`'s and a group leader's), run.
++pub const PROBE_ALL: u32 = 82;
++/// The same as [`PROBE_SP`], the guard's constant (the probe's address less SP) 0 mod 16 and the span within 16.
++pub const PROBE_SP_C0: u32 = 83;
++/// Core-side, from here: `Vm::refresh` calls (parallel), every vCPU's swap, swaps that changed the byte.
++pub const P92_CORE: usize = 88;
++pub const REFRESH: usize = 88;
++pub const REFRESH_SWAPS: usize = 89;
++pub const REFRESH_CHANGED: usize = 90;
+ 
+ /// A region's loop back-edge taken (a `br` to the head's `loop`).
+ pub const BACK_EDGE: u32 = 0;
+diff --git a/core/src/vm.rs b/core/src/vm.rs
+index 815b35dc..8ffca31f 100644
+--- a/core/src/vm.rs
++++ b/core/src/vm.rs
+@@ -1328,11 +1328,13 @@ impl Vm {
+             publish_jit(c, &j.table.stats());
+         }
+         #[cfg(feature = "diag")]
+-        for (i, a) in c.diag[..crate::tally::JIT_SLOTS].iter().enumerate() {
+-            a.store(
+-                self.vcpus.iter().map(|v| v.diag[i]).sum(),
+-                Ordering::Relaxed,
+-            );
++        for (i, a) in c.diag.iter().enumerate() {
++            if i < crate::tally::JIT_SLOTS || (crate::tally::P92..crate::tally::P92_CORE).contains(&i) {
++                a.store(
++                    self.vcpus.iter().map(|v| v.diag[i]).sum(),
++                    Ordering::Relaxed,
++                );
++            }
+         }
+     }
+ 
+diff --git a/core/src/vm/parallel.rs b/core/src/vm/parallel.rs
+index 1b53aaf3..e80b0242 100644
+--- a/core/src/vm/parallel.rs
++++ b/core/src/vm/parallel.rs
+@@ -821,10 +821,20 @@ impl Vm {
+     /// lines and publishes every vCPU's IRQ line, waking those it raised.
+     fn refresh(&self, pl: &mut Platform) {
+         spis(pl, &self.shared);
++        #[cfg(feature = "diag")]
++        {
++            let d = &self.shared.cpus[0].counters.diag;
++            crate::tally::add(d, crate::tally::REFRESH, 1);
++            crate::tally::add(d, crate::tally::REFRESH_SWAPS, self.shared.cpus.len() as u64);
++        }
+         for (i, s) in self.shared.cpus.iter().enumerate() {
+             let on = pl.gic.irq(i);
+             let was = s.par.irq.swap(on, Ordering::SeqCst);
+             #[cfg(feature = "diag")]
++            if was != on {
++                crate::tally::add(&self.shared.cpus[0].counters.diag, crate::tally::REFRESH_CHANGED, 1);
++            }
++            #[cfg(feature = "diag")]
+             if was != on {
+                 let t = if on { self.ns().max(1) } else { 0 };
+                 s.counters.diag[crate::tally::IRQ_STAMP].store(t, Ordering::Relaxed);
+@@ -1204,5 +1214,9 @@ impl Vm {
+         for (a, &x) in k.diag.iter().zip(&v.diag[..crate::tally::JIT_SLOTS]) {
+             a.store(x, Ordering::Relaxed);
+         }
++        #[cfg(feature = "diag")]
++        for i in crate::tally::P92..crate::tally::P92_CORE {
++            k.diag[i].store(v.diag[i], Ordering::Relaxed);
++        }
+     }
+ }
+diff --git a/web/counters.ts b/web/counters.ts
+index b5a8fd0e..0c0e782f 100644
+--- a/web/counters.ts
++++ b/web/counters.ts
+@@ -185,6 +185,7 @@ export function stats(n: (i: number) => number) {
+       lockSkipped: n(Counter.JIT_LOCK_SKIPPED),
+       pruneNs: n(Counter.JIT_PRUNE_NS),
+       mapRescues: n(Counter.JIT_MAP_RESCUES),
++      diag: Array.from({ length: 96 }, (_, k) => n(Counter.LEN + k)),
+     },
+     par: {
+       dsbWaits: n(Counter.PAR_DSB_WAITS),
+diff --git a/web/vm.ts b/web/vm.ts
+index 4f82e15b..ea28d9a7 100644
+--- a/web/vm.ts
++++ b/web/vm.ts
+@@ -698,7 +698,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
+   const counters = blocks[0];
+   /** Counter `i` summed over the vCPUs' blocks (round-robin counts everything in block 0). */
+   const counter = (i: number) =>
+-    blocks.reduce((sum, b) => sum + Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN), i)), 0);
++    blocks.reduce((sum, b) => sum + Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN + 96), i)), 0);
+   const fbPa = Number(ex.vm_framebuffer(vm));
+   /** The round-robin exit's record (`run`), a view made again once the memory grew (its buffer is a new one). */
+   let exitAt: number | undefined;
+@@ -1002,7 +1002,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
+     deviceIo: () => io,
+     /** The same for each vCPU's own block (parallel mode; round-robin counts everything in vCPU 0's). */
+     cpuStats: () =>
+-      blocks.map((b) => stats((i) => Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN), i)))),
++      blocks.map((b) => stats((i) => Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN + 96), i)))),
+     /** The JIT's helper calls by instruction class, most frequent first (ABI 18; empty without a JIT). */
+     helperReport: () => helperReport(ex, memory, ex.vm_cpu(vm, 0)),
+     /**

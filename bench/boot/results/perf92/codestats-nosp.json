@@ -1,0 +1,49 @@
+{
+ "date": "2026-11-28T06:03:19.618Z",
+ "node": "v26.7.0",
+ "v8": "14.6.202.34-node.28",
+ "flags": [
+  "--no-liftoff",
+  "--no-wasm-lazy-compilation",
+  "--single-threaded",
+  "--print-wasm-code"
+ ],
+ "sets": [
+  "bench/results/local/p92/mods-base",
+  "bench/results/local/p92/mods-nosp"
+ ],
+ "results": {
+  "arm64": {
+   "bench/results/local/p92/mods-base": {
+    "functions": 6070,
+    "insns": 7646057,
+    "bytes": 29066772,
+    "slots": 93196,
+    "frame": 1380373
+   },
+   "bench/results/local/p92/mods-nosp": {
+    "functions": 6070,
+    "insns": 7610067,
+    "bytes": 28923776,
+    "slots": 92890,
+    "frame": 1372708
+   }
+  },
+  "x64": {
+   "bench/results/local/p92/mods-base": {
+    "functions": 6070,
+    "insns": 6046738,
+    "bytes": 26644264,
+    "slots": 81452,
+    "frame": 1248069
+   },
+   "bench/results/local/p92/mods-nosp": {
+    "functions": 6070,
+    "insns": 5982226,
+    "bytes": 26398184,
+    "slots": 81066,
+    "frame": 1241315
+   }
+  }
+ }
+}

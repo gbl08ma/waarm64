@@ -1,0 +1,25 @@
+node pair 1: nosp 9191, base 9242 ms (1447 s left)
+node pair 2: nosp 9216, base 9280 ms (1394 s left)
+node pair 3: nosp 9290, base 9294 ms (1341 s left)
+node pair 4: base 9281, nosp 9283 ms (1288 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  nosp             4 -0.31% [-2.11%, +1.52%] open         -0.20% [-0.79%, +0.39%] open         -0.34% [-0.66%, -0.01%] LOWER        -0.23% [-0.76%, +0.31%] open        
+node pair 5: base 9276, nosp 9258 ms (1235 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  nosp             5 -0.29% [-1.29%, +0.72%] open         -0.24% [-0.67%, +0.19%] open         -0.36% [-0.61%, -0.11%] LOWER        -0.27% [-0.72%, +0.17%] open        
+node pair 6: nosp 9432, base 9492 ms (1181 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  nosp             6 -0.35% [-1.10%, +0.41%] open         -0.28% [-0.68%, +0.11%] open         -0.37% [-0.54%, -0.20%] LOWER        -0.31% [-0.67%, +0.06%] open        
+node pair 7: base 9477, nosp 9458 ms (1127 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  nosp             7 -0.33% [-0.90%, +0.25%] open         -0.29% [-0.59%, +0.00%] open         -0.37% [-0.50%, -0.24%] LOWER        -0.32% [-0.59%, -0.04%] LOWER       
+node pair 8: base 9492, nosp 9451 ms (1073 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  nosp             8 -0.34% [-0.80%, +0.12%] open         -0.33% [-0.62%, -0.04%] LOWER        -0.38% [-0.48%, -0.27%] LOWER        -0.35% [-0.63%, -0.07%] LOWER       
+node pair 9: nosp 9447, base 9474 ms (1018 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  nosp             9 -0.33% [-0.72%, +0.05%] open         -0.34% [-0.59%, -0.09%] LOWER        -0.38% [-0.46%, -0.29%] LOWER        -0.35% [-0.58%, -0.12%] LOWER       
+node pair 10: nosp 9439, base 9490 ms (964 s left)
+node: decided, no longer run: nosp
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  nosp            10 -0.35% [-0.69%, -0.01%] LOWER        -0.35% [-0.57%, -0.13%] LOWER        -0.38% [-0.45%, -0.30%] LOWER        -0.35% [-0.55%, -0.16%] LOWER       

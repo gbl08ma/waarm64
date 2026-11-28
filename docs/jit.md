@@ -314,7 +314,8 @@ the interpreter's own code.
   case: blocks compile in hotness order), and with the MMU off every BR/BLR/RET target (its PC is
   its key), is probed in the jump cache from wasm and tail-called with `return_call_indirect` on a
   hit that fits `left`. The jump cache only holds compiled blocks and is cleared by invalidation
-  and flushes, so these links need no bookkeeping.
+  and flushes, so these links need no bookkeeping. In Firefox's pages session 3.3 such hits a 1000 steps and 0.2
+  fall-throughs (PERF loop 92; a slot reserved for the successor instead: [Tried and not kept](#tried-and-not-kept)).
 - **Indirect transfers** (MMU on: BR, BLR, RET and the by-VA links, 25 to 55 per 1000
   instructions in user space) probe the vCPU's **transfer cache** (`mmu::Tlb::xc`, QEMU's
   `tb_jmp_cache`): 16,384 direct-mapped entries by VA bits 15:2 of {VA | regime bits, table index
@@ -1806,6 +1807,19 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   more stutter; no variant removed the share's drop without adding stalls, so none was kept. V8's own routes
   (`--no-wasm-lazy-compilation`, the compilation-priority section) aren't open to a page. Untried: a budget per module
   (the entries likely hot), a second worker (doubted by the user).
+- **A late-compiled successor through a reserved table slot, and SP's alignment guard folded into the tag
+  compare** (PERF loop 92, 2026-11-28; `bench/boot/REPORT.md` "PERF loop 92", `bench/boot/results/perf92/`). A
+  static successor compiled after its block is reached through the jump cache 3.3 times a 1000 steps in Firefox's
+  pages session (322 M hits; 0.2 fall-throughs); a constant table index in its place saves the entry's load ahead of
+  the index, 3.5-5.5 ns a transfer warm and 12-18 cold on the Mac (`chain3.mjs`): 0.6-1.9% of busy time at most,
+  nearer the low end in real regions. It needs a reservation per key that outlives the block (reset on invalidation
+  and flushes, the chain graph's bookkeeping), a stub in every table at every reserved index (a host ABI change), and
+  only polled code can take it (counted code checks the successor's length), so `node` can't rank it and the pages
+  session can't resolve it: not built. SP's guard (five wasm ops, on 25% of the probes there, 59 a 1000 steps) dropped
+  outright, unsound, as the bound: arm64 −0.5% and x64 −1.1% TurboFan instructions, `node` −0.35% [−0.69%, −0.01%];
+  a sound two-op fold (`((ADDR | 0xff0) + 15) == tag` for SP + 16k within 16 bytes) covers 36% of those probes, and
+  wraps to an empty entry's tag (0) for an SP misaligned by one in the top page (the add-after and XOR forms meet spill
+  memory 1's tag at a misalignment of 8): it would need the TLB's empty tag moved off zero, for ~0.1-0.2%.
 - **Fewer or cheaper entries from the dispatcher, and no signature check** (PERF loop 54, 2026-11-22;
   `bench/boot/REPORT.md` "PERF loop 54", `bench/boot/results/perf54/`): on the Mac, entries at a function's first
   instruction are 12.7% of the pages session's busy ticks. Of the dispatcher's 161 M block calls there (8% of the

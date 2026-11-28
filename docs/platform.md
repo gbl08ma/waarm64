@@ -124,7 +124,9 @@ indexes of their instance).
   through `&mut` without locking). Each vCPU drives its own timer PPIs (taking the lock only when a
   level changes; CPU_ON takes the levels from the GIC, so a line left high at CPU_OFF drops with the
   reset timer) and reads its IRQ line from an atomic that the platform code republishes after
-  every change under the lock (`Vm::refresh`, which also wakes a vCPU whose line went up). A chunk
+  every change under the lock (`Vm::refresh`, which also wakes a vCPU whose line went up; it swaps every vCPU's
+  byte, changed or not: ~11,400 refreshes a second in Firefox's pages session, 12% of the swaps changing one, ~80 ns a
+  refresh that a load first would save, 0.09% of busy time: PERF loop 92, not worth the change). A chunk
   boundary with nothing new takes no lock: the signal word, the maintenance flag, the clock, the
   timer levels, the IRQ atomic.
 - **Signals:** RX and DEVICE are taken by the first vCPU that sees them (`fetch_and`); STOP isn't
