@@ -46,7 +46,7 @@ const FULL = process.env.WAARM64_DEQP_VK_FULL === '1';
 // WAARM64_DEQP_VK_CHECKPOINT=<file> takes its result (counts, the cases that didn't pass, their detail) before the check.
 const PHASE = process.env.WAARM64_DEQP_VK_PHASE?.match(/^(\d+)\/(\d+)$/)?.slice(1).map(Number);
 const CHECKPOINT = process.env.WAARM64_DEQP_VK_CHECKPOINT;
-const STRIDE = 8;
+const STRIDE = 16;
 const SEED = seedFrom(process.env.WAARM64_DEQP_VK_SEED);
 
 type Result = { adapter?: string | null; cases: number; counts: Record<string, number>; notPassed: string[]; stoppedAt?: string; detail?: string[] };

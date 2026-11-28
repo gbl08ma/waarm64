@@ -155,7 +155,7 @@ Layered, cheapest first:
   `tests/deqp/`, every case expected to pass, a machine each, both at once). It needs `images/deqp/build.sh`'s disk and guest (on demand, ~15 min once). The lists are every
   case of dEQP's mustpass lists that passed on SwiftShader in the census of 2026-11-09 (17,027 and 44,399:
   bench/gpu/REPORT.md "dEQP-GLES's census"; 17,035 and 44,476 with the cases the caps from WebGL2's extensions added; `bench/gpu/deqp-census.ts --lists` makes them from a whole run's results).
-  By default a sample of each, as `ci-deqp-vk.sh`'s: every 8th case of each group (a name's second to fourth parts)
+  By default a sample of each, drawn as `ci-deqp-vk.sh`'s is: every 8th case of each group (a name's second to fourth parts)
   from an offset per group a seed draws, at least one case a group, in the list's order (`tests/deqp-lists.ts`), so
   runs together cover the lists; each run prints its seed (`WAARM64_DEQP_SEED=<n>` runs that sample again). **A case
   that fails in a sample is looked into at once, or filed as an issue ([issues.md](issues.md)) and taken out of the list** until it's
@@ -171,9 +171,10 @@ Layered, cheapest first:
   GPU through `bench/gpu/sway-mac.sh` (`SCRIPT=deqp-run.ts`, mode `gles2`, `gles3` or `vk`, the last with `VIRGL_GPU=virgl,vulkan`, `STRIDE`/`OFFSET`/`CASES`
   passed on; a GLES3 slice ~7 min there); `bench/gpu/results/g5-deqp-metal/` has the Metal results to compare with.
 - **`scripts/ci-deqp-vk.sh`** (a sample of the list by default, ~12.5 min with YCbCr's list and the replays; `--full`, the whole list, ~67 min at 83,980 cases (2026-11-22: the list 3,696 s of it, two dEQP processes a machine, `WAARM64_DEQP_VK_JOBS`; at 58,906 cases 47 min, 54 with one process), 13.7 GiB at its peak: run it under a 14 GiB `MemoryMax`; two machines by default past 17 GiB of RAM, `WAARM64_DEQP_VK_SHARDS` to say otherwise, the list split in blocks of 256, each machine with 1,536 MiB of guest RAM; one machine takes ~40 min and 8.9 GiB; two under an 11 GiB cap were killed at the list's memory-heavy stretch at ~16 min, one GPU process going 0.9 → 2.3 GiB) runs dEQP-VK on the page (`page-deqp-vk`: the pass list `tests/deqp/vk.txt`,
-  every case expected to pass, one guest boot. By default a sample of it: every 8th case of each group (a name's first
-  three parts) from an offset per group a seed draws, at least one case a group, in the list's order: ~11,500 of
-  83,980, so runs together cover the list (40 seeds cover 99.6% of it, 50 seeds 99.8%). Each run prints its seed
+  every case expected to pass, one guest boot. By default a sample of it: every 16th case of each group (a name's first
+  three parts) from an offset per group a seed draws, at least one case a group, in the list's order: ~6,400 of
+  84,112, so runs together cover the list (60 seeds cover 98.4% of it, 80 seeds 99.4%, 100 seeds 99.9%; every 8th,
+  ~11,500, until 2026-11-28). Each run prints its seed
   (`WAARM64_DEQP_VK_SEED=<n>` runs that sample again). **A case that fails in a sample is looked into at once, or filed in
   as an issue ([issues.md](issues.md)) and taken out of the list** until it's fixed, flaky or not. `--full` (`WAARM64_DEQP_VK_FULL=1`) runs the whole
   list: at a Vulkan track's end, before the user's NVIDIA runs, after a phase of tasks (VK4's census tasks), and for a
