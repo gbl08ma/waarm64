@@ -4,8 +4,8 @@
 
 **State (2026-11-27; commit "VK4 T50: the M4's 16 draw_index…" passed ci.sh and ci-deqp-vk.sh).** The M4's 16 `shader_draw_parameters.draw_index` cases are fixed and in `tests/deqp/vk.txt`:
 Apple's Metal compiler misreads a thread array of 33–240 u32s at word offsets not a multiple of four, and the
-translator's scratch is `array<vec4<u32>>` now (bench/vulkan/REPORT.md "VK4 T50"). Not yet reported upstream
-(Chromium's tracker, Dawn on Metal: `bench/vulkan/metal-scratch.ts` is the reproduction): the user's call.
+translator's scratch is `array<vec4<u32>>` now (bench/vulkan/REPORT.md "VK4 T50"). Reporting it upstream
+(Chromium's tracker, Dawn on Metal; `bench/vulkan/metal-scratch.ts` the reproduction) is #321.
 
 **Left** (#119's other items, each still failing on the M4 with the fix, `bench/vulkan/results/vk4/t50/fix-m4.json`):
 the D24S8/D32S8 `depth_stencil_resolve.*_testing_stencil_samplemask` (60 of 120 fail: stencil reads 255 where 1 is
