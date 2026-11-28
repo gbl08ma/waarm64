@@ -38,10 +38,9 @@ pub enum End {
 /// Hints that are NOPs here (PAC and BTI hint space, CSDB, …), MRS and the
 /// data barriers and DC ZVA don't end one, nor do the MSRs of
 /// [`crate::interp::sys::msr_continues`].
-// ponytail: still conservative for the other system instructions (other MSRs,
-// SYS, CLREX, the other DC); relax each with a profile that shows it (M6
-// loop 1 did MRS, the barriers and DC ZVA; loop 7 the MSRs above):
-// https://github.com/gbl08ma/waarm64/issues/315.
+// The other system instructions (the other MSRs, SYS, CLREX, IC, the other DC)
+// still end a block: counted in PERF loop 95, they end too few to be worth
+// continuing past (docs/jit.md "Blocks and keys").
 pub fn end(w: u32) -> End {
     end_op(decode(w), w)
 }

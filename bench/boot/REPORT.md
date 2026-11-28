@@ -9634,3 +9634,49 @@ pages session's emission −9.6%), `node` is `LOWER` past the floor and the boot
 `open` on the side of a gain. Memory: an emission holds its edges (a few
 dozen 32-byte records) while its region settles, dropped at the function's end. CI: `scripts/ci.sh` (746 s) and
 `scripts/ci-jit.sh` (282 s) passed.
+
+## PERF loop 95: block ends at the system instructions, counted (2026-11-28)
+
+Queue row 28 ([#315](https://github.com/gbl08ma/waarm64/issues/315)): JIT blocks still end at the MSRs outside
+`interp::sys::msr_continues`, SYS (TLBI, AT), CLREX, IC and the DC operations other than ZVA. **Closed as a finding:
+no class ends blocks often enough to matter; nothing relaxed, no code changed.** Tree 387a6c2a. Data:
+`bench/boot/results/perf95/` (README). The counts are a diagnostic core's (`diag.patch`: at a block's last word, a
+tally by the instruction's class and register or op, and whether the block goes on to a member of its region): the
+gates in the dev VM's Node (`preempt-counts.json`), `node` and `smp` in the dev VM's Chromium (`counts/`), one Firefox
+pages session on the Mac (`pages-diag/`, 96.4 G steps, 4 vCPUs). Only compiled code counts (94-97% of the steps).
+
+**Block ends a 1000 steps, out of the function** (to the dispatcher, a chain or an exit; the edges to a member are
+negligible but where noted):
+
+| | `boot` | `user` | `node` | `smp` (4 vCPUs) | pages (Mac) |
+|---|---|---|---|---|---|
+| MSR ICC_EOIR1, SGI1R (the GIC: an exit anyway) | 0.0155 | 0.0159 | 0.0158 | 0.0037 | 0.0076 |
+| MSR TTBR0/1 (the regime) | 0.0030 | 0.0024 | 0.0009 | 0.0015 | 0.0032 |
+| MSR FPCR/FPSR | 0.0014 | 0.0010 | 0.0062 | 0.0012 | 0.0038 |
+| TLBI VAE1IS/VALE1IS/ASIDE1IS/VAALE1IS (an exit with several vCPUs) | 0.0093 | 0.0048 | 0.0099 | 0.0125 | 0.0039 |
+| TLBI local (VALE1 and kin) | 0 | 0 | 0 | 0 | 0.0012 |
+| DC CVAC/CIVAC | 0.0045 | 0.0010 | 0.0012 | 0.0003 | 0.0001 (+0.0052 to a member) |
+| IC IVAU (an exit anyway: `Exit::Invalidate`) | 0.0012 | 0.0003 | 0.0030 | 0.0014 | 0.0054 |
+| YIELD, SEVL (out; spin loops) | 0 | 0 | 0 (+0.0012 to a member) | 0.0124 (+0.2035 to a member) | 0.0010 (+0.0185 to a member) |
+| **all of the issue's classes** | **0.0348** | **0.0254** | **0.0370** | **0.0331** | **0.0261** |
+| of them not exiting anyway | 0.0152 | 0.0068 | 0.0173 | 0.0140 | 0.0060 |
+
+None of the rest ran in any workload: CLREX, AT, SYS's other ops, TCR, SCTLR, CONTEXTIDR, VBAR, CPACR, MDSCR, NZCV,
+CNTKCTL, MSR PAN or SPSel, DC IVAC/CVAU/set-way, IC IALLU. For scale, the ends outside the issue: ISB 0.18 a 1000 steps
+to a member on the gates and `node` (inline, an edge), 0.12 + 0.016 out on the pages session (the helper in parallel
+SMP: PERF loop 8); WFE 0.015-0.017 and ERET 0.026-0.075 out, which must end.
+
+**The bound** (`bound.txt`): every end of the issue's classes at 130 ns (an exit to the run loop, PERF loop 8's
+upper end; most are cheaper, a return to the dispatcher or a chain at ~11-30 ns) and every edge to a member at 5 ns,
+against a guest step at 1.6 ns of busy time: **0.21-0.33% of busy time on every workload, all classes together**
+(`boot` 0.28%, `user` 0.21%, `node` 0.30%, `smp` 0.33%, the pages session 0.22%). Relaxing can't take that whole:
+the GIC's registers exit to the run loop (`Exit::Platform`), IC to the invalidation (`Exit::Invalidate`), TLBI IS
+with several vCPUs to the others' shootdown (`Exit::TlbiIs`) whatever the block does, and TTBR0/1 change what the
+next block is compiled for. What a relaxation could reach is 0.06-0.18%, and for most of it (TLBI's local flushes:
+the TLB compiled code probes, which a member's earlier probes may have read; FPCR: what the FP fast paths assume) a
+continuation would need state reloaded mid-block. All of it is under the paired command's ±0.5% and the pages
+session's ~1%: **no class is relaxed**, and `block::end` stays as it is. Which ends a block and why is now in
+docs/jit.md "Blocks and keys".
+
+Memory: none. Compiled code unchanged (nothing built: no static counts or steps move). No CI: the loop changes only
+docs, a comment, REPORTs and results.

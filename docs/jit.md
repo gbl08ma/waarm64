@@ -87,6 +87,15 @@ the interpreter's own code.
   retire. ISB, CLREX, YIELD/SEV and DC (other than ZVA) end a block but chain on (ISB is inline outside
   parallel SMP, where the interpreter's does nothing; the block's PC is then set as after any
   non-branch).
+  The other system instructions end a block (`block::end`), each for a reason: the regime's MSRs (TTBR0/1, TCR,
+  SCTLR, CPACR, VBAR, CONTEXTIDR) change what the next block is compiled for or what its code assumes; FPCR what the
+  FP fast paths assume; the GIC's (ICC_EOIR1, SGI1R and kin) exit to the run loop (`Exit::Platform`), IC to the
+  invalidation (`Exit::Invalidate`), the TLBI IS forms with several vCPUs to the shootdown (`Exit::TlbiIs`) whatever
+  the block does; the local TLBIs change the TLB compiled code probes; AT, CLREX, NZCV, SPSel and PAN never ran in a
+  profile. **Relaxing any of them isn't worth it** (PERF loop 95, `bench/boot/REPORT.md`): counted at the block's
+  last word on the gates, `node`, `smp` and Firefox's pages session, all of them together end 0.025-0.037 blocks a
+  1000 steps, ≤ 0.33% of busy time even at an exit's 130 ns each, and what isn't an exit anyway ≤ 0.18%; the edges
+  that ISB, DC CIVAC, YIELD and SEVL take to a member (≤ 0.2 a 1000 steps) cost a few ns each.
 - **Keyed by the guest PA** of the first instruction plus the regime bits that change what the
   code means (EL; `SCTLR_EL1.M`/`.A`, which pick the flat or MMU bus). Chosen over VA + ASID
   because it's what the architecture's PIPT instruction cache promises: the guest's own `IC IVAU`

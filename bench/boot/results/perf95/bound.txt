@@ -1,0 +1,6 @@
+bound: an out-end 130 ns (an exit to the run loop, PERF loop 8: the upper end), an edge 5 ns, a guest step 1.6 ns of busy time
+boot                     2.65 G steps: in scope out 0.0348 / to a member 0.0001 a 1000 steps; not exiting anyway 0.0152; bound all 0.283%, relaxable 0.124%
+user                    10.43 G steps: in scope out 0.0254 / to a member 0.0000 a 1000 steps; not exiting anyway 0.0068; bound all 0.206%, relaxable 0.055%
+node                     8.48 G steps: in scope out 0.0370 / to a member 0.0012 a 1000 steps; not exiting anyway 0.0173; bound all 0.301%, relaxable 0.141%
+smp                     21.07 G steps: in scope out 0.0331 / to a member 0.2036 a 1000 steps; not exiting anyway 0.0140; bound all 0.332%, relaxable 0.177%
+pages (Mac, 4 vCPUs)    96.35 G steps: in scope out 0.0261 / to a member 0.0238 a 1000 steps; not exiting anyway 0.0060; bound all 0.219%, relaxable 0.056%

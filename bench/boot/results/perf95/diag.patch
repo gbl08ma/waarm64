@@ -1,0 +1,206 @@
+diff --git a/bench/boot/preempt-counts.ts b/bench/boot/preempt-counts.ts
+index 0c15922b..45002deb 100644
+--- a/bench/boot/preempt-counts.ts
++++ b/bench/boot/preempt-counts.ts
+@@ -21,7 +21,7 @@ import { DISTROS } from '../../web/test-guests.ts';
+ /** core/src/tally.rs's slots. */
+ const JIT = ['back-edge', 'forward edge', 'transfer cache hit', 'miss function', 'jump cache hit (MMU off)', 'chain back', 'chain fwd', 'chain via jc back', 'chain via jc fwd', 'by-VA link back', 'by-VA link fwd', 'host call', 'host return', 'poll (polled code)', 'Resync done in place', 'exception in place'];
+ const END = ['budget', 'early (stop word, park)', 'Resync (ISB/DSB/ERET/unmask)', 'Invalidate (IC)', 'WFI', 'WFE', 'SEV', 'TLBI IS', 'HVC', 'counter read', 'platform (timer/GIC regs)', 'device (MMIO)', 'SVC', 'exception', 'other'];
+-const N = 80, END_AT = 16, END_STEPS = 32, BETWEEN = 31, BETWEEN_NS = 47, TIMER_LATE = 48, IRQ_LATE = 54, IRQ_HIST = 60, TIMER_SET = 64, IRQS = 67, PLATFORM_BY = 68, TIMER_ACC = 72;
++const N = 184, END_AT = 16, END_STEPS = 32, BETWEEN = 31, BETWEEN_NS = 47, TIMER_LATE = 48, IRQ_LATE = 54, IRQ_HIST = 60, TIMER_SET = 64, IRQS = 67, PLATFORM_BY = 68, TIMER_ACC = 72;
+ 
+ type Tallies = number[];
+ type Phase = { name: string; steps: number; t: Tallies };
+@@ -69,6 +69,12 @@ function print(r: Run) {
+   const rows: [string, number, Tallies][] = [['all', r.steps, r.t], ...r.phases.map((p) => [p.name, p.steps, p.t] as [string, number, Tallies])];
+   console.log(`${'per 1000 steps'.padEnd(24)} ${rows.map(([n]) => n.slice(0, 9).padStart(9)).join(' ')}`);
+   JIT.forEach((n, i) => console.log(`${n.padEnd(24).slice(0, 24)} ${rows.map(([, s, t]) => ((1000 * t[i]) / s).toFixed(3).padStart(9)).join(' ')}`));
++  const P95 = ['other', 'MSR TTBR0', 'MSR TTBR1', 'MSR TCR', 'MSR SCTLR', 'MSR CONTEXTIDR', 'MSR VBAR', 'MSR CPACR', 'MSR MDSCR', 'MSR FPCR', 'MSR FPSR', 'MSR NZCV', 'MSR CNTKCTL', 'MSR ICC_EOIR1', 'MSR ICC_SGI1R', 'MSR ICC_PMR', 'MSR ICC_DIR', 'MSR ICC other', 'MSR reg other', 'MSR PAN', 'MSR SPSel', 'MSR imm other', 'TLBI VMALLE1IS', 'TLBI VMALLE1', 'TLBI VAE1IS', 'TLBI VALE1IS', 'TLBI ASIDE1IS', 'TLBI VAAE1IS', 'TLBI VAALE1IS', 'TLBI local', 'TLBI range/OS', 'TLBI other', 'AT', 'SYS other', 'DC IVAC', 'DC set/way', 'DC CVAC', 'DC CVAU', 'DC CIVAC', 'IC IALLU', 'IC IALLUIS', 'IC IVAU', 'ISB', 'CLREX', 'YIELD', 'SEV', 'SEVL', 'WFE', 'WFI', 'ERET'];
++  console.log(`p95 block ends (out / to a member) ${rows.map(([n]) => n.slice(0, 9).padStart(19)).join(' ')}`);
++  P95.forEach((n, k) => {
++    if (rows.every(([, , t]) => !t[80 + 2 * k] && !t[81 + 2 * k])) return;
++    console.log(`  ${n.padEnd(22)} ${rows.map(([, s, t]) => `${((1000 * t[80 + 2 * k]) / s).toFixed(4)} / ${((1000 * t[81 + 2 * k]) / s).toFixed(4)}`.padStart(19)).join(' ')}`);
++  });
+   const chunks = END.reduce((s, _, k) => s + r.t[END_AT + k], 0);
+   console.log(`chunks: ${chunks} (${(r.steps / chunks).toFixed(0)} steps each); by how they ended: count, share, mean steps`);
+   END.forEach((n, k) => {
+diff --git a/core/src/jit/block.rs b/core/src/jit/block.rs
+index 33257f23..49d57100 100644
+--- a/core/src/jit/block.rs
++++ b/core/src/jit/block.rs
+@@ -1435,6 +1435,14 @@ fn emit_region(
+             }
+             c.note(super::wasm::NOTE_INSN, i as u64, k as u64);
+             let op = decode(w);
++            #[cfg(feature = "diag")]
++            if k + 1 == b.words.len() && end(w) == End::After {
++                let cl = crate::tally::p95_class(w, op);
++                if cl != 0 {
++                    let edge = goes_on(op) && internal(4 * len as i64).is_some();
++                    emit::dbump(&mut c, (crate::tally::P95 as u32) + 2 * cl + edge as u32);
++                }
++            }
+             // NZCV is stored before the block's branch (see `commit_flags`),
+             // unless a successor is a member and none that is needs it: the
+             // exits then store it on their own paths (`sync_flags` below), so
+diff --git a/core/src/tally.rs b/core/src/tally.rs
+index 16a02593..f065b659 100644
+--- a/core/src/tally.rs
++++ b/core/src/tally.rs
+@@ -9,7 +9,82 @@
+ //! IRQ), and round-robin's timer reprogramming ([`TIMER_SET`]).
+ 
+ /// Words in each table.
+-pub const N: usize = 80;
++pub const N: usize = 184;
++/// PERF loop 95 (temporary): compiled code's block ends at a system instruction, `P95 + 2 * class + edge`
++/// ([`p95_class`]; `edge`: the block's successor is a member of its region), published like the JIT's, to [`P95_END`].
++pub const P95: usize = 80;
++pub const P95_END: usize = 180;
++
++/// PERF loop 95: the class of a block-ending system instruction `w` (of class `op`), 0 for none of those listed.
++#[cfg(feature = "diag")]
++pub fn p95_class(w: u32, op: crate::decode::Op) -> u32 {
++    use crate::decode::Op::*;
++    let b = |hi: u32, lo: u32| (w >> lo) & ((1 << (hi - lo + 1)) - 1);
++    let sr = |op0: u32, op1: u32, crn: u32, crm: u32, op2: u32| {
++        op0 << 14 | op1 << 11 | crn << 7 | crm << 3 | op2
++    };
++    match op {
++        MSR_reg => {
++            let k = b(20, 5);
++            match k {
++                _ if k == sr(3, 0, 2, 0, 0) => 1,
++                _ if k == sr(3, 0, 2, 0, 1) => 2,
++                _ if k == sr(3, 0, 2, 0, 2) => 3,
++                _ if k == sr(3, 0, 1, 0, 0) => 4,
++                _ if k == sr(3, 0, 13, 0, 1) => 5,
++                _ if k == sr(3, 0, 12, 0, 0) => 6,
++                _ if k == sr(3, 0, 1, 0, 2) => 7,
++                _ if k == sr(2, 0, 0, 2, 2) => 8,
++                _ if k == sr(3, 3, 4, 4, 0) => 9,
++                _ if k == sr(3, 3, 4, 4, 1) => 10,
++                _ if k == sr(3, 3, 4, 2, 0) => 11,
++                _ if k == sr(3, 0, 14, 1, 0) => 12,
++                _ if k == sr(3, 0, 12, 12, 1) => 13,
++                _ if k == sr(3, 0, 12, 11, 5) => 14,
++                _ if k == sr(3, 0, 4, 6, 0) => 15,
++                _ if k == sr(3, 0, 12, 11, 1) => 16,
++                _ if k >> 7 == sr(3, 0, 12, 0, 0) >> 7 && b(11, 8) >= 8 => 17,
++                _ => 18,
++            }
++        }
++        MSR_imm => match (b(18, 16), b(7, 5)) {
++            (0, 4) => 19,
++            (0, 5) => 20,
++            _ => 21,
++        },
++        SYS | SYSL if op == SYS && b(15, 12) == 8 => match (b(18, 16), b(11, 8), b(7, 5)) {
++            (0, 3, 0) => 22,
++            (0, 7, 0) => 23,
++            (0, 3, 1) => 24,
++            (0, 3, 5) => 25,
++            (0, 3, 2) => 26,
++            (0, 3, 3) => 27,
++            (0, 3, 7) => 28,
++            (0, 7, _) => 29,
++            (0, 2 | 6 | 5 | 1, _) => 30,
++            _ => 31,
++        },
++        SYS if b(15, 12) == 7 && b(11, 8) & 0b1110 == 8 => 32,
++        SYS | SYSL => 33,
++        DC_IVAC => 34,
++        DC_ISW | DC_CSW | DC_CISW => 35,
++        DC_CVAC => 36,
++        DC_CVAU => 37,
++        DC_CIVAC => 38,
++        IC_IALLU => 39,
++        IC_IALLUIS => 40,
++        IC_IVAU => 41,
++        ISB => 42,
++        CLREX => 43,
++        YIELD => 44,
++        SEV => 45,
++        SEVL => 46,
++        WFE => 47,
++        WFI => 48,
++        ERET => 49,
++        _ => 0,
++    }
++}
+ 
+ /// A region's loop back-edge taken (a `br` to the head's `loop`).
+ pub const BACK_EDGE: u32 = 0;
+diff --git a/core/src/vm.rs b/core/src/vm.rs
+index 815b35dc..146f67fa 100644
+--- a/core/src/vm.rs
++++ b/core/src/vm.rs
+@@ -1328,11 +1328,15 @@ impl Vm {
+             publish_jit(c, &j.table.stats());
+         }
+         #[cfg(feature = "diag")]
+-        for (i, a) in c.diag[..crate::tally::JIT_SLOTS].iter().enumerate() {
+-            a.store(
+-                self.vcpus.iter().map(|v| v.diag[i]).sum(),
+-                Ordering::Relaxed,
+-            );
++        for (i, a) in c.diag.iter().enumerate() {
++            if i < crate::tally::JIT_SLOTS
++                || (crate::tally::P95..crate::tally::P95_END).contains(&i)
++            {
++                a.store(
++                    self.vcpus.iter().map(|v| v.diag[i]).sum(),
++                    Ordering::Relaxed,
++                );
++            }
+         }
+     }
+ 
+diff --git a/core/src/vm/parallel.rs b/core/src/vm/parallel.rs
+index 1b53aaf3..cbdcbb7e 100644
+--- a/core/src/vm/parallel.rs
++++ b/core/src/vm/parallel.rs
+@@ -1204,5 +1204,9 @@ impl Vm {
+         for (a, &x) in k.diag.iter().zip(&v.diag[..crate::tally::JIT_SLOTS]) {
+             a.store(x, Ordering::Relaxed);
+         }
++        #[cfg(feature = "diag")]
++        for i in crate::tally::P95..crate::tally::P95_END {
++            k.diag[i].store(v.diag[i], Ordering::Relaxed);
++        }
+     }
+ }
+diff --git a/web/counters.ts b/web/counters.ts
+index b5a8fd0e..2b468351 100644
+--- a/web/counters.ts
++++ b/web/counters.ts
+@@ -185,6 +185,7 @@ export function stats(n: (i: number) => number) {
+       lockSkipped: n(Counter.JIT_LOCK_SKIPPED),
+       pruneNs: n(Counter.JIT_PRUNE_NS),
+       mapRescues: n(Counter.JIT_MAP_RESCUES),
++      diag: Array.from({ length: 184 }, (_, k) => n(Counter.LEN + k)),
+     },
+     par: {
+       dsbWaits: n(Counter.PAR_DSB_WAITS),
+diff --git a/web/vm.ts b/web/vm.ts
+index 4f82e15b..84de4ae7 100644
+--- a/web/vm.ts
++++ b/web/vm.ts
+@@ -698,7 +698,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
+   const counters = blocks[0];
+   /** Counter `i` summed over the vCPUs' blocks (round-robin counts everything in block 0). */
+   const counter = (i: number) =>
+-    blocks.reduce((sum, b) => sum + Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN), i)), 0);
++    blocks.reduce((sum, b) => sum + Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN + 184), i)), 0);
+   const fbPa = Number(ex.vm_framebuffer(vm));
+   /** The round-robin exit's record (`run`), a view made again once the memory grew (its buffer is a new one). */
+   let exitAt: number | undefined;
+@@ -1002,7 +1002,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
+     deviceIo: () => io,
+     /** The same for each vCPU's own block (parallel mode; round-robin counts everything in vCPU 0's). */
+     cpuStats: () =>
+-      blocks.map((b) => stats((i) => Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN), i)))),
++      blocks.map((b) => stats((i) => Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN + 184), i)))),
+     /** The JIT's helper calls by instruction class, most frequent first (ABI 18; empty without a JIT). */
+     helperReport: () => helperReport(ex, memory, ex.vm_cpu(vm, 0)),
+     /**

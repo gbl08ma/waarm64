@@ -1,0 +1,19 @@
+node: 2 pairs against base
+  arm          pairs wall                                 cpu                                 
+  diag             2 +0.43% [-66.29%, +199.16%] open      +0.39% [-55.71%, +127.51%] open     
+  ended: the cap of 2 pairs
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  base                12317            -         1665        698.6        362.1        50.93         1417    484981500
+  diag                12371            -         1671        695.3        367.2        50.93         1417    484981500
+smp: 2 pairs against base
+  arm          pairs wall                                 cpu                                 
+  diag             2 -1.95% [-87.52%, +670.27%] open      -1.92% [-58.70%, +132.93%] open     
+  ended: the cap of 2 pairs
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  base                14751            -         2454       1435.6        637.8        93.28         2897   1203344093
+  diag                14462            -         2223       1415.8        622.0        92.04         2857   1203554590
+  arm          compiled %   interp %    overdue      parks    modules  worker ms   ready ms  ready p50  ready p99  ready top top of any   stall ms     of any stall ms/s   out ms/s
+  base              94.60       5.40          0      10142       2602       1797       1.08          1          8         24         32          9         11       13.3        130
+  diag              94.62       5.38          0       9958       2559       1792       1.08          1          8         16         16         12         16       12.9        114
+arms: base 9800444 bytes; diag 9800444 bytes
+rule: a pair a fresh browser (warm-up none, 1 round), pairs 2-2, band ±0.5%, stop on cycles and wall (node), wall (smp) (no cycles or instructions on this host), each interval's tail 1.00e-2 (0.01 over all its looks, an interval: several arms and measures each take that chance); Chromium 155.0.8059.84
