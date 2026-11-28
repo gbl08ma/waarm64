@@ -703,10 +703,12 @@ and energy (`bench/mac/procstat.c`, built there by `bench/run-mac.sh` and `bench
   Mac numbers are bench/boot/REPORT.md "PERF loop 53"'s. `preempt-counts.ts` also runs in the Mac's Node, from
   `~/waarm64-bench.noindex` after a `bench/run-mac.sh` (the diagnostic core copied there): today's latencies on that host.
 - **An idle guest's host CPU** (PERF loop 58): `node bench/boot/idle-cpu.ts [ncpus=4] [settle s=6] [measure s=20]
-  [spin µs]` boots Buildroot's kernel with `/bin/sleep` as init, parallel on N vCPUs under the JIT, and prints the Node
+  [spin µs] [misses]` boots Buildroot's kernel with `/bin/sleep` as init, parallel on N vCPUs under the JIT, and prints the Node
   process's CPU over the measured span as a share of one core, the idle exits a second and the guest's MIPS (~400 idles
-  a second at 4 vCPUs; the Mac's Node 7-8% at the default 20 µs poll, the dev VM's ~11%). `spin` is an idle vCPU's poll
-  (`VmOptions.vcpuSpinUs`; the pages' and bench pages' query `vspin=<µs>`). On the Mac from `~/waarm64-bench.noindex` after a `bench/run-mac.sh`
+  a second at 4 vCPUs; the Mac's Node ~7% at the default 20 µs poll, the dev VM's ~11%). `spin` is an idle vCPU's poll
+  (`VmOptions.vcpuSpinUs`; the pages' and bench pages' query `vspin=<µs>`; `-` for the default), `misses` the idles
+  without a catch before it stops polling (`VmOptions.vcpuPollMisses`, query `vmiss=<n>`, 0: always; PERF loop 98:
+  ~6.7% at the default 8, 7.7% always polling). On the Mac from `~/waarm64-bench.noindex` after a `bench/run-mac.sh`
   (which copies it there); runs move by ~±0.5 points, so alternate arms over three rounds.
 - **Preemption's counts** (a diagnostic core: the `diag` feature, never in the normal build, whose code section it
   leaves byte-identical): `CARGO_TARGET_DIR=target/diag scripts/build-wasm.sh --features diag` (its own target
@@ -725,7 +727,8 @@ and energy (`bench/mac/procstat.c`, built there by `bench/run-mac.sh` and `bench
   latencies come from `smp_*` with `--query=tallies` and the diagnostic core (`WASM=…` for `bench/run-mac.sh`): each
   boot's timer line seen in WFI and running, mean and max µs, and the WFI wake-ups, as results (PERF loop 60);
   `vyield=N` sets the vCPU workers' event-loop visits (`VmOptions.vcpuYieldMs`; 1: every exit that may takes one), `vspin=N`
-  an idle vCPU's poll before it sleeps (`VmOptions.vcpuSpinUs`, µs). The tallies (`core/src/tally.rs`) live in the `Vcpu` and past
+  an idle vCPU's poll before it sleeps (`VmOptions.vcpuSpinUs`, µs), `vmiss=N` the idles without a catch before it stops
+  polling (`VmOptions.vcpuPollMisses`; 0: it always polls). The tallies (`core/src/tally.rs`) live in the `Vcpu` and past
   the end of each vCPU's counters block, where the run loops publish them; a diagnostic core runs the same steps as
   the normal one (Alpine's boot: tests/steps.txt's count).
 - Node runners for iteration: `bench/interp/suite.ts` `setup(bin, JIT_DEFAULT, pad)` / `setupVm`

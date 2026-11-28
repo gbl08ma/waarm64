@@ -42,6 +42,7 @@ function oldWorker(query: URLSearchParams) {
     compileWorker: query.get('jit') !== 'nocw', fma: query.get('fma') !== 'emul', exactCore: !query.has('growcore'),
     vcpuYieldMs: query.has('vyield') ? Number(query.get('vyield')) : undefined,
     vcpuSpinUs: query.has('vspin') ? Number(query.get('vspin')) : undefined, // added with the knob (bench/boot/REPORT.md "PERF loop 83")
+    vcpuPollMisses: query.has('vmiss') ? Number(query.get('vmiss')) : undefined, // added with the knob (bench/boot/REPORT.md "PERF loop 98")
     sharesAsync: (query.get('sharesasync') ?? '').split(','),
     // The page's start message's (`|| undefined` there, true or absent).
     displayStats: query.has('displaystats'), ioStats: query.has('iostats'), noDiskCache: query.get('diskcache') === '0', avProbe: query.has('avprobe'),
@@ -59,7 +60,7 @@ const QUERIES = [
   'gpu=vknudge=0', 'gpu=vkgputime', 'gpu=vktick=3', 'gpu=vkidle=40', 'gpu=vkhold=float32-filterable,vkhold=bgra8unorm-storage', 'gpu=vkformats=held',
   'gpu=vkycbcr=off', 'gpu=vkycbcr', 'gpu=vkl9=bindgroups,pad', 'gpu=vkl9=all', 'gpu=vkskip=a,vkskip=b', 'gpu=capsno=B8G8R8A8_UNORM+R8_UNORM',
   'gpu=virgl,capsno=A capsno=B', 'gpu=capsyes=1+2,capsyes=3', 'gpu=querypoll=spin', 'gpu=virgl,noattachcache', 'gpu=nodrawcache,virgl', 'displaystats', 'displaystats&gpu=virgl', 'avprobe&snd=',
-  'snd=stats', 'snd=stats,timer', 'snd=', 'jit=nocw', 'jit=other', 'fma=emul', 'growcore', 'vyield=0', 'vyield=2', 'vspin=0', 'vspin=20', 'sharesasync=Host',
+  'snd=stats', 'snd=stats,timer', 'snd=', 'jit=nocw', 'jit=other', 'fma=emul', 'growcore', 'vyield=0', 'vyield=2', 'vspin=0', 'vspin=20', 'vmiss=0', 'vmiss=8', 'sharesasync=Host',
   'sharesasync=a,b', 'iostats', 'diskcache=0', 'diskcache=1', 'ready=guest', 'ready=serial', 'agentstub', 'gpu=1', 'gpu=verify', 'gpu=vk',
 ];
 
@@ -79,10 +80,11 @@ test('knobs: a few by value', () => {
   assert.deepEqual(g.vkHold, ['x']);
   assert.equal(g.stats, true);
   assert.equal(g.vkShaderBudget, 64 * 2 ** 20);
-  const d = parseDevKnobs(new URLSearchParams('gpu=2d,canvas2d,nopace,q4&snd=stats,timer&jit=nocw&vyield=3&vspin=20'));
+  const d = parseDevKnobs(new URLSearchParams('gpu=2d,canvas2d,nopace,q4&snd=stats,timer&jit=nocw&vyield=3&vspin=20&vmiss=8'));
   assert.deepEqual(d.gpu, { paceFlushes: false, queueSize: 4, virglNull: false, noWatch: false, capture: false, screen2d: 'canvas2d' });
   assert.deepEqual(d.snd, { wake: 'timer', stats: true });
   assert.equal(d.compileWorker, false);
   assert.equal(d.vcpuYieldMs, 3);
   assert.equal(d.vcpuSpinUs, 20);
+  assert.equal(d.vcpuPollMisses, 8);
 });

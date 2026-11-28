@@ -5,7 +5,7 @@
 // they reached the event loop, and end on a wake-up.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { idle, SHARE, sleepUntil, TAIL_MS, turns, txFull, yieldTurn, type Host } from '../web/idle-wait.ts';
+import { idle, pollRule, POLL_MISSES, SHARE, sleepUntil, SPIN_MS, TAIL_MS, turns, txFull, WAIT_WAKE_MS, yieldTurn, type Host } from '../web/idle-wait.ts';
 
 /** The tail's spin stays under this (each idle exit spins it: PERF loop 58's host CPU). Not `TAIL_MS`, so raising it fails. */
 const SPIN_BOUND = 0.045;
@@ -164,6 +164,62 @@ test("an idle polls its wake word for its spin (`spinMs`) before it waits, and n
   const { h, hst, wake } = host(0.15, { wakeAt: 0.01 });
   idle(wake, 0, 20, hst.now(), turns(100, hst), 0.02, hst);
   assert.equal(h.waits.length, 0);
+});
+
+test('a vCPU stops polling after `misses` idles in a row without a wake-up a poll catches, and polls again after one', () => {
+  for (const misses of [1, 4, 8]) {
+    const p = pollRule(0.02, misses);
+    // Idles that end at their deadlines, or by a wake-up past twice the poll: the poll stops after `misses` of them.
+    for (let i = 0; i < misses; i++) {
+      assert.equal(p.spin(), 0.02, `misses ${misses}: idle ${i} polls`);
+      p.seen(0.02, i % 2 === 0, i % 2 === 0 ? 0.045 : 4);
+    }
+    assert.equal(p.spin(), 0, `misses ${misses}: no poll after ${misses} misses`);
+    // Unpolled, a wake-up past the poll and a wait's wake-up doesn't bring it back; one within them does.
+    p.seen(0, true, 0.02 + WAIT_WAKE_MS + 0.005);
+    p.seen(0, false, 4);
+    assert.equal(p.spin(), 0);
+    p.seen(0, true, 0.02 + WAIT_WAKE_MS - 0.005);
+    for (let i = 0; i < misses; i++) {
+      assert.equal(p.spin(), 0.02, `misses ${misses}: polls again (${i})`);
+      p.seen(0.02, false, 1);
+    }
+    assert.equal(p.spin(), 0);
+    // A run of catches never stops it.
+    p.seen(0, true, 0.003);
+    for (let i = 0; i < 100; i++) {
+      assert.equal(p.spin(), 0.02);
+      p.seen(0.02, true, 0.005);
+    }
+  }
+  // 0: every idle polls; the defaults are SPIN_MS and POLL_MISSES.
+  const always = pollRule(0.02, 0);
+  for (let i = 0; i < 100; i++) always.seen(0.02, false, 4);
+  assert.equal(always.spin(), 0.02);
+  const d = pollRule();
+  for (let i = 0; i < POLL_MISSES; i++) {
+    assert.equal(d.spin(), SPIN_MS);
+    d.seen(SPIN_MS, false, 4);
+  }
+  assert.equal(d.spin(), 0);
+});
+
+test("an idle that doesn't poll still ends at its wake-up, through the wait", () => {
+  const { h, hst, wake } = host(0.15, { wakeAt: 0.3 });
+  const t0 = hst.now();
+  idle(wake, 0, 20, t0, turns(100, hst), 0, hst);
+  assert.equal(Atomics.load(wake, 0), 1);
+  assert.ok(h.t < 0.31, `ended at ${h.t}`);
+  assert.ok(h.waits[0] > 19 * SHARE, 'it waited at once');
+  // One that came before the idle began (between the core's return and the idle: the exit's wake value is stale) ends
+  // it at once, without a wait.
+  for (const spin of [0, 0.02]) {
+    const s = host(0.15);
+    Atomics.add(s.wake, 0, 1);
+    const t1 = s.hst.now();
+    idle(s.wake, 0, 20, t1, turns(100, s.hst), spin, s.hst);
+    assert.ok(s.h.t - t1 < 0.005 && s.h.waits.length === 0, `spin ${spin * 1000} µs: a wake-up before the idle was lost`);
+  }
 });
 
 test("a wake-up within the idle's poll leaves the event loop's turn due", async () => {

@@ -37,6 +37,7 @@ export function coordinator(c: {
   compileWorker: boolean;
   yieldMs: number;
   spinMs?: number;
+  pollMisses?: number;
   warm?: WarmWorkers;
 }) {
   type Handle = { post(m: VcpuJob | VcpuClock | CompileInit, transfer?: Transferable[]): void; terminate(): void };
@@ -166,6 +167,7 @@ export function coordinator(c: {
           compile,
           yieldMs: c.yieldMs,
           spinMs: c.spinMs,
+          pollMisses: c.pollMisses,
         },
         compile ? [compile] : [],
       );

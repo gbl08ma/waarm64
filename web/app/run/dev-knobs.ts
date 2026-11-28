@@ -34,6 +34,8 @@ export type DevKnobs = {
   vcpuYieldMs?: number;
   /** `?vspin=<µs>`: an idle vCPU worker's poll before it sleeps (web/vm.ts `vcpuSpinUs`); none: the default. */
   vcpuSpinUs?: number;
+  /** `?vmiss=<n>`: idles without a catch before an idle vCPU worker stops polling (web/vm.ts `vcpuPollMisses`); none: the default. */
+  vcpuPollMisses?: number;
   /** `?sharesasync=<name>,…` (tests, measurements): folders in the browser served as a folder on the computer is. */
   sharesAsync: string[];
   /** The display reports its draw latencies (`draw-stats`, kept in `window.__drawStats`; `?displaystats`, bench/gpu). */
@@ -81,6 +83,7 @@ export function parseDevKnobs(q: URLSearchParams): DevKnobs {
     exactCore: !q.has('growcore'),
     vcpuYieldMs: q.has('vyield') ? Number(q.get('vyield')) : undefined,
     vcpuSpinUs: q.has('vspin') ? Number(q.get('vspin')) : undefined,
+    vcpuPollMisses: q.has('vmiss') ? Number(q.get('vmiss')) : undefined,
     sharesAsync: (q.get('sharesasync') ?? '').split(','),
     displayStats: q.has('displaystats'),
     ioStats: q.has('iostats'),

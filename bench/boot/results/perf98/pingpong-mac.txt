@@ -1,0 +1,9 @@
+0 1 {"misses":0,"lseS":0.24,"llscS":0.18,"wallS":0.71}
+4 1 {"misses":4,"lseS":0.24,"llscS":0.2,"wallS":0.71}
+8 1 {"misses":8,"lseS":0.23,"llscS":0.17,"wallS":0.68}
+4 2 {"misses":4,"lseS":0.24,"llscS":0.17,"wallS":0.71}
+8 2 {"misses":8,"lseS":0.23,"llscS":0.17,"wallS":0.67}
+0 2 {"misses":0,"lseS":0.23,"llscS":0.18,"wallS":0.7}
+8 3 {"misses":8,"lseS":0.22,"llscS":0.17,"wallS":0.68}
+0 3 {"misses":0,"lseS":0.22,"llscS":0.16,"wallS":0.65}
+4 3 {"misses":4,"lseS":0.23,"llscS":0.17,"wallS":0.67}

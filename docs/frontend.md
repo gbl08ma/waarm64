@@ -1203,7 +1203,7 @@ Page → worker:
   directory of its own files. `config.cpu` is the vCPUs' features as one list (web/cpu-features.ts: the page's
   `?<feature>=0|1`, a snapshot's header, a shape and `bootVm`'s mask all go by its table); `config.dev` the machine
   worker's knobs (web/app/run/dev-knobs.ts `parseDevKnobs`: `?gpu=`'s display tuning, `?snd=`, `?jit=`, `?fma=`,
-  `?growcore`, `?vyield=`, `?vspin=`, `?sharesasync=`, `?displaystats`, `?iostats`, `?diskcache=0`, `?avprobe`, `?ready=guest`,
+  `?growcore`, `?vyield=`, `?vspin=`, `?vmiss=`, `?sharesasync=`, `?displaystats`, `?iostats`, `?diskcache=0`, `?avprobe`, `?ready=guest`,
   `?agentstub`, `?stageroom=`), parsed by the
   page: the workers read no query (the GPU worker's `init` takes web/gpu-knobs.ts's `parseGpuKnobs`).
   `snapshot`: a `File` to start from instead of booting (below, "Snapshots"); the size, the devices, the CPU

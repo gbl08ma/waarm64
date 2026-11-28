@@ -1,0 +1,16 @@
+1 {"misses":0,"lseS":1.04,"llscS":0.92,"wallS":2.35}
+1 {"misses":4,"lseS":1.19,"llscS":0.91,"wallS":2.39}
+1 {"misses":8,"lseS":1.02,"llscS":0.89,"wallS":2.23}
+1 {"misses":1,"lseS":1.99,"llscS":1.85,"wallS":4.15}
+2 {"misses":1,"lseS":1.79,"llscS":1.6,"wallS":3.78}
+2 {"misses":8,"lseS":1.05,"llscS":0.89,"wallS":2.28}
+2 {"misses":4,"lseS":1.04,"llscS":0.93,"wallS":2.27}
+2 {"misses":0,"lseS":0.98,"llscS":0.89,"wallS":2.16}
+3 {"misses":0,"lseS":1.09,"llscS":0.87,"wallS":2.34}
+3 {"misses":4,"lseS":1.06,"llscS":0.89,"wallS":2.29}
+3 {"misses":8,"lseS":1.03,"llscS":0.91,"wallS":2.28}
+3 {"misses":1,"lseS":1.83,"llscS":1.8,"wallS":3.93}
+4 {"misses":1,"lseS":1.74,"llscS":1.95,"wallS":4.09}
+4 {"misses":8,"lseS":1.17,"llscS":1.04,"wallS":2.54}
+4 {"misses":4,"lseS":1.19,"llscS":1.02,"wallS":2.55}
+4 {"misses":0,"lseS":1.17,"llscS":1.06,"wallS":2.54}

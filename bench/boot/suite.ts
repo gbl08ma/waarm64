@@ -11,7 +11,8 @@
 // `--only coremark_vm_jit`: CoreMark as init under Buildroot's kernel, realtime mode (its own score);
 // `--query=growcore`: the core imports the memory growable (web/core.ts `exactCore`), for an A/B.
 // `--query=vyield=N`: the vCPU workers' event-loop visits every N ms (`VmOptions.vcpuYieldMs`; 0 never). `vspin=N`: an
-// idle vCPU's poll of its wake word before it sleeps, N µs (`VmOptions.vcpuSpinUs`).
+// idle vCPU's poll of its wake word before it sleeps, N µs (`VmOptions.vcpuSpinUs`); `vmiss=N`: the idles without a
+// catch before it stops polling (`VmOptions.vcpuPollMisses`, 0: never).
 // `--query=tallies` with the diagnostic core (`--features diag`) on `smp_*`: also each boot's timer line seen late in
 // WFI and running (bench/boot/preempt-counts.ts's latencies, in the browser), µs mean and max.
 // `--only alpine_user_jit`: Alpine's userspace phases after its boot (images/alpine/user), ms per phase;
@@ -92,7 +93,7 @@ function procSamples(name: string, params: Record<string, unknown>, procs: (Coun
 export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awaited<ReturnType<typeof bootVm>>) => void | Promise<void>, o: { cmdline?: string; realtime?: boolean; crypto?: boolean; sha3?: boolean; rng?: boolean; ncpus?: number; parallel?: boolean; devices?: DeviceSpec[]; onMark?: (mark: string, vm: Awaited<ReturnType<typeof bootVm>>) => void } = {}) {
   const devices = o.devices ?? (img.test ? testDevices(img.disk) : guestDevices(img.disk));
   const framebuffer = img.test ? { width: 640, height: 480 } : undefined;
-  const vm = await bootVm(module, { ramSize: img.ramSize, spill: img.spill, kernel: img.kernel, initrd: img.initrd, cmdline: o.cmdline ?? img.cmdline, devices, realtime: o.realtime, framebuffer, jit: img.jit, crypto: o.crypto, sha3: o.sha3, rng: o.rng, ncpus: o.ncpus, parallel: o.parallel, idleLimitMs: 30_000, compileWorker: !pageQuery().has('nocw'), fma: pageQuery().get('fma') !== 'emul', exactCore: !pageQuery().has('growcore'), vcpuYieldMs: pageQuery().has('vyield') ? Number(pageQuery().get('vyield')) : undefined, vcpuSpinUs: pageQuery().has('vspin') ? Number(pageQuery().get('vspin')) : undefined });
+  const vm = await bootVm(module, { ramSize: img.ramSize, spill: img.spill, kernel: img.kernel, initrd: img.initrd, cmdline: o.cmdline ?? img.cmdline, devices, realtime: o.realtime, framebuffer, jit: img.jit, crypto: o.crypto, sha3: o.sha3, rng: o.rng, ncpus: o.ncpus, parallel: o.parallel, idleLimitMs: 30_000, compileWorker: !pageQuery().has('nocw'), fma: pageQuery().get('fma') !== 'emul', exactCore: !pageQuery().has('growcore'), vcpuYieldMs: pageQuery().has('vyield') ? Number(pageQuery().get('vyield')) : undefined, vcpuSpinUs: pageQuery().has('vspin') ? Number(pageQuery().get('vspin')) : undefined, vcpuPollMisses: pageQuery().has('vmiss') ? Number(pageQuery().get('vmiss')) : undefined });
   await onVm?.(vm);
   const proc0 = await procNow();
   let console = '';

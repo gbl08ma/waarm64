@@ -20,6 +20,39 @@ export const SHARE = 2 / 3;
  * guest's −12%, the hand-offs as fast; 0 saved twice that and slowed them (bench/boot/REPORT.md "PERF loop 83").
  */
 export const SPIN_MS = 0.02;
+/**
+ * An idle vCPU polls only while its recent idles' wake-ups came within a poll: after this many idles in a row whose
+ * didn't (none came, or a later one), it sleeps at once, until a wake-up comes that soon again (`pollRule`; 0: every
+ * idle polls). Futex hand-offs come in runs (the atomics stress's pingpong: 95% of its idles end in the poll); elsewhere
+ * the catches are scattered (Firefox's pages session: 6%; an idle guest: none). 8 keeps the pingpong's hand-offs as
+ * fast on the Mac and in the dev VM (1 slowed them 1.8-2.5× in the VM, 4 by 2-6%), and took 1.1 points off an idle
+ * 4-vCPU guest's host CPU on the Mac, 1.2% off the pages session's renderer CPU (bench/boot/REPORT.md "PERF loop 98").
+ */
+export const POLL_MISSES = 8;
+
+/**
+ * A wake-up through `Atomics.wait` comes this much later than one a poll sees at most: ~16 µs a hand-off on the Mac,
+ * ~36 µs in the dev VM (the atomics stress's pingpong without a poll against with one: PERF loop 83).
+ */
+export const WAIT_WAKE_MS = 0.06;
+
+/**
+ * A vCPU's poll before each idle's sleep (`idle`'s `spinMs`): `spinMs`, or none after `misses` idles in a row that a
+ * poll didn't end, or, when the idle didn't poll, that a poll wouldn't have: a wake-up within the poll and
+ * `WAIT_WAKE_MS` of the idle's start counts as one it would have caught.
+ */
+export function pollRule(spinMs = SPIN_MS, misses = POLL_MISSES) {
+  let n = 0;
+  return {
+    /** This idle's poll, in ms. */
+    spin: () => (misses > 0 && n >= misses ? 0 : spinMs),
+    /** The idle (its poll `spun` ms) ended `ms` after its start, by a wake-up (`woken`: its word moved) or not. */
+    seen: (spun: number, woken: boolean, ms: number) => {
+      n = woken && ms < (spun > 0 ? 2 * spun : spinMs + WAIT_WAKE_MS) ? 0 : Math.min(n + 1, misses);
+    },
+  };
+}
+export type PollRule = ReturnType<typeof pollRule>;
 
 export type Clock = () => number;
 export type Wait = (word: Int32Array, index: number, value: number, ms: number) => string;

@@ -146,7 +146,16 @@ indexes of their instance).
   10-100 µs and 2.5× that with none, the dev VM's needing 20; every other idle pays the poll whole, and only 12% of
   them ended in a wake-up in Firefox's pages session, so 20 µs instead of M7 loop 8's 50 took 2.8% off the pages
   session's renderer CPU and 12% off an idle guest's, the guest's speed unchanged; none took twice that but slowed the
-  hand-offs: bench/boot/REPORT.md "PERF loop 83"), then sleeps to its deadline by
+  hand-offs: bench/boot/REPORT.md "PERF loop 83"). **The poll adapts** (`pollRule`, PERF loop 98): after
+  `POLL_MISSES` (8) idles in a row that a poll didn't end, the vCPU sleeps at once, until an idle's wake-up comes
+  within the poll and a wait's wake-up (`WAIT_WAKE_MS`, 60 µs: a wake-up through `Atomics.wait` is ~16 µs later than a
+  poll's on the Mac, ~36 µs in the dev VM) of its start, which brings the poll back. The catches come in runs where the
+  poll matters (the pingpong's hand-offs: 95% of its idles end in the poll) and scattered elsewhere (6% of the pages
+  session's idles, 5-10% of the parallel boots', none of an idle guest's, whose idles end at their timers; nothing
+  separates them by the idle's deadline), so a streak of misses tells them apart; a miss count of 1 or 4 slowed the
+  pingpong in the dev VM (1: 1.8-2.5×; 4: +2-6%), 8 didn't, on either host. It took an idle 4-vCPU guest's host CPU
+  on the Mac from 7.8 to 6.7% of a core, the pages session's renderer CPU −1.2% (instructions −2.3%, energy −1.2%)
+  and the 4-vCPU boot's energy −2%, the guest's speed unchanged (bench/boot/REPORT.md "PERF loop 98"). Then it sleeps to its deadline by
   waits of 2/3 of the time left and a spin of the last 40 µs (`web/idle-wait.ts`, PERF loop 58): a timed wait comes
   back late by a share of its timeout (macOS's timer leeway: in Chromium ~130 µs at the median of a ~1 ms wait, ~470 µs
   of ~4 ms, up to ~50% at the p99; in Node's workers there nearer 50%; Lima's Linux ~180 µs), so one wait to the

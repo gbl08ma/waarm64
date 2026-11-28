@@ -9789,3 +9789,91 @@ built, recorded with the finding.
 Memory: none. Compiled code unchanged (nothing built: no static counts; `tests/steps.txt` unmoved). The runs: three
 in Node (~30 s), one `node`/`smp` pass in Chromium (2 pairs, ~8 min), two pages sessions (225 s each). No CI: the
 loop changes only docs, a comment, REPORTs and results.
+
+## PERF loop 98: an adaptive idle-vCPU poll (2026-11-28)
+
+The PERF queue's row 30 ([#134](https://github.com/gbl08ma/waarm64/issues/134)): every idle vCPU polled its wake
+word 20 µs (`SPIN_MS`) before sleeping, and most polls caught nothing. **Built: the poll adapts
+(web/idle-wait.ts `pollRule`): after 8 idles in a row that a poll didn't end (`POLL_MISSES`), a vCPU sleeps at once,
+until an idle's wake-up comes within the poll and a wait's wake-up of its start (`WAIT_WAKE_MS`, 60 µs). An idle
+4-vCPU guest's host CPU on the Mac 7.8 → 6.7% of a core (no overlap), the pages session's renderer CPU −1.2%
+(overlapping; instructions −2.3% and energy −1.2%, no overlap), the 4-vCPU boot's energy −2%; the futex hand-offs as
+fast on both hosts, the pages session's and the parallel boots' times unchanged.** Only web/ changed (the vCPU
+worker's idle path, a `vcpuPollMisses` knob, `?vmiss=<n>`, 0: always poll); the core, compiled code, deterministic
+and round-robin runs and `tests/steps.txt` are 5d9fd31e's. M4, macOS, Chrome for Testing 158.0.8127.88, Node 26.10.0
+there; the dev VM's Node 26.7.0. Data: `bench/boot/results/perf98/` (its README).
+
+**The counts** (a diagnostic build, `diag.patch`: each vCPU worker tallies its idles' outcomes and simulates ten
+candidate rules on them as they run; `python3 rules.py`, `rules-out.txt`; a second each, summed over 4 vCPUs):
+
+| | pages session (Mac, Chrome) | `smp_alpine_jit` n4 (VM) | `smp_user_jit_4` (VM) | idle guest (VM) | `pingpong` (VM) |
+|---|---|---|---|---|---|
+| idles / ended by the poll | 1,890 / 120 (6.3%) | 1,903 / 105 (5.5%) | 1,112 / 111 (10%) | 401 / 0 | 157,543 / 149,369 (95%) |
+| woken later / at the deadline | 1,076 / 694 | 824 / 973 | 520 / 480 | 1 / 401 | 8,053 / 122 |
+| the poll, of one core | 4.25% | 3.42% | 1.95% | 0.64% | 52% |
+| woken within 20-50 µs (a longer poll's) | 69 | 25 | 22 | 0 | 1,490 |
+
+By the idle's deadline nothing separates them: in the pages session 7% of the idles of 0.1-1 ms end in the poll, 5%
+of those past 16 ms; the boots' catches are all 0.1-1 ms idles, like most of their idles. What separates them is how
+the catches come: in runs in the pingpong (a hand-off a round), scattered elsewhere. The rules' prediction (the poll's
+CPU it would save, of one core; the catches it would slow, as a share of all):
+
+| rule | pages session | `smp_alpine_jit` n4 | `smp_user_jit_4` | idle guest | `pingpong` |
+|---|---|---|---|---|---|
+| streak of 1 miss | 4.00%; 86% | 3.26%; 54% | 1.79%; 62% | 0.64%; - | 12.6%; 1.9% |
+| 4 | 3.38%; 66% | 3.01%; 38% | 1.57%; 23% | 0.64% | 4.9%; 0.4% |
+| **8** | **2.76%; 49%** | 2.75%; 30% | 1.43%; 15% | 0.64% | 2.5%; 0.1% |
+| 16 | 1.96%; 29% | 2.36%; 22% | 1.24%; 10% | 0.64% | 1.2%; 0.03% |
+| a catch within 10 ms | 2.87%; 53% | 2.52%; 25% | 1.33%; 13% | 0.64% | 0.9%; 0.005% |
+| within 100 ms | 0.72%; 7% | 0.95%; 7% | 0.50%; 4% | 0.64% | 0.6%; 0.005% |
+
+A slowed catch costs a wake-up through `Atomics.wait` instead of the poll: ~16 µs on the Mac, ~36 µs in the dev VM
+(loop 83's pingpong with no poll against with one); the pages session's and the boots' catches are ~100 a second over
+4 vCPUs, so even all of them slowed is ≤ 4 ms a second of vCPU time, and loop 83's 0 µs poll didn't slow the pages
+session. The pingpong is where a slowed catch shows, and the simulation, which can't see that a slowed hand-off delays
+the next ones, undercounts it: a streak of 1 slowed it 1.8-2.5× in the dev VM (predicted 1.9% of its hand-offs).
+
+**The rule's two forms.** First, a wake-up within twice the poll counted as a catch whether or not the idle polled;
+in the dev VM a wake-up through the wait often comes later than that (36 µs), so an idle that stopped polling seldom
+saw a catch and stayed stopped: 4 and 8 slowed the pingpong there (LSE's 1.01 s median → 1.075 and 1.045 at 4 rounds,
+`pingpong-vm-4x.txt`; the Mac's unchanged, `pingpong-mac-4x.txt`). Kept: an unpolled idle's wake-up counts within the
+poll and 60 µs. The pingpong (80,000 hand-offs a pair, `PP_N=1280000`; LSE's / LL/SC's s, medians [range]):
+
+| misses | dev VM, 4 rounds | Mac, 5 rounds |
+|---|---|---|
+| 0 (always poll, before) | 1.065 [0.98-1.17] / 0.905 [0.87-1.06] | 0.71 [0.70-0.74] / 0.63 [0.63-0.65] |
+| 1 | 1.81 [1.74-1.99] / 1.83 [1.60-1.95] | |
+| 4 | 1.125 [1.04-1.19] / 0.92 [0.89-1.02] | |
+| **8 (kept)** | 1.04 [1.02-1.17] / 0.90 [0.89-1.04] | 0.71 [0.70-0.72] / 0.65 [0.63-0.66] |
+
+**Kept: 8**, the least that kept the hand-offs on both hosts. An idle 4-vCPU guest's host CPU (`idle-cpu.ts 4 5 20 -
+<misses>`, the Mac's Node, 4 rounds alternated, % of a core): always polling 7.69-7.92 (7.77), 8: 6.59-7.02 (6.71),
+**−1.06 points**, the bound of loop 83's 0 µs arm. Firefox's pages session (`bench/gpu/ab-mac.sh`, 3 rounds, each
+round starting with the next arm; median [range]):
+
+| | always poll (`vmiss=0`) | 8 (kept) | |
+|---|---|---|---|
+| the renderers' CPU (s) | 259.9 [257.8-260.4] | 256.8 [256.1-258.7] | −1.2%, overlapping |
+| their instructions (G) | 2,120 [2,108-2,135] | 2,072 [2,064-2,082] | −2.3%, no overlap |
+| energy (J) | 774 [773-777] | 765 [762-770] | −1.2%, no overlap |
+| the starts and the pages' loads (s) | 49.2 + 65.0 | 49.2 + 65.1 | unchanged |
+| busy MIPS; modules; stalls of 20 ms+ | 500; 2,674; 0-1 | 498; 2,652; 1-2 | |
+
+The renderers' CPU fell by ~3 s against the ~5.6 s the counts predicted (2.76% of a core over 202 s): an unpolled
+idle's wait has costs of its own the poll's time doesn't include. The parallel boots in Chromium (`gates.sh 3 0 8`,
+`bench/run-mac.sh`, 3 rounds alternated; ranges of the rounds' medians, ms; `python3 ../perf53/summary.py`):
+`smp_alpine_jit` n1 / n2 / n4 total 4866-4988 / 4558-4630 / 4553-4632 → 4909-4989 / 4592-4653 / 4564-4632 (+0.0 /
++0.0 / −0.4%, overlapping), n4's CPU −1.8% (overlapping), its instructions −2.8% and energy −2.0% (no overlap);
+`smp_user_jit_4` 10278-10690 → 10362-10425 (−0.2%, overlapping), its CPU −0.6% (overlapping). Not run: the paired
+command's `node`, `user` and `boot` (deterministic round-robin: the vCPU worker doesn't run there). Memory: none (a
+counter a vCPU).
+
+Tests: `tests/idle-wait.test.ts` "a vCPU stops polling after `misses` idles in a row without a wake-up a poll catches,
+and polls again after one" and "an idle that doesn't poll still ends at its wake-up, through the wait" (one that came
+before the idle began ends it at once, polled or not); `tests/knobs.test.ts` pins `?vmiss=`. Planted, each caught by
+the first or the second: an unpolled idle's soon wake-up not bringing the poll back; `misses` 0 never polling; a catch
+not resetting the count; an unpolled idle sleeping on its wake word as it is now instead of the exit's value (a
+wake-up between the core's return and the idle lost). The worker passes `idle` the exit's wake value whatever the
+rule says (the spin, host-stall and SMP tests ran with the rule on). CI: `scripts/ci.sh` passed (731 s; its first run
+failed only the remote disks' cache test at "cacheBytes before", the known flake #279, which passed alone 3 of 3 right
+after), `scripts/ci-jit.sh` (284 s) and `scripts/ci-debian.sh` (295 s), each alone.

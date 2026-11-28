@@ -234,6 +234,11 @@ export type BootOptions = {
    */
   vcpuSpinUs?: number;
   /**
+   * Parallel mode: idles in a row whose wake-up a poll wouldn't have caught before an idle vCPU worker stops polling
+   * (web/idle-wait.ts `POLL_MISSES`'s default, 0: it always polls; a measurement's knob, `?vmiss=`).
+   */
+  vcpuPollMisses?: number;
+  /**
    * Realtime mode: throw if the vCPU sleeps this long with no timer deadline
    * and nothing signaled (a lost wake-up would otherwise hang the run).
    * Benchmarks set it; unset, an idle guest may sleep forever.
@@ -727,6 +732,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
         compileWorker: (o.jit ?? 0) !== 0 && o.compileWorker !== false,
         yieldMs: o.vcpuYieldMs ?? VCPU_YIELD_MS,
         spinMs: o.vcpuSpinUs === undefined ? undefined : o.vcpuSpinUs / 1000,
+        pollMisses: o.vcpuPollMisses,
         warm: o.warm,
       })
     : undefined;

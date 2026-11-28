@@ -8,7 +8,7 @@
 // (web/vm.ts `bootVm`). Runs in a browser worker or a Node worker thread.
 import { EV_CONFIG, ring } from './virtio.ts';
 import { livenessWriter } from './liveness.ts';
-import { idle, turns, txFull, yieldTurn } from './idle-wait.ts';
+import { idle, pollRule, turns, txFull, yieldTurn } from './idle-wait.ts';
 import {
   clockOffset,
   Exit,
@@ -52,6 +52,8 @@ export type VcpuJob = {
   yieldMs?: number;
   /** How long an idle vCPU polls its wake word before it sleeps, in ms (default `SPIN_MS`: web/idle-wait.ts `idle`). */
   spinMs?: number;
+  /** Idles in a row without a wake-up a poll would catch before the vCPU stops polling (default `POLL_MISSES`; 0: never). */
+  pollMisses?: number;
 };
 export type VcpuEnd =
   | { type: 'exit'; cpu: number; kind: number; value: bigint; x: bigint[] }
@@ -98,6 +100,7 @@ async function runCpu(j: VcpuJob, exports: WebAssembly.Exports): Promise<VcpuEnd
   const idleStalls = j.stall?.map((s) => stallHook(mem, s)('idle', () => {}));
   const live = j.live && livenessWriter(j.live, j.cpu);
   const turn = turns(j.yieldMs ?? 0);
+  const poll = pollRule(j.spinMs, j.pollMisses);
   // The exit's record: kind, steps, value, x0-x3, cpu, wake (a new view once the memory grew: its buffer is new).
   let e = new BigUint64Array(mem.buffer, info, 9);
   for (;;) {
@@ -119,8 +122,11 @@ async function runCpu(j: VcpuJob, exports: WebAssembly.Exports): Promise<VcpuEnd
         idleStalls?.forEach((f) => f()); // test only: a host stall with the vCPU OUT
         // Until its deadline or a wake-up; an off vCPU (no deadline) rechecks every second.
         const ms = e[2] === NONE ? undefined : Number(e[2]) / 1e6;
-        const asleep = idle(wake, Number(e[8]) | 0, ms, back, turn, j.spinMs);
+        const value = Number(e[8]) | 0;
+        const spun = poll.spin();
+        const asleep = idle(wake, value, ms, back, turn, spun);
         if (asleep) await asleep;
+        poll.seen(spun, Atomics.load(wake, 0) !== value, performance.now() - back);
         continue;
       }
       case Exit.TX_FULL:

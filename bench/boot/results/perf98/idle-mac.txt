@@ -1,0 +1,8 @@
+0 1 {"ncpus":4,"wallS":20.01,"cpuPct":7.75,"userPct":6.65,"sysPct":1.1,"idlesPerS":401,"mipsGuest":1.21}
+8 1 {"ncpus":4,"wallS":19.98,"cpuPct":6.59,"userPct":5.53,"sysPct":1.06,"idlesPerS":401,"mipsGuest":1.32}
+8 2 {"ncpus":4,"wallS":19.99,"cpuPct":7.02,"userPct":5.85,"sysPct":1.17,"idlesPerS":401,"mipsGuest":1.31}
+0 2 {"ncpus":4,"wallS":19.99,"cpuPct":7.78,"userPct":6.65,"sysPct":1.13,"idlesPerS":401,"mipsGuest":1.32}
+0 3 {"ncpus":4,"wallS":19.99,"cpuPct":7.92,"userPct":6.76,"sysPct":1.16,"idlesPerS":401,"mipsGuest":1.31}
+8 3 {"ncpus":4,"wallS":19.99,"cpuPct":6.73,"userPct":5.61,"sysPct":1.11,"idlesPerS":401,"mipsGuest":1.3}
+8 4 {"ncpus":4,"wallS":19.98,"cpuPct":6.69,"userPct":5.6,"sysPct":1.09,"idlesPerS":401,"mipsGuest":1.36}
+0 4 {"ncpus":4,"wallS":19.99,"cpuPct":7.69,"userPct":6.6,"sysPct":1.09,"idlesPerS":401,"mipsGuest":1.34}
