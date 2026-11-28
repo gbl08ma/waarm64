@@ -1,0 +1,12 @@
+[page console] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page console] Manifest fetch from http://127.0.0.1:8231/manifest.webmanifest failed, code 404
+[page console] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page console] Manifest fetch from http://127.0.0.1:8231/manifest.webmanifest failed, code 404
+[page console] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page console] Manifest fetch from http://127.0.0.1:8231/manifest.webmanifest failed, code 404
+[page console] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page console] Manifest fetch from http://127.0.0.1:8231/manifest.webmanifest failed, code 404
+stored machine 78ac2ddece9c file /home/gabriel.guest/Development/waarm64/target/snapz/desktop-956ac0ce5360.waarm64snap
+round 0 load {"wallMs":752,"phases":{"check":0,"checkRead":0,"checkCrc":0,"state":31,"ram":379,"disk":77,"pool":6,"read":163,"crc":461,"unpack":813,"apply":347,"prepare":22,"start":67,"total":576}}
+round 0 kept {"wallMs":1134,"kind":"kept","bytes":678576229,"pausedMs":782,"stateMs":101,"blobBytes":114309668,"hintMs":12,"hinted":914358272,"id":"f6131d855182","phases":{"state":101,"blobs":15,"ram":626,"disk":35,"pool":6,"scan":227,"compress":2913,"crc":274,"sink":227,"poolWait":4,"poolReady":40,"pause":0,"copy":0,"close":222},"memory":{"before":{"rssMiB":3219,"pssMiB":2602},"peak":{"rssMiB":3357,"pssMiB":2732}}}
+wrote /home/gabriel.guest/Development/waarm64/bench/boot/results/perf101/ab/desktop-base-3.json

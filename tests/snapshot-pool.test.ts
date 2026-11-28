@@ -139,6 +139,30 @@ test('one worker\'s failure ends every worker and fails every job in flight', as
   pool.close();
 });
 
+test('a pool closed as its thread\'s end (`ending`, in a worker) leaves its workers to that end; a close after it too', async () => {
+  // Chromium strands a worker that terminates its own workers just before it is terminated (web/worker-end.ts).
+  const g = globalThis as Record<string, unknown>;
+  g.WorkerGlobalScope = class {};
+  try {
+    const f = fakes();
+    const pool = await startPool(WASM, 3, { spawn: f.spawn });
+    assert.ok(pool);
+    const job = pool.ram(new SharedArrayBuffer(4096), 0, 4096, 0);
+    pool.close({ ending: true });
+    await assert.rejects(job, /closed/, 'its jobs fail');
+    pool.close(); // a suspend's `finally` closes it again
+    assert.deepEqual(f.made.map((w) => w.terminated), [false, false, false], 'no worker terminated');
+    // In the middle of the thread's life, a close terminates them.
+    const h = fakes();
+    const other = await startPool(WASM, 2, { spawn: h.spawn });
+    assert.ok(other);
+    other.close();
+    assert.deepEqual(h.made.map((w) => w.terminated), [true, true]);
+  } finally {
+    delete g.WorkerGlobalScope;
+  }
+});
+
 test('a pool whose third worker can\'t be made ends the two that were', async () => {
   const f = fakes({ failOn: 3 });
   assert.equal(await startPool(WASM, 4, { spawn: f.spawn }), undefined);

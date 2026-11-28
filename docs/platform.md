@@ -551,7 +551,9 @@ container is streamed both ways (RAM is up to GiBs) and knows nothing of the cor
   them and every later one is made by the writer itself (RAM doesn't move while it is written): time lost, not the
   file; once the write itself has failed (the sink), no chunk is made. A view that isn't shared memory or 4-aligned,
   and a writer of a codec the workers don't write (only the core's codec is `pooled`: web/lz.ts), take the one-thread
-  path too (`tests/snapshot-pool.test.ts`). The desktop's pause went from 3.79 s to
+  path too (`tests/snapshot-pool.test.ts`). A close that is the machine worker's end (a suspend, a save during a stop:
+  `close({ ending: true })`) leaves the workers to that end (docs/host-code.md §2.1), and a second close after it
+  doesn't terminate them; before PERF loop 101 it terminated them anyway. The desktop's pause went from 3.79 s to
   ~1.1 s ("SNAPZ loop 2").
 - **A load's pool** (the same workers, `startPool`; the reader's `LoadPool`; `openSnapshot`'s `pool`): started by the
   machine worker when a start has a snapshot (a picked file, a kept snapshot, a suspended copy: `openRestore` in
@@ -591,12 +593,18 @@ container is streamed both ways (RAM is up to GiBs) and knows nothing of the cor
   views: a byte written through one is read through the other, as a shared memory's `buffer` is another object after a
   grow) then reads only the DISK frames from there (`openSnapshot`'s `from`, the frames before it counted for the end's
   count) into the overlays. What the rule above protects still holds: **a disk is never touched before the whole file
-  is checked**, and a refusal is the first failing frame's (a DISK frame's refusal of its slot waits for the frames
-  before it). RAM is touched, but it is the new machine's, which nothing runs on: a refusal drops it with the start (a
+  is checked**, and a refusal is the first failing frame's (a refusal of the pass's own, of the state's structure, a
+  BLOB frame's place or a DISK frame's slot, waits for the frames before it: a BLOB frame whose index is damaged is
+  its checksum's). A BLOB chunk that comes twice is refused (`blobFit`): a blob's every byte is one frame's. Once the
+  read is refused, the pieces still with the workers are given up: a pool closed after it fails them, and they are not
+  read again on the machine worker (`abandoned`; before, every frame of up to 2 × the pool's size pieces was read,
+  checked and placed into the refused machine's memories after the refusal). RAM is touched, but it is the new machine's, which nothing runs on: a refusal drops it with the start (a
   suspended machine that can't resume boots on memories of its own; until a GC the dropped ones' touched pages stay
   committed, up to the RAM's non-zero pages). The desktop's load: the worker's `total` 1,012 → 639 ms (−37%), Debian's
   282 → 230 (−18%), alternated rounds on the dev VM (the one pass −32%, eight slices ahead −4.6%, waiting for any
-  worker with the BLOB frames on the workers −7% more; bench/boot/REPORT.md "PERF loop 99"). The two passes stay for a caller without the
+  worker with the BLOB frames on the workers −7% more; bench/boot/REPORT.md "PERF loop 99"). The restore is the
+  start's alone: `bootVm` keeps its options for the machine's life but not their `restore` (its state, its pass's last
+  pieces), nor does the machine worker's start, which awaits the machine's run (PERF loop 101). The two passes stay for a caller without the
   memories (the tests, `runThroughSnapshots`' every other restore) and a stream has one pass of its own, as before.
 - **Refusals** (`SnapshotError`, a `MsgError` with its `problem` and a message of the `snapshots` catalog that names
   what the user can do: docs/i18n.md) come before anything is touched: not a snapshot,

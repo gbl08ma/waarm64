@@ -1091,10 +1091,19 @@ export async function openSnapshot(
   };
   /** The refusal `settleOne` threw: the oldest work's, earlier in the file than any still queued. */
   let jobRefusal: unknown;
+  /**
+   * The read is over (refused, or its frames given up): the work still out is dropped, not redone here when its pool
+   * fails it (a refused restore's pool is closed: its pieces read again, checked and placed into the refused machine's
+   * RAM on this thread, the memories kept until they were).
+   */
+  let abandoned = false;
   /** The oldest work settled; its refusal thrown. */
   const settleOne = async () => {
     const e = await jobs.shift()!.p;
-    if (e) throw (jobRefusal = e);
+    if (e) {
+      abandoned = true;
+      throw (jobRefusal = e);
+    }
   };
   /**
    * Until less than `limit` work is out, any of it (waiting on the oldest only kept the workers that were done idle
@@ -1231,6 +1240,7 @@ export async function openSnapshot(
       /** Frames `mine` failed by their worker (`failed`, positions in it) read again and done here, in order. */
       const redo = async (mine: Job[], failed: number[]) => {
         for (const k of failed) {
+          if (abandoned) return;
           const j = mine[k];
           const frame = new Uint8Array(await b.slice(j.at, j.at + FRAME_HEADER + j.job.len).arrayBuffer());
           if (frame.length !== FRAME_HEADER + j.job.len) throw truncated();
@@ -1397,6 +1407,7 @@ export async function openSnapshot(
         }
         throw e;
       } finally {
+        abandoned = true; // what is still out (after a refusal) is a later frame's
         input.close();
       }
     }

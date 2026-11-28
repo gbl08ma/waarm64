@@ -465,11 +465,15 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
 }
 
 async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
+  // The restore is the start's alone: the machine's closures keep `o`, and with it the restore's state and its pass's
+  // last pieces (a few MiB) for the machine's life.
+  const { restore } = o;
+  o = { ...o, restore: undefined };
   // The same placement as core/tests/boot.rs: Image at +2 MiB, initrd at +128 MiB (the firmware at +512 KiB). Past
   // RAM's end in memory 0 lie fw_cfg's buffer and the core's heap: images that don't fit are refused.
   const kernelOff = o.kernelOffset ?? (o.firmware ? FIRMWARE_OFFSET : 2 << 20);
   const initrdOff = 128 << 20;
-  if (!o.restore) {
+  if (!restore) {
     const need = Math.max(kernelOff + o.kernel.length, o.initrd ? initrdOff + o.initrd.length : 0);
     if (need > o.ramSize)
       throw new MsgError(
@@ -599,7 +603,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
   );
   const cmd = new TextEncoder().encode(o.cmdline);
   bytes().set(cmd, scratch + S_CMDLINE);
-  if (!o.restore) {
+  if (!restore) {
     bytes().set(o.kernel, ram + kernelOff);
     if (o.initrd) bytes().set(o.initrd, ram + initrdOff);
   }
@@ -609,11 +613,11 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
   const flashAt = fw ? ex.vm_flash(vm) : 0;
   const flashSize = fw?.flashSize ?? FLASH_SIZE;
   const shared = specs.map((_, i) => ex.vm_device(vm, i));
-  if (o.restore) {
+  if (restore) {
     // RAM first (the transports read the chains their backends held from it), then the core's
     // state: the registers, the devices, their config spaces, the flash bank.
-    await o.restore.fill(new Uint8Array(memory.buffer, ram, o.ramSize), spillRam());
-    const { core } = o.restore;
+    await restore.fill(new Uint8Array(memory.buffer, ram, o.ramSize), spillRam());
+    const { core } = restore;
     const at = ex.thread_alloc(core.length, 16);
     if (!at) throw new Error("no memory for the snapshot's state");
     bytes().set(core, at);
@@ -680,7 +684,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
       deterministic,
       wakes,
       stops,
-      state: o.restore?.host.devices,
+      state: restore?.host.devices,
       xhci,
       io,
     },
@@ -692,7 +696,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
   const usb = usbChannel && usbHost(usbChannel.port2);
   // The restore posted the chains the old backends held to the request rings: the new ones take them. A backend that
   // throws on one fails the start: its files are released (a start after it opens them again: web/app/worker.ts).
-  if (o.restore)
+  if (restore)
     await devices.quiesce().catch(async (e: unknown) => {
       await devices.close();
       throw e;
@@ -764,7 +768,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
   };
   if (o.serialIn) o.serialIn.onmessage = (e: MessageEvent) => send(e.data);
   // Input the saved machine's host hadn't given the guest yet: at the first run's pump, as there.
-  if (o.restore?.host.input.length) queued.push(Uint8Array.from(o.restore.host.input));
+  if (restore?.host.input.length) queued.push(Uint8Array.from(restore.host.input));
   /** The buffer `snapshot` has the core write its state to (never freed: kept for the next one). */
   let stateBuf = { at: 0, len: 0 };
   const blocks = Array.from({ length: ncpus }, (_, i) => ex.vm_counters(vm, i));

@@ -1,0 +1,308 @@
+{
+ "desktop": {
+  "base": {
+   "loadWall": {
+    "median": 753,
+    "min": 752,
+    "max": 1157,
+    "n": 3
+   },
+   "loadTotal": {
+    "median": 598,
+    "min": 576,
+    "max": 1001,
+    "n": 3
+   },
+   "pass": {
+    "median": 413,
+    "min": 410,
+    "max": 788,
+    "n": 3
+   },
+   "disk": {
+    "median": 90,
+    "min": 77,
+    "max": 90,
+    "n": 3
+   },
+   "paused": {
+    "median": 782,
+    "min": 772,
+    "max": 812,
+    "n": 3
+   },
+   "blobs": {
+    "median": 15,
+    "min": 15,
+    "max": 16,
+    "n": 3
+   },
+   "saveDisk": {
+    "median": 35,
+    "min": 34,
+    "max": 38,
+    "n": 3
+   },
+   "saveMemAddedMiB": {
+    "median": 144,
+    "min": 138,
+    "max": 145,
+    "n": 3
+   }
+  },
+  "new": {
+   "loadWall": {
+    "median": 854,
+    "min": 753,
+    "max": 859,
+    "n": 3
+   },
+   "loadTotal": {
+    "median": 652,
+    "min": 581,
+    "max": 662,
+    "n": 3
+   },
+   "pass": {
+    "median": 480,
+    "min": 409,
+    "max": 490,
+    "n": 3
+   },
+   "disk": {
+    "median": 78,
+    "min": 76,
+    "max": 78,
+    "n": 3
+   },
+   "paused": {
+    "median": 774,
+    "min": 772,
+    "max": 782,
+    "n": 3
+   },
+   "blobs": {
+    "median": 15,
+    "min": 14,
+    "max": 15,
+    "n": 3
+   },
+   "saveDisk": {
+    "median": 36,
+    "min": 34,
+    "max": 36,
+    "n": 3
+   },
+   "saveMemAddedMiB": {
+    "median": 140,
+    "min": 131,
+    "max": 144,
+    "n": 3
+   }
+  }
+ },
+ "desktop2": {
+  "base": {
+   "loadWall": {
+    "median": 756,
+    "min": 754,
+    "max": 759,
+    "n": 3
+   },
+   "loadTotal": {
+    "median": 592,
+    "min": 589,
+    "max": 629,
+    "n": 3
+   },
+   "pass": {
+    "median": 418,
+    "min": 411,
+    "max": 460,
+    "n": 3
+   },
+   "disk": {
+    "median": 77,
+    "min": 76,
+    "max": 81,
+    "n": 3
+   },
+   "paused": {
+    "median": 783,
+    "min": 771,
+    "max": 793,
+    "n": 3
+   },
+   "blobs": {
+    "median": 15,
+    "min": 14,
+    "max": 17,
+    "n": 3
+   },
+   "saveDisk": {
+    "median": 35,
+    "min": 34,
+    "max": 36,
+    "n": 3
+   },
+   "saveMemAddedMiB": {
+    "median": 141,
+    "min": 137,
+    "max": 146,
+    "n": 3
+   }
+  },
+  "new": {
+   "loadWall": {
+    "median": 759,
+    "min": 754,
+    "max": 761,
+    "n": 3
+   },
+   "loadTotal": {
+    "median": 616,
+    "min": 609,
+    "max": 633,
+    "n": 3
+   },
+   "pass": {
+    "median": 440,
+    "min": 435,
+    "max": 464,
+    "n": 3
+   },
+   "disk": {
+    "median": 76,
+    "min": 76,
+    "max": 80,
+    "n": 3
+   },
+   "paused": {
+    "median": 780,
+    "min": 778,
+    "max": 784,
+    "n": 3
+   },
+   "blobs": {
+    "median": 14,
+    "min": 14,
+    "max": 14,
+    "n": 3
+   },
+   "saveDisk": {
+    "median": 36,
+    "min": 36,
+    "max": 37,
+    "n": 3
+   },
+   "saveMemAddedMiB": {
+    "median": 137,
+    "min": 135,
+    "max": 138,
+    "n": 3
+   }
+  }
+ },
+ "desktop3": {
+  "base": {
+   "loadWall": {
+    "median": 759,
+    "min": 758,
+    "max": 861,
+    "n": 3
+   },
+   "loadTotal": {
+    "median": 596,
+    "min": 595,
+    "max": 698,
+    "n": 3
+   },
+   "pass": {
+    "median": 419,
+    "min": 419,
+    "max": 508,
+    "n": 3
+   },
+   "disk": {
+    "median": 78,
+    "min": 78,
+    "max": 86,
+    "n": 3
+   },
+   "paused": {
+    "median": 789,
+    "min": 787,
+    "max": 796,
+    "n": 3
+   },
+   "blobs": {
+    "median": 15,
+    "min": 15,
+    "max": 16,
+    "n": 3
+   },
+   "saveDisk": {
+    "median": 36,
+    "min": 35,
+    "max": 36,
+    "n": 3
+   },
+   "saveMemAddedMiB": {
+    "median": 145,
+    "min": 131,
+    "max": 145,
+    "n": 3
+   }
+  },
+  "new": {
+   "loadWall": {
+    "median": 759,
+    "min": 755,
+    "max": 762,
+    "n": 3
+   },
+   "loadTotal": {
+    "median": 595,
+    "min": 585,
+    "max": 603,
+    "n": 3
+   },
+   "pass": {
+    "median": 413,
+    "min": 412,
+    "max": 425,
+    "n": 3
+   },
+   "disk": {
+    "median": 80,
+    "min": 77,
+    "max": 80,
+    "n": 3
+   },
+   "paused": {
+    "median": 793,
+    "min": 790,
+    "max": 800,
+    "n": 3
+   },
+   "blobs": {
+    "median": 15,
+    "min": 15,
+    "max": 15,
+    "n": 3
+   },
+   "saveDisk": {
+    "median": 36,
+    "min": 35,
+    "max": 36,
+    "n": 3
+   },
+   "saveMemAddedMiB": {
+    "median": 141,
+    "min": 134,
+    "max": 235,
+    "n": 3
+   }
+  }
+ }
+}

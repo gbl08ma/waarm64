@@ -483,12 +483,24 @@ export async function readSnapshot(
     }
   };
   let frames: AsyncGenerator<ReadFrame> = counting(s.frames());
+  /**
+   * `e`, a refusal of the pass's own (the frames' order, the state's structure), thrown after the frames before it: an
+   * earlier frame's refusal (a CRC a pool's worker still has) comes first; the frames given up after.
+   */
+  const refuse = async (e: unknown): Promise<never> => {
+    try {
+      await s.placed();
+    } finally {
+      void frames.return(undefined);
+    }
+    throw e;
+  };
   // CORE and DEVS come first, each in index order.
   const parts: Record<string, Uint8Array[]> = { CORE: [], DEVS: [] };
   let next = await frames.next();
   for (; !next.done && next.value.tag in parts; next = await frames.next()) {
     const { tag, index, data } = next.value;
-    if (index !== parts[tag].length) throw corrupt(msg('snapshots:snapshot.damage.stateOrder'));
+    if (index !== parts[tag].length) return refuse(corrupt(msg('snapshots:snapshot.damage.stateOrder')));
     parts[tag].push(data);
   }
   const join = (p: Uint8Array[]) => {
@@ -497,7 +509,7 @@ export async function readSnapshot(
     return out;
   };
   if (!parts.CORE.length || !parts.DEVS.length)
-    throw next.done ? truncated() : corrupt(msg('snapshots:snapshot.damage.stateMissing'));
+    return refuse(next.done ? truncated() : corrupt(msg('snapshots:snapshot.damage.stateMissing')));
   let host: VmState['host'];
   // The blobs DEVS names (`writeSnapshot`), made at their lengths and filled from the BLOB frames that follow.
   const blobs: Uint8Array[] = [];
@@ -517,9 +529,11 @@ export async function readSnapshot(
       return (blobs[n as number] = new Uint8Array(length as number));
     });
   } catch {
-    throw corrupt(msg('snapshots:snapshot.damage.devices'));
+    return refuse(corrupt(msg('snapshots:snapshot.damage.devices')));
   }
   const filled = blobs.map(() => 0);
+  /** The BLOB frames' indices so far: a chunk twice is refused (a blob's every byte is a frame's once). */
+  const seen = new Set<number>();
   /** A one pass's BLOB frames its pool's workers unpack: each copied into its blob once it comes, by the pass's end. */
   const blobsLater: Promise<void>[] = [];
   for (; !next.done && next.value.tag === 'BLOB'; next = await frames.next()) {
@@ -527,18 +541,21 @@ export async function readSnapshot(
     const n = Math.floor(index / BLOB_CHUNKS),
       at = (index % BLOB_CHUNKS) * 2 ** 20;
     const length = later ? size! : data.length;
-    if (!blobs[n] || at + length > blobs[n].length) throw corrupt(msg('snapshots:snapshot.damage.blobFit'));
+    if (!blobs[n] || at + length > blobs[n].length || seen.has(index))
+      return refuse(corrupt(msg('snapshots:snapshot.damage.blobFit')));
+    seen.add(index);
     if (later) blobsLater.push(later.then((d) => blobs[n].set(d, at)));
     else blobs[n].set(data, at);
     filled[n] += length;
   }
-  if (filled.some((n, k) => n !== blobs[k]?.length)) throw corrupt(msg('snapshots:snapshot.damage.blobMissing'));
+  if (filled.some((n, k) => n !== blobs[k]?.length))
+    return refuse(corrupt(msg('snapshots:snapshot.damage.blobMissing')));
   if (
     !Array.isArray(host?.devices) ||
     !Array.isArray(host.input) ||
     host.input.some((b) => !Number.isInteger(b) || b < 0 || b > 255)
   )
-    throw corrupt(msg('snapshots:snapshot.damage.devices'));
+    return refuse(corrupt(msg('snapshots:snapshot.damage.devices')));
   phases.state = since();
   read();
   /** RAM's frames from `next` on placed into `ram` and `spill` (memory 0's, then each spill memory's). */

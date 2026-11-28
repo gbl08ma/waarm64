@@ -10058,3 +10058,54 @@ rounds; its lua phase's spread is ±270 ms, so no gain is claimed), its CPU −1
 session's small drop is consistent with fewer polls in vain (finding 3's oscillation). Memory: none. Deterministic and
 realtime round-robin run none of the changed code (the vCPU worker and the parallel run loop's off branch and exit);
 `tests/steps.txt` unchanged; no ABI change (the core's exports and the exit record are as they were).
+
+## PERF loop 101: the review of a snapshot's load and save fixed (2026-11-28)
+
+An out-of-context static review of a snapshot's load and save on the host (`review/snapshot-pass`: web/snapshot*.ts,
+`makeMemories`/`bootVm`, the machine worker's load and save; after loop 99's one pass and pooled BLOB and DISK frames)
+reported four findings. **All four held; each is fixed with its test failing first on 5dc048d0.** Data:
+`results/perf101/` (`run-ab.sh`, `web.patch`, `ab/` and `ab2/`, `summary.py` → `summary.json`).
+
+1. **A save's pool closed as the thread's end terminated its workers anyway** (held, since ee143186): `close({ ending:
+   true })` left the workers, then its `fail` called `end()` again with `ending` false and terminated them, just before
+   the suspend (or a save during a stop) ended the machine worker: the pattern "Workers stranded at a machine's end"
+   found to strand it. Fixed: `fail` takes `ending`, and the workers are ended once (a suspend's `finally` closes the
+   pool a second time, which no longer terminates what the first left). Test: tests/snapshot-pool.test.ts "a pool
+   closed as its thread's end…" (`WorkerGlobalScope` stubbed; failed first: all three fakes terminated). In Chromium
+   155 (Buildroot, 2 vCPUs, the renderer's `DedicatedWorker` threads and anonymous memory 15 s after;
+   `bench/results/local/perf101/strand.ts`, not committed): a suspend (three runs) and a power-off leave no worker
+   thread and the renderer at ~112 MiB from ~300 while running; the base's suspend did the same in three runs, so the
+   stranding this risked isn't reproduced on this host (ee143186 saw it on loads, intermittently).
+2. **Pieces in flight were redone on the machine worker after a pooled refusal** (held): a job's refusal ended the
+   read without waiting for the later pieces, and the pool closed after it failed them, whose handlers read every frame
+   again from the Blob, checked it and placed it into the refused machine's memories. Fixed: the read is `abandoned`
+   once a job's refusal is thrown or the frames end, and `redo` then does nothing. Test: tests/snapshot.test.ts "a
+   refused one pass: the pieces still out are dropped…" (a `LoadPool` that fails the first piece once another is out
+   and holds the rest; failed first: a Blob slice after the refusal). **The secondary held too:** the one pass's own
+   refusals of the state (`stateOrder`, `stateMissing`, `devices`, `blobFit`, `blobMissing`) didn't wait for the
+   frames before them, so a BLOB frame whose index was damaged was refused as `blobFit` through a pool and as its
+   checksum on one thread; they now wait (`refuse`: `placed()`, then the frames given up). Test: "a one pass's own
+   refusals of the state come after an earlier frame's…" (failed first: `blobFit` with a pool of 3).
+3. **A restore stayed reachable for the machine's life** (held): `bootVm`'s closures keep its options, `restore`
+   among them (the joined CORE, `fill`'s scope with the CORE and DEVS chunks and the pass's last piece). Fixed: `boot`
+   takes the restore out of the options it keeps; the machine worker's `start`, which awaits the machine's run and had
+   the restore in its closure context, drops it once the boot settled. Test: tests/snapshot-plan.test.ts "a restored
+   machine keeps nothing of its restore…" (bare metal, `--expose-gc`, `WeakRef`s to the restore and its CORE; failed
+   first: both kept). The worker's half has no test of its own (it would need a heap snapshot of the page's worker).
+4. **Duplicate BLOB frames passed the "every byte filled" check** (held): the count was of lengths, so chunk 0 twice
+   filled a two-chunk blob, chunk 1 left zero. Fixed: a chunk that comes twice is refused (`blobFit`). Test: in the
+   second test of 2 (blob 0's chunk 1 re-indexed as 0, its CRC made right; failed first: the restore went through, on
+   one thread and with a pool). Duplicate RAM frames (placed in completion order through a pool) are left as they are:
+   only a crafted file has them, and the CRC covers the index.
+
+**Planted bugs** (each caught, the source restored): `close` without `ending` to `fail`; the once-only end removed;
+`redo`'s `abandoned` check removed; `blobFit` thrown without `refuse`; the repeat check removed; the restore kept in
+`boot`'s options.
+
+**Loop 99's speed kept** (the dev VM, Chromium 155.0.8059.84, the desktop, `OPS=load,kept`, `SETTLE_S=20`, one
+fresh browser a run, arms alternated, base 5dc048d0's web/; three sets of 3 rounds, `ab/`, `ab2/`, `ab3/`, after
+`ci.sh` for the third): the load's worker `total`, medians (ranges), base 598 (576-1001), 592 (589-629), 596 (595-698);
+new 652 (581-662), 616 (609-633), 595 (585-603); all nine 596 against 609. The rounds overlap in every set, and the
+spread is the pass's wait for the file's pieces (`read` 138-526 in either arm), which the fixes don't touch (a Set of
+the BLOB frames' indices, a flag read on the fallback, the options copied once a boot). The kept save's pause 782, 783,
+789 against 774, 780, 793: the same. No memory change.

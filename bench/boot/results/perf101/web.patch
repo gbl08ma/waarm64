@@ -1,0 +1,250 @@
+diff --git a/web/app/worker.ts b/web/app/worker.ts
+index 680abe1e..cb609fc8 100644
+--- a/web/app/worker.ts
++++ b/web/app/worker.ts
+@@ -257,6 +257,7 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
+       throw err;
+     }
+   });
++  restore = undefined; // the boot's: this start awaits the machine's run, and kept it for the machine's life
+   if (!made || stopped()) return; // `stop` closes it
+   if ('instead' in made) return bootInstead(made.instead);
+   const { devices, v } = made;
+@@ -267,7 +268,7 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
+   if (restored && !stopped()) await postLoaded(loadPhases(t0, prepared, restored));
+   if (stopped()) return; // stopped while the page answered `loaded`: `stop` closes it
+   const marker = m.config.dev.guestReadyOnly ? undefined : machine.ready; // `?ready=guest`: only the guest's signs
+-  return run({ ...machine, ready: marker }, plan, ioOf(plan, m, machine, devices), !!restore);
++  return run({ ...machine, ready: marker }, plan, ioOf(plan, m, machine, devices), !!snapshot);
+ }
+ 
+ /**
+diff --git a/web/snapshot-file.ts b/web/snapshot-file.ts
+index a285eb60..ce88ecfc 100644
+--- a/web/snapshot-file.ts
++++ b/web/snapshot-file.ts
+@@ -1091,10 +1091,19 @@ export async function openSnapshot(
+   };
+   /** The refusal `settleOne` threw: the oldest work's, earlier in the file than any still queued. */
+   let jobRefusal: unknown;
++  /**
++   * The read is over (refused, or its frames given up): the work still out is dropped, not redone here when its pool
++   * fails it (a refused restore's pool is closed: its pieces read again, checked and placed into the refused machine's
++   * RAM on this thread, the memories kept until they were).
++   */
++  let abandoned = false;
+   /** The oldest work settled; its refusal thrown. */
+   const settleOne = async () => {
+     const e = await jobs.shift()!.p;
+-    if (e) throw (jobRefusal = e);
++    if (e) {
++      abandoned = true;
++      throw (jobRefusal = e);
++    }
+   };
+   /**
+    * Until less than `limit` work is out, any of it (waiting on the oldest only kept the workers that were done idle
+@@ -1231,6 +1240,7 @@ export async function openSnapshot(
+       /** Frames `mine` failed by their worker (`failed`, positions in it) read again and done here, in order. */
+       const redo = async (mine: Job[], failed: number[]) => {
+         for (const k of failed) {
++          if (abandoned) return;
+           const j = mine[k];
+           const frame = new Uint8Array(await b.slice(j.at, j.at + FRAME_HEADER + j.job.len).arrayBuffer());
+           if (frame.length !== FRAME_HEADER + j.job.len) throw truncated();
+@@ -1397,6 +1407,7 @@ export async function openSnapshot(
+         }
+         throw e;
+       } finally {
++        abandoned = true; // what is still out (after a refusal) is a later frame's
+         input.close();
+       }
+     }
+diff --git a/web/snapshot-pool.ts b/web/snapshot-pool.ts
+index 027b6cca..3aba452e 100644
+--- a/web/snapshot-pool.ts
++++ b/web/snapshot-pool.ts
+@@ -80,7 +80,11 @@ export async function startPool(
+   const made: number[] = Array.from({ length: n }, () => 0);
+   let broken: Error | undefined;
+   let handles: Handle[] = [];
++  /** Its workers ended once (a second close, say a suspend's `finally`, doesn't terminate those left to the thread's end). */
++  let ended = false;
+   const end = (ending = false) => {
++    if (ended) return;
++    ended = true;
+     for (const h of handles) endWithOwner(h, ending);
+   };
+   /** No reply for `stallMs` while jobs are out: the pool has failed. */
+@@ -91,9 +95,10 @@ export async function startPool(
+       ? setTimeout(() => fail(new Error('a snapshot pool worker stopped answering')), stallMs)
+       : undefined;
+   };
+-  const fail = (e: Error) => {
++  /** Every job failed with `e`, now and later; the workers ended (`ending`: left to the thread's end, `endWithOwner`). */
++  const fail = (e: Error, ending = false) => {
+     broken ??= e;
+-    end();
++    end(ending);
+     for (const w of waiting.values()) w.reject(e);
+     waiting.clear();
+     watch();
+@@ -200,8 +205,7 @@ export async function startPool(
+     },
+     /** `ending`: the thread ends next (a save during a stop, a suspend): its workers are left to that end (`endWithOwner`). */
+     close(c: CloseOptions = {}) {
+-      end(!!c.ending);
+-      fail(new Error('the snapshot pool was closed'));
++      fail(new Error('the snapshot pool was closed'), !!c.ending);
+     },
+   };
+ }
+diff --git a/web/snapshot.ts b/web/snapshot.ts
+index a1ff01bc..eb8891d7 100644
+--- a/web/snapshot.ts
++++ b/web/snapshot.ts
+@@ -483,12 +483,24 @@ export async function readSnapshot(
+     }
+   };
+   let frames: AsyncGenerator<ReadFrame> = counting(s.frames());
++  /**
++   * `e`, a refusal of the pass's own (the frames' order, the state's structure), thrown after the frames before it: an
++   * earlier frame's refusal (a CRC a pool's worker still has) comes first; the frames given up after.
++   */
++  const refuse = async (e: unknown): Promise<never> => {
++    try {
++      await s.placed();
++    } finally {
++      void frames.return(undefined);
++    }
++    throw e;
++  };
+   // CORE and DEVS come first, each in index order.
+   const parts: Record<string, Uint8Array[]> = { CORE: [], DEVS: [] };
+   let next = await frames.next();
+   for (; !next.done && next.value.tag in parts; next = await frames.next()) {
+     const { tag, index, data } = next.value;
+-    if (index !== parts[tag].length) throw corrupt(msg('snapshots:snapshot.damage.stateOrder'));
++    if (index !== parts[tag].length) return refuse(corrupt(msg('snapshots:snapshot.damage.stateOrder')));
+     parts[tag].push(data);
+   }
+   const join = (p: Uint8Array[]) => {
+@@ -497,7 +509,7 @@ export async function readSnapshot(
+     return out;
+   };
+   if (!parts.CORE.length || !parts.DEVS.length)
+-    throw next.done ? truncated() : corrupt(msg('snapshots:snapshot.damage.stateMissing'));
++    return refuse(next.done ? truncated() : corrupt(msg('snapshots:snapshot.damage.stateMissing')));
+   let host: VmState['host'];
+   // The blobs DEVS names (`writeSnapshot`), made at their lengths and filled from the BLOB frames that follow.
+   const blobs: Uint8Array[] = [];
+@@ -517,9 +529,11 @@ export async function readSnapshot(
+       return (blobs[n as number] = new Uint8Array(length as number));
+     });
+   } catch {
+-    throw corrupt(msg('snapshots:snapshot.damage.devices'));
++    return refuse(corrupt(msg('snapshots:snapshot.damage.devices')));
+   }
+   const filled = blobs.map(() => 0);
++  /** The BLOB frames' indices so far: a chunk twice is refused (a blob's every byte is a frame's once). */
++  const seen = new Set<number>();
+   /** A one pass's BLOB frames its pool's workers unpack: each copied into its blob once it comes, by the pass's end. */
+   const blobsLater: Promise<void>[] = [];
+   for (; !next.done && next.value.tag === 'BLOB'; next = await frames.next()) {
+@@ -527,18 +541,21 @@ export async function readSnapshot(
+     const n = Math.floor(index / BLOB_CHUNKS),
+       at = (index % BLOB_CHUNKS) * 2 ** 20;
+     const length = later ? size! : data.length;
+-    if (!blobs[n] || at + length > blobs[n].length) throw corrupt(msg('snapshots:snapshot.damage.blobFit'));
++    if (!blobs[n] || at + length > blobs[n].length || seen.has(index))
++      return refuse(corrupt(msg('snapshots:snapshot.damage.blobFit')));
++    seen.add(index);
+     if (later) blobsLater.push(later.then((d) => blobs[n].set(d, at)));
+     else blobs[n].set(data, at);
+     filled[n] += length;
+   }
+-  if (filled.some((n, k) => n !== blobs[k]?.length)) throw corrupt(msg('snapshots:snapshot.damage.blobMissing'));
++  if (filled.some((n, k) => n !== blobs[k]?.length))
++    return refuse(corrupt(msg('snapshots:snapshot.damage.blobMissing')));
+   if (
+     !Array.isArray(host?.devices) ||
+     !Array.isArray(host.input) ||
+     host.input.some((b) => !Number.isInteger(b) || b < 0 || b > 255)
+   )
+-    throw corrupt(msg('snapshots:snapshot.damage.devices'));
++    return refuse(corrupt(msg('snapshots:snapshot.damage.devices')));
+   phases.state = since();
+   read();
+   /** RAM's frames from `next` on placed into `ram` and `spill` (memory 0's, then each spill memory's). */
+diff --git a/web/vm.ts b/web/vm.ts
+index a4fb668f..152a702f 100644
+--- a/web/vm.ts
++++ b/web/vm.ts
+@@ -465,11 +465,15 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
+ }
+ 
+ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
++  // The restore is the start's alone: the machine's closures keep `o`, and with it the restore's state and its pass's
++  // last pieces (a few MiB) for the machine's life.
++  const { restore } = o;
++  o = { ...o, restore: undefined };
+   // The same placement as core/tests/boot.rs: Image at +2 MiB, initrd at +128 MiB (the firmware at +512 KiB). Past
+   // RAM's end in memory 0 lie fw_cfg's buffer and the core's heap: images that don't fit are refused.
+   const kernelOff = o.kernelOffset ?? (o.firmware ? FIRMWARE_OFFSET : 2 << 20);
+   const initrdOff = 128 << 20;
+-  if (!o.restore) {
++  if (!restore) {
+     const need = Math.max(kernelOff + o.kernel.length, o.initrd ? initrdOff + o.initrd.length : 0);
+     if (need > o.ramSize)
+       throw new MsgError(
+@@ -599,7 +603,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
+   );
+   const cmd = new TextEncoder().encode(o.cmdline);
+   bytes().set(cmd, scratch + S_CMDLINE);
+-  if (!o.restore) {
++  if (!restore) {
+     bytes().set(o.kernel, ram + kernelOff);
+     if (o.initrd) bytes().set(o.initrd, ram + initrdOff);
+   }
+@@ -609,11 +613,11 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
+   const flashAt = fw ? ex.vm_flash(vm) : 0;
+   const flashSize = fw?.flashSize ?? FLASH_SIZE;
+   const shared = specs.map((_, i) => ex.vm_device(vm, i));
+-  if (o.restore) {
++  if (restore) {
+     // RAM first (the transports read the chains their backends held from it), then the core's
+     // state: the registers, the devices, their config spaces, the flash bank.
+-    await o.restore.fill(new Uint8Array(memory.buffer, ram, o.ramSize), spillRam());
+-    const { core } = o.restore;
++    await restore.fill(new Uint8Array(memory.buffer, ram, o.ramSize), spillRam());
++    const { core } = restore;
+     const at = ex.thread_alloc(core.length, 16);
+     if (!at) throw new Error("no memory for the snapshot's state");
+     bytes().set(core, at);
+@@ -680,7 +684,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
+       deterministic,
+       wakes,
+       stops,
+-      state: o.restore?.host.devices,
++      state: restore?.host.devices,
+       xhci,
+       io,
+     },
+@@ -692,7 +696,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
+   const usb = usbChannel && usbHost(usbChannel.port2);
+   // The restore posted the chains the old backends held to the request rings: the new ones take them. A backend that
+   // throws on one fails the start: its files are released (a start after it opens them again: web/app/worker.ts).
+-  if (o.restore)
++  if (restore)
+     await devices.quiesce().catch(async (e: unknown) => {
+       await devices.close();
+       throw e;
+@@ -764,7 +768,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
+   };
+   if (o.serialIn) o.serialIn.onmessage = (e: MessageEvent) => send(e.data);
+   // Input the saved machine's host hadn't given the guest yet: at the first run's pump, as there.
+-  if (o.restore?.host.input.length) queued.push(Uint8Array.from(o.restore.host.input));
++  if (restore?.host.input.length) queued.push(Uint8Array.from(restore.host.input));
+   /** The buffer `snapshot` has the core write its state to (never freed: kept for the next one). */
+   let stateBuf = { at: 0, len: 0 };
+   const blocks = Array.from({ length: ncpus }, (_, i) => ex.vm_counters(vm, i));

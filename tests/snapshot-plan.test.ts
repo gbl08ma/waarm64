@@ -8,6 +8,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { test } from 'node:test';
+import { setFlagsFromString } from 'node:v8';
+import { runInNewContext } from 'node:vm';
 import type { DeviceSpec } from '../web/devices.ts';
 import { lzCodec } from '../web/lz.ts';
 import { openOverlay, overlay, overlayMeta, writeOwnSize } from '../web/overlay.ts';
@@ -270,4 +272,32 @@ test("a snapshot carries the spill memories' RAM, and restores only onto the sam
     const { restore } = await readSnapshot(file, codec, codec.snapshotVersion);
     await assert.rejects(bootVm(module, { ...o, spill: other, restore }), (e: unknown) => e instanceof SnapshotError && /NUMA nodes of 1\.5 MiB \+ 2 MiB/.test(text(e.msg)), JSON.stringify(other));
   }
+});
+
+test('a restored machine keeps nothing of its restore for its life (the state, the pass\'s pieces)', async () => {
+  setFlagsFromString('--expose-gc');
+  const gc = runInNewContext('gc') as () => void;
+  const module = await compileCore(WASM);
+  const codec = await lzCodec(module);
+  const o: BootOptions = { ramSize: 16 << 20, kernel: KERNEL, kernelOffset: 0, cmdline: '', jit: 0 };
+  const vm = await bootVm(module, o);
+  await vm.runAsync(10_000);
+  await vm.settle();
+  const parts: Uint8Array[] = [];
+  await writeSnapshot(vm, (b) => { parts.push(b.slice()); }, { machine: 'test' }, codec);
+  await vm.close();
+  const file = new Blob(parts as BlobPart[]);
+  // In a function of its own: nothing of this frame keeps the restore.
+  const restored = async () => {
+    const { restore } = await readSnapshot(file, codec, codec.snapshotVersion);
+    return { back: await bootVm(module, { ...o, restore }), refs: [new WeakRef(restore), new WeakRef(restore.core)] };
+  };
+  const { back, refs } = await restored();
+  for (let i = 0; i < 20 && refs.some((r) => r.deref()); i++) {
+    await new Promise((r) => setTimeout(r, 10));
+    gc();
+  }
+  assert.deepEqual(refs.map((r) => r.deref() === undefined), [true, true], 'the restore and its state let go while the machine lives');
+  await back.runAsync(1000);
+  await back.close();
 });

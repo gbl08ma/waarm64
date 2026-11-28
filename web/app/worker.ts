@@ -257,6 +257,7 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
       throw err;
     }
   });
+  restore = undefined; // the boot's: this start awaits the machine's run, and kept it for the machine's life
   if (!made || stopped()) return; // `stop` closes it
   if ('instead' in made) return bootInstead(made.instead);
   const { devices, v } = made;
@@ -267,7 +268,7 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   if (restored && !stopped()) await postLoaded(loadPhases(t0, prepared, restored));
   if (stopped()) return; // stopped while the page answered `loaded`: `stop` closes it
   const marker = m.config.dev.guestReadyOnly ? undefined : machine.ready; // `?ready=guest`: only the guest's signs
-  return run({ ...machine, ready: marker }, plan, ioOf(plan, m, machine, devices), !!restore);
+  return run({ ...machine, ready: marker }, plan, ioOf(plan, m, machine, devices), !!snapshot);
 }
 
 /**

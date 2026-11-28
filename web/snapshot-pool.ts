@@ -80,7 +80,11 @@ export async function startPool(
   const made: number[] = Array.from({ length: n }, () => 0);
   let broken: Error | undefined;
   let handles: Handle[] = [];
+  /** Its workers ended once (a second close, say a suspend's `finally`, doesn't terminate those left to the thread's end). */
+  let ended = false;
   const end = (ending = false) => {
+    if (ended) return;
+    ended = true;
     for (const h of handles) endWithOwner(h, ending);
   };
   /** No reply for `stallMs` while jobs are out: the pool has failed. */
@@ -91,9 +95,10 @@ export async function startPool(
       ? setTimeout(() => fail(new Error('a snapshot pool worker stopped answering')), stallMs)
       : undefined;
   };
-  const fail = (e: Error) => {
+  /** Every job failed with `e`, now and later; the workers ended (`ending`: left to the thread's end, `endWithOwner`). */
+  const fail = (e: Error, ending = false) => {
     broken ??= e;
-    end();
+    end(ending);
     for (const w of waiting.values()) w.reject(e);
     waiting.clear();
     watch();
@@ -200,8 +205,7 @@ export async function startPool(
     },
     /** `ending`: the thread ends next (a save during a stop, a suspend): its workers are left to that end (`endWithOwner`). */
     close(c: CloseOptions = {}) {
-      end(!!c.ending);
-      fail(new Error('the snapshot pool was closed'));
+      fail(new Error('the snapshot pool was closed'), !!c.ending);
     },
   };
 }

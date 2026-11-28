@@ -610,6 +610,88 @@ test('a load\'s one pass (`ram`): RAM placed into the views made ahead and the s
   await removeOverlay(name);
 });
 
+/** A one pass's file (`onePassFile`) for its refusals, its disk's overlay made: `edited` changes a BLOB frame's header. */
+async function refusedPass() {
+  const codec = await lzCodec(WASM);
+  const name = 'snapshot-test-refused-pass';
+  const size = 64 * 4096;
+  const spec = { type: 'blk', url: 'file:///refused/disk.img', overlay: name } as const;
+  const views = [poolRam(23), poolRam(9).subarray(65536 * 16)];
+  const { file } = await onePassFile(views, codec, { spec, size, blocks: [1, 2] });
+  await removeOverlay(name);
+  (await openOverlay(name, diskIdentity(spec, size))).close();
+  const fresh = () => ({ ram: new Uint8Array(new SharedArrayBuffer(views[0].length)), spill: [new Uint8Array(new SharedArrayBuffer(views[1].length))] });
+  const why = (key: string) => (e: unknown) => e instanceof SnapshotError && e.problem === 'corrupt' && (e.msg.params?.what as { key?: string })?.key === key;
+  const blobs = framesOf(file).filter((f) => f.tag === 'BLOB');
+  assert.ok(blobs.length >= 5, 'four frames of blob 0, one of blob 1');
+  /** `file` with BLOB frame `k`'s header changed by `edit`, its CRC made right again unless `crc` is false. */
+  const edited = (k: number, edit: (head: Buffer) => void, crc = true) => {
+    const out = Buffer.from(file);
+    const f = blobs[k];
+    const head = out.subarray(f.at - 32, f.at);
+    edit(head);
+    if (crc) head.writeUInt32LE(crc32(out.subarray(f.at, f.at + f.len), crc32(head.subarray(0, 24))), 24);
+    return out;
+  };
+  return { codec, name, spec, file, fresh, why, blobs, edited };
+}
+
+test('a refused one pass: the pieces still out are dropped, not read again here when its pool fails them', async () => {
+  const { codec, name, spec, file, fresh, why, blobs } = await refusedPass();
+  // The first BLOB frame damaged and its piece's worker failing (the frames done here, refused), the later pieces held
+  // by their workers until the pool is closed: none is read again for its frames once the pass is refused.
+  class Counted extends Blob {
+    slices = 0;
+    override slice(...a: Parameters<Blob['slice']>) {
+      this.slices++;
+      return super.slice(...a);
+    }
+  }
+  const damaged = Buffer.from(file);
+  damaged[blobs[0].at + 7] ^= 0x10;
+  const blob = new Counted([damaged]);
+  const held: (() => void)[] = [];
+  let first: (() => void) | undefined;
+  const holding: LoadPool = {
+    size: 3,
+    frames: () =>
+      new Promise((_, reject) => {
+        // The first piece's worker fails once another piece is out.
+        if (!first) first = () => reject(new Error('planted'));
+        else if (held.push(() => reject(new Error('the snapshot pool was closed'))) === 1) first();
+      }),
+  };
+  await assert.rejects(readSnapshot(blob, codec, codec.snapshotVersion, { devices: [spec], pool: holding, ram: fresh }), why('snapshots:snapshot-file.damage.checksum'));
+  assert.ok(held.length > 0, 'pieces were out at the refusal');
+  const slices = blob.slices;
+  for (const close of held) close();
+  for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
+  assert.equal(blob.slices - slices, 0, 'no frame of a held piece read again after the refusal');
+  await removeOverlay(name);
+});
+
+test('a one pass\'s own refusals of the state come after an earlier frame\'s (a BLOB frame\'s damaged index: its checksum); a BLOB chunk twice is refused', async () => {
+  const { codec, name, spec, file, fresh, why, blobs, edited } = await refusedPass();
+  const pool = await startPool(WASM, 3);
+  assert.ok(pool);
+  try {
+    for (const p of [pool, undefined]) {
+      const n = p ? 'a pool of 3' : 'one thread';
+      // Blob 1's frame's index damaged (its CRC, which covers it, fails): a checksum, not the index's place.
+      const index = edited(blobs.length - 1, (h) => (h[8] ^= 1), false);
+      await assert.rejects(readSnapshot(new Blob([index]), codec, codec.snapshotVersion, { devices: [spec], pool: p, ram: fresh }), why('snapshots:snapshot-file.damage.checksum'), `${n}: a damaged index`);
+      // Blob 0's second chunk said as its first (the CRC made right): refused, not chunk 1 left zero.
+      const twice = edited(1, (h) => h.writeUInt32LE(h.readUInt32LE(8) - 1, 8));
+      await assert.rejects(readSnapshot(new Blob([twice]), codec, codec.snapshotVersion, { devices: [spec], pool: p, ram: fresh }), why('snapshots:snapshot.damage.blobFit'), `${n}: a chunk twice`);
+      // The file as written restores (the edits are what is refused).
+      await readSnapshot(new Blob([file]), codec, codec.snapshotVersion, { devices: [spec], pool: p, ram: fresh });
+    }
+  } finally {
+    pool.close();
+  }
+  await removeOverlay(name);
+});
+
 test('memories made ahead (a restore\'s one pass) are taken only for a machine of their shape', async () => {
   const o = { ramSize: 64 << 20, kernel: new Uint8Array(64), cmdline: '' };
   await assert.rejects(bootVm(WASM, { ...o, memories: makeMemories({ ramSize: 32 << 20, venus: false }) }), /another machine's/);
