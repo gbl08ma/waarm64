@@ -34,6 +34,7 @@ import { cpuMask, type CpuFeature } from './cpu-features.ts';
 import { HEAP_FLOOR, MAX_SPILL, MAX_SPILL_BYTES, ramLayout } from './ram.ts';
 import {
   compileCore,
+  CONSOLE_RING,
   coreImports,
   exactCore,
   Exit,
@@ -57,7 +58,7 @@ export { HEAP_FLOOR, MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, sp
 export const ABI = 74;
 const RAM_BASE = 0x4000_0000;
 
-const RING = 4096;
+const RING = CONSOLE_RING;
 /** How long a snapshot waits for the paused VM's devices to be quiet (`snapshot`) before it gives up (`vm.cantSave.notQuiet`). */
 const QUIET_MS = 10_000;
 
@@ -726,6 +727,8 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
     out.set(buf.subarray(tx + 8 + at, tx + 8 + at + first));
     if (n > first) out.set(buf.subarray(tx + 8, tx + 8 + n - first), first);
     Atomics.store(u32, tx / 4 + 1, head);
+    // A vCPU stopped by the full ring waits on the tail (web/idle-wait.ts `txFull`).
+    if (n > 0) Atomics.notify(new Int32Array(memory.buffer), tx / 4 + 1);
     return decoder.decode(out, { stream: true });
   };
   // Console input: the host is the RX ring's one producer (it follows TX: core/src/pl011.rs `Rings`).

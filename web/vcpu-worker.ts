@@ -11,6 +11,7 @@ import { livenessWriter } from './liveness.ts';
 import { idle, pollRule, turns, txFull, yieldTurn } from './idle-wait.ts';
 import {
   clockOffset,
+  CONSOLE_RING,
   Exit,
   instantiateThread,
   stallHook,
@@ -65,6 +66,7 @@ type Ex = {
   vm_run_cpu(vm: number, cpu: number, budget: bigint): number;
   vm_exit_cpu(vm: number, cpu: number): number;
   vm_cpu_signal(vm: number, i: number): number;
+  vm_console(vm: number): number;
 };
 
 /** Steps per `vm_run_cpu` call: it returns early on anything the worker handles. */
@@ -94,6 +96,8 @@ async function runCpu(j: VcpuJob, exports: WebAssembly.Exports): Promise<VcpuEnd
   const wake = new Int32Array(mem.buffer, ex.vm_cpu_signal(j.vm, j.cpu), 1);
   const bell = new Int32Array(mem.buffer, j.bell, 2);
   const ctl = new Int32Array(mem.buffer, j.ctl, 1);
+  // The console's TX ring's head and tail: TX_FULL waits for the drain to move the tail.
+  const tx = new Int32Array(mem.buffer, ex.vm_console(j.vm), 2);
   const pause = new Int32Array(mem.buffer, j.pause, 1);
   const parked = new Int32Array(mem.buffer, j.parked + 4 * j.cpu, 1);
   const info = ex.vm_exit_cpu(j.vm, j.cpu);
@@ -130,7 +134,7 @@ async function runCpu(j: VcpuJob, exports: WebAssembly.Exports): Promise<VcpuEnd
         continue;
       }
       case Exit.TX_FULL:
-        txFull(ctl, wake, live);
+        txFull(ctl, tx, live, undefined, CONSOLE_RING);
         continue;
       case Exit.DEVICE:
         // A config-space write waits: the driver reads the answer next (virtio-input's select/subsel).

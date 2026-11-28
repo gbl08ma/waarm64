@@ -5,7 +5,9 @@
 // they reached the event loop, and end on a wake-up.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { idle, pollRule, POLL_MISSES, SHARE, sleepUntil, SPIN_MS, TAIL_MS, turns, txFull, WAIT_WAKE_MS, yieldTurn, type Host } from '../web/idle-wait.ts';
+import { readFileSync } from 'node:fs';
+import { HOST, idle, pollRule, POLL_MISSES, POLL_PROBE, SHARE, sleepUntil, SPIN_MS, TAIL_MS, turns, txFull, yieldTurn, type Host } from '../web/idle-wait.ts';
+import { bootVm } from '../web/vm.ts';
 
 /** The tail's spin stays under this (each idle exit spins it: PERF loop 58's host CPU). Not `TAIL_MS`, so raising it fails. */
 const SPIN_BOUND = 0.045;
@@ -36,8 +38,8 @@ function host(leeway: number, o: { wakeAt?: number; late?: number } = {}) {
       if (h.t < wakeAt && h.t + 0.0005 >= wakeAt) Atomics.add(wake, 0, 1); // the store a poll or spin sees
       return (h.t += 0.0005);
     },
-    wait: (word, _i, value, ms) => {
-      if (Atomics.load(word, 0) !== value) return 'not-equal';
+    wait: (word, i, value, ms) => {
+      if (Atomics.load(word, i) !== value) return 'not-equal';
       h.waits.push(ms);
       const r = to(word, h.t + ms * (1 + leeway));
       h.waitEnd = h.t;
@@ -166,33 +168,39 @@ test("an idle polls its wake word for its spin (`spinMs`) before it waits, and n
   assert.equal(h.waits.length, 0);
 });
 
-test('a vCPU stops polling after `misses` idles in a row without a wake-up a poll catches, and polls again after one', () => {
+test('a vCPU stops polling after `misses` idles in a row that a poll didn\'t end, probes, and polls again after a catch', () => {
   for (const misses of [1, 4, 8]) {
-    const p = pollRule(0.02, misses);
-    // Idles that end at their deadlines, or by a wake-up past twice the poll: the poll stops after `misses` of them.
+    const p = pollRule(0.02, misses, 16);
+    // Idles that end at their deadlines, or by a wake-up through the wait after the poll: the poll stops after `misses`.
     for (let i = 0; i < misses; i++) {
       assert.equal(p.spin(), 0.02, `misses ${misses}: idle ${i} polls`);
-      p.seen(0.02, i % 2 === 0, i % 2 === 0 ? 0.045 : 4);
+      p.seen(0.02, i % 2 === 0, i % 2 === 0 ? 0.02 + 0.016 : 4);
     }
-    assert.equal(p.spin(), 0, `misses ${misses}: no poll after ${misses} misses`);
-    // Unpolled, a wake-up past the poll and a wait's wake-up doesn't bring it back; one within them does.
-    p.seen(0, true, 0.02 + WAIT_WAKE_MS + 0.005);
-    p.seen(0, false, 4);
+    // Unpolled, a wake-up past the poll's length doesn't bring it back, one within it does; one idle in 16 probes.
+    const unpolled = [];
+    for (let i = 0; i < 32; i++) {
+      const s = p.spin();
+      unpolled.push(s);
+      p.seen(s, s === 0, s === 0 ? 0.021 : 4);
+    }
+    assert.deepEqual(unpolled.map((s, i) => (s > 0 ? i : -1)).filter((i) => i >= 0), [15, 31], `misses ${misses}: the probes`);
     assert.equal(p.spin(), 0);
-    p.seen(0, true, 0.02 + WAIT_WAKE_MS - 0.005);
+    p.seen(0, true, 0.019);
     for (let i = 0; i < misses; i++) {
       assert.equal(p.spin(), 0.02, `misses ${misses}: polls again (${i})`);
       p.seen(0.02, false, 1);
     }
     assert.equal(p.spin(), 0);
-    // A run of catches never stops it.
-    p.seen(0, true, 0.003);
+    // A probe's catch brings it back too (the 16th idle since it stopped), and a run of catches never stops it.
+    for (let i = 0; i < 14; i++) assert.equal(p.spin(), 0, `misses ${misses}: probe ${i}`);
+    assert.equal(p.spin(), 0.02);
+    p.seen(0.02, true, 0.005);
     for (let i = 0; i < 100; i++) {
       assert.equal(p.spin(), 0.02);
       p.seen(0.02, true, 0.005);
     }
   }
-  // 0: every idle polls; the defaults are SPIN_MS and POLL_MISSES.
+  // 0: every idle polls; the defaults are SPIN_MS, POLL_MISSES and POLL_PROBE.
   const always = pollRule(0.02, 0);
   for (let i = 0; i < 100; i++) always.seen(0.02, false, 4);
   assert.equal(always.spin(), 0.02);
@@ -201,7 +209,8 @@ test('a vCPU stops polling after `misses` idles in a row without a wake-up a pol
     assert.equal(d.spin(), SPIN_MS);
     d.seen(SPIN_MS, false, 4);
   }
-  assert.equal(d.spin(), 0);
+  const probes = Array.from({ length: 4 * POLL_PROBE }, () => d.spin()).filter((s) => s > 0);
+  assert.deepEqual(probes, [SPIN_MS, SPIN_MS, SPIN_MS, SPIN_MS]);
 });
 
 test("an idle that doesn't poll still ends at its wake-up, through the wait", () => {
@@ -297,11 +306,118 @@ test('a BUDGET or DEVICE yield that returned at once is not counted', async () =
 // TX_FULL.
 
 test("TX_FULL's wait for the drain is not counted as host work", () => {
-  const { h, hst, wake } = host(0);
+  const { h, hst } = host(0);
   const ctl = new Int32Array(new SharedArrayBuffer(4));
+  const ring = new Int32Array(new SharedArrayBuffer(8)); // full, and never drained
+  ring[0] = 4096;
   let at = NaN;
-  txFull(ctl, wake, { handled: () => (at = h.t) }, hst);
+  txFull(ctl, ring, { handled: () => (at = h.t) }, hst, 4096);
   assert.equal(ctl[0], 1);
-  assert.ok(h.t >= 1, 'it waited');
+  assert.ok(h.t >= 1, 'it waited, a ms at most');
   assert.ok(at < 0.01, `handled at ${at} ms`);
+});
+
+// The poll rule against a host whose wake-ups come `at` ms after the idle's start: a poll sees one within it then, a
+// wait's wake-up `wakeMs` after it comes. Returns the idles that polled.
+function polls(p: ReturnType<typeof pollRule>, n: number, at: number, wakeMs: number) {
+  let k = 0;
+  for (let i = 0; i < n; i++) {
+    const spun = p.spin();
+    if (spun > 0) k++;
+    p.seen(spun, true, spun > 0 && at < spun ? at : at + wakeMs);
+  }
+  return k;
+}
+
+test("wake-ups past the poll stop it, whatever the wait's wake-up costs: a polled and an unpolled idle count alike", () => {
+  // Past the poll (40-80 µs on the Mac's 16 µs wake-up, 4-44 on the dev VM's 36), a poll catches none: an unpolled
+  // idle counting one as caught had 8 idles in 9 poll in vain (the review of PERF loop 98, finding 3).
+  for (const [at, wakeMs] of [[0.035, 0.016], [0.05, 0.016], [0.025, 0.036], [0.3, 0.016]]) {
+    const k = polls(pollRule(0.02, 8), 900, at, wakeMs);
+    assert.ok(k < 8 + 900 / 8, `wake-ups at ${at * 1000} µs, ${wakeMs * 1000} µs through the wait: ${k} of 900 idles polled`);
+  }
+});
+
+test('a vCPU that stopped polling polls again once wake-ups come within the poll, however slow the wait wakes', () => {
+  // A host whose wait woke up past 60 µs (an oversubscribed one) never polled again (the review of
+  // PERF loop 98, finding 5): hand-offs within the poll then go through the wait for good.
+  for (const wakeMs of [0.016, 0.036, 0.09, 0.3]) {
+    const p = pollRule(0.02, 8);
+    for (let i = 0; i < 8; i++) p.seen(p.spin(), false, 4);
+    assert.equal(p.spin(), 0, 'stopped');
+    polls(p, 100, 0.01, wakeMs);
+    const k = polls(p, 800, 0.01, wakeMs);
+    assert.ok(k >= 790, `${wakeMs * 1000} µs through the wait: ${k} of 800 hand-offs polled`);
+  }
+});
+
+test("TX_FULL waits for the drain: the ring's tail moving ends the wait, not a ms", () => {
+  const RING = 4096;
+  const ring = new Int32Array(new SharedArrayBuffer(8)); // the TX ring's head and tail (core/src/pl011.rs `Rings`)
+  const ctl = new Int32Array(new SharedArrayBuffer(4));
+  const h = { t: 0, waits: 0 };
+  const hst: Host = {
+    ...HOST,
+    now: () => h.t,
+    wait: (word, i, value, ms) => {
+      if (Atomics.load(word, i) !== value) return 'not-equal';
+      h.waits++;
+      if (word === ring && i === 1) {
+        h.t += 0.01; // the coordinator drains 10 µs on
+        Atomics.store(ring, 1, Atomics.load(ring, 0));
+        return 'ok';
+      }
+      h.t += ms;
+      return 'timed-out';
+    },
+  };
+  ring[0] = RING + 100;
+  ring[1] = 100;
+  txFull(ctl, ring, undefined, hst, RING);
+  assert.equal(ctl[0], 1, 'the coordinator was told');
+  assert.ok(h.t < 0.05, `the vCPU waited ${h.t} ms for a drain 10 µs on`);
+  // Drained before the wait (the ring has room): no wait.
+  h.waits = 0;
+  txFull(ctl, ring, undefined, hst, RING);
+  assert.equal(h.waits, 0, 'it waited with room in the ring');
+});
+
+// One vCPU storing to the PL011's data register forever (MMU off): movz x0, #0x900, lsl #16; mov w1, #0x78;
+// str w1, [x0]; b .-4.
+const FLOOD = new Uint8Array(new Uint32Array([0xd2a12000, 0x52800f01, 0xb9000001, 0x17ffffff]).buffer);
+
+test('parallel: a vCPU stopped by a full console ring waits for the drain, which wakes it', { timeout: 30_000 }, async () => {
+  // Not timed (a loaded host deschedules either thread for ms): the drain's notify of the TX ring's tail must wake the
+  // vCPU's worker waiting there. Before PERF loop 100 it waited a ms on its wake word, which the drain doesn't touch.
+  const wasm = readFileSync(new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url));
+  const vm = await bootVm(wasm, { ramSize: 16 << 20, kernel: FLOOD, kernelOffset: 0, cmdline: '', ncpus: 1, parallel: true, jit: 0 });
+  const notify = Atomics.notify;
+  try {
+    await vm.runAsync(1); // starts the vCPU worker
+    const i32 = new Int32Array(vm.memory.buffer);
+    const head = vm.console / 4;
+    const used = () => (Atomics.load(i32, head) - Atomics.load(i32, head + 1)) >>> 0;
+    let woken = 0;
+    let drains = 0;
+    // The drain's notifies of the tail on this thread, and the waiters each woke.
+    Atomics.notify = ((a: Int32Array, i: number, n?: number) => {
+      const k = notify(a, i, n);
+      if (a.buffer === vm.memory.buffer && i === head + 1) woken += k;
+      return k;
+    }) as typeof Atomics.notify;
+    for (let k = 0; k < 20 && woken === 0; k++) {
+      const t0 = performance.now();
+      while (used() < 4096) {
+        assert.ok(performance.now() - t0 < 5000, `the ring didn't fill (${used()} bytes)`);
+        await new Promise((r) => setTimeout(r, 1));
+      }
+      await new Promise((r) => setTimeout(r, 2)); // the vCPU in its wait, which it starts again each ms
+      vm.drain();
+      drains++;
+    }
+    assert.ok(woken > 0, `${drains} drains of a full ring woke no waiter on its tail`);
+  } finally {
+    Atomics.notify = notify;
+    await vm.close();
+  }
 });

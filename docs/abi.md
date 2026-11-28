@@ -156,7 +156,9 @@ told `i8mm: true`, `fcma: true`, `fp16: true`, `fhm: true`, `bf16: true` (`cpu::
   `SIGNAL_DEVICE`. Checked between chunks and on WFI. Whoever sets a bit `Atomics.notify`s it, and
   in parallel mode also stores 0 in every vCPU's stop word (`vm_cpu_stop`, ABI 71) and then bumps and notifies every
   vCPU's wake word (`vm_cpu_signal`; `web/vm.ts` `raise`, `Vm::signal` natively, the device backends' completions). Parallel mode leaves STOP
-  set; the host clears it.
+  set; the host clears it. An off vCPU leaves `SIGNAL_RX` and `SIGNAL_DEVICE` to the on ones the same signal woke (what
+  they make can need an on vCPU's pass: the xHCI's due time, which only its tick looks at), and takes them only when
+  every vCPU is off (SYSTEM_SUSPEND; PERF loop 100).
 - `vm_console(vm)`: two SPSC byte rings (TX, RX), 4 KiB each, atomic head/tail (head, tail, then
   the bytes; RX follows TX). The PL011 writes TX; the host drains it after each `vm_run` and fills
   RX (one producer, any thread), then sets `SIGNAL_RX` ([platform.md](platform.md) "PL011").

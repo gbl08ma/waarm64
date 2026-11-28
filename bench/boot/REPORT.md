@@ -9990,3 +9990,71 @@ short, the copies' buffers not given back, the memories' shape not checked, `fil
 
 CI: `scripts/ci.sh` (729 s), `scripts/ci-machines.sh` (327 s), `scripts/ci-debian.sh` (266 s) and
 `scripts/ci-graphics.sh` (320 s) passed, each alone, on the first run.
+
+
+## PERF loop 100: the review of the idle wait fixed (2026-11-28)
+
+An out-of-context static review of how an idle vCPU waits and is woken in parallel SMP (`review/idle-wait`: web/idle-wait.ts
+with loop 98's `pollRule`, the vCPU worker, core/src/vm/parallel.rs, the xHCI's due time, the console drain) reported
+five findings. **All five held; each is fixed with its test failing first on 545bf283.** Base for the numbers:
+545bf283 (its web/ and core); data `bench/boot/results/perf100/` (its README).
+
+1. **An off vCPU took the host's device and RX signals** (held). Every vCPU is woken by a signal and takes the bits at
+   its pass's top, an off one too, which returns `IDLE` at the off branch without the xHCI's tick; a completion that
+   came within the xHCI's 125 µs latency leaves a due time (`spis`) that only an on vCPU's tick or idle deadline acts on,
+   and an on vCPU that read `xhci_due` before the store idled to its own timer. Fixed: an off vCPU leaves
+   `SIGNAL_RX`/`SIGNAL_DEVICE` to the on ones (whom the same signal woke), and takes them only when every vCPU is off
+   (SYSTEM_SUSPEND). Test: core/src/vm/tests.rs `an_off_vcpu_leaves_the_host_signals_to_an_on_one` (failed first: the
+   off vCPU 1 cleared the bit).
+2. **A DSB waiter wasn't woken when its target left the core** (held). `sync` takes a target that isn't `RUN` as done,
+   but only a drain woke the waiter: a target that went idle (or CPU_OFF) between its last drain and its return left the
+   waiter in its 1 ms `memory.atomic.wait32`. Fixed: `run_cpu`, after its `RUN → OUT` (or with `OFF` stored), wakes the
+   waiters when its queue is still pending (`wake_waiters`, which `drain` now shares). Test:
+   `a_vcpu_that_leaves_with_maintenance_queued_wakes_the_dsb_waiters` (another thread holds the platform lock that
+   CPU_OFF takes, marks vCPU 0's queue pending and vCPU 1 waiting; failed first: vCPU 1's wake word didn't move).
+3. **`pollRule` counted catches in different windows polled and unpolled** (held): polled `ms < 2·spun` (40 µs),
+   unpolled `ms < spinMs + WAIT_WAKE_MS` (80 µs), so wake-ups 40-80 µs into an idle (minus the wait's latency) had 8
+   idles in 9 poll in vain. Fixed with 5.
+4. **The console drain didn't wake a vCPU in TX_FULL** (held): the worker waited a whole ms on its wake word, which the
+   drain doesn't bump (and on the word's value at the wait, not the exit's). Fixed: the worker waits on the TX ring's
+   tail while the ring is full (`txFull(ctl, ring, …)`), and `web/vm.ts` `drain` notifies the tail. Tests:
+   tests/idle-wait.test.ts "TX_FULL waits for the drain…" (unit; failed first: 1 ms) and "parallel: a vCPU stopped by a
+   full console ring runs on when the host drains it, not a ms later" (one vCPU storing to the PL011 forever, the host
+   draining a full ring 31 times; the median from the drain to the next byte 0.40 ms before, 0.045-0.054 after).
+5. **Unpolled, the poll came back only if the wait woke within 60 µs** (held): on a host whose futex wake is slower,
+   hand-offs within the poll never registered once it stopped. Fixed with 3: a polled idle is caught only when its
+   poll ended it (`ms < spun + 8 µs`: a wait's wake-up takes longer), an unpolled one only when woken within the poll's
+   length (a wake-up a poll would have caught whatever the wait's latency); and once stopped the vCPU still polls one
+   idle in `POLL_PROBE` (16), whose catch brings the poll back. `WAIT_WAKE_MS` is gone. Tests: "wake-ups past the
+   poll stop it…" (900 idles woken at 35-300 µs on wait latencies of 16-36 µs: 800 polled before, ≤ 64 now) and "a
+   vCPU that stopped polling polls again once wake-ups come within the poll, however slow the wait wakes" (16-300 µs:
+   0 of 800 hand-offs polled at 90 µs before); the rule's own test rewritten for the probes.
+
+The review's paths no test reaches: the worker's wiring of the rule (`seen`'s clock, the off vCPU's one-second idles
+counted as misses) stays covered only by the guests' runs (spin, host-stall, SMP, the benches), as before; an on
+vCPU's deadline-less idle is correct as it is (nothing is due), its doc comment unchanged.
+
+**Planted bugs**, each caught, the source restored and the wasm rebuilt: the off vCPU taking the bits (test 1); every
+vCPU off never taking them (test 1's suspend case); no wake-up after leaving with a queue pending (test 2); the probes
+never firing (the rule's test and "polls again"); the unpolled window back to the poll and 60 µs (the oscillation
+test); the polled window back to twice the poll (the rule's test); the drain not notifying the tail, a lost wake-up
+(the end-to-end test); TX_FULL waiting with room in the ring (the unit test).
+
+**Numbers** (median [range]; base → new):
+
+| | base | new | |
+|---|---|---|---|
+| pingpong, dev VM, 5 rounds: LSE / LL/SC (s) | 1.05 [1.00-1.09] / 0.91 [0.88-0.94] | 1.08 [1.04-1.11] / 0.91 [0.88-0.93] | overlapping |
+| pingpong, Mac, 5 rounds | 0.71 [0.69-0.73] / 0.66 [0.62-0.66] | 0.71 [0.69-0.77] / 0.63 [0.61-0.68] | overlapping |
+| idle 4-vCPU guest's host CPU, Mac, 4 rounds (% of a core) | 6.68 [6.55-6.87] | 6.51 [6.18-7.05] | overlapping: loop 98's gain kept |
+| pages session, 3 rounds alternated: renderers' CPU (s) | 257.6 [254.4-258.0] | 253.6 [253.6-255.2] | −1.6%, overlapping |
+| its instructions (G); energy (J) | 2,066 [2,058-2,074]; 769 [762-774] | 2,025 [2,017-2,026]; 756 [753-757] | −2.0%, −1.7%, no overlap |
+| its starts + pages' loads (s); busy MIPS | 48.8 + 64.5; 498 | 48.7 + 64.3; 500 | unchanged |
+
+The parallel boots in Chromium on the Mac (2 rounds alternated, ranges of the rounds' medians, ms): `smp_alpine_jit`
+n1 / n2 / n4 total 4861-4916 / 4550-4577 / 4536-4574 → 4905-4914 / 4546-4576 / 4553-4566 (0.0 / 0.0 / −0.2%,
+overlapping), n4's CPU −0.7% (overlapping); `smp_user_jit_4` 10677-10679 → 10324-10374 (−2.9%, no overlap in 2
+rounds; its lua phase's spread is ±270 ms, so no gain is claimed), its CPU −1.0%. No regression anywhere. The pages
+session's small drop is consistent with fewer polls in vain (finding 3's oscillation). Memory: none. Deterministic and
+realtime round-robin run none of the changed code (the vCPU worker and the parallel run loop's off branch and exit);
+`tests/steps.txt` unchanged; no ABI change (the core's exports and the exit record are as they were).

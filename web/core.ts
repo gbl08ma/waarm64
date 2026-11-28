@@ -50,6 +50,8 @@ export function vmConfig(fields: { [K in keyof typeof VM_CONFIG]?: bigint | read
 }
 
 /** Exit kinds (core/src/vm.rs `exit`). */
+/** The console's TX and RX rings' bytes each (core/src/pl011.rs `RING`). */
+export const CONSOLE_RING = 4096;
 export const Exit = { BUDGET: 0, PSCI: 1, IDLE: 2, TX_FULL: 3, UNIMPLEMENTED: 4, STOP: 5, DEVICE: 6 } as const;
 export const PSCI_SYSTEM_OFF = 0x8400_0008n;
 

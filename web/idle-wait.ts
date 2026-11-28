@@ -21,34 +21,45 @@ export const SHARE = 2 / 3;
  */
 export const SPIN_MS = 0.02;
 /**
- * An idle vCPU polls only while its recent idles' wake-ups came within a poll: after this many idles in a row whose
- * didn't (none came, or a later one), it sleeps at once, until a wake-up comes that soon again (`pollRule`; 0: every
- * idle polls). Futex hand-offs come in runs (the atomics stress's pingpong: 95% of its idles end in the poll); elsewhere
- * the catches are scattered (Firefox's pages session: 6%; an idle guest: none). 8 keeps the pingpong's hand-offs as
- * fast on the Mac and in the dev VM (1 slowed them 1.8-2.5× in the VM, 4 by 2-6%), and took 1.1 points off an idle
- * 4-vCPU guest's host CPU on the Mac, 1.2% off the pages session's renderer CPU (bench/boot/REPORT.md "PERF loop 98").
+ * An idle vCPU polls only while its recent idles' wake-ups came within a poll: after this many idles in a row that a
+ * poll didn't end, it sleeps at once (but for `POLL_PROBE`'s), until a wake-up comes within a poll again (`pollRule`;
+ * 0: every idle polls). Futex hand-offs come in runs (the atomics stress's pingpong: 95% of its idles end in the poll);
+ * elsewhere the catches are scattered (Firefox's pages session: 6%; an idle guest: none). 8 keeps the pingpong's
+ * hand-offs as fast on the Mac and in the dev VM (1 slowed them 1.8-2.5× in the VM, 4 by 2-6%), and took 1.1 points off
+ * an idle 4-vCPU guest's host CPU on the Mac, 1.2% off the pages session's renderer CPU (bench/boot/REPORT.md "PERF
+ * loop 98").
  */
 export const POLL_MISSES = 8;
+/**
+ * A vCPU that stopped polling still polls one idle in this many (a probe): what brings the poll back is a poll that
+ * caught a wake-up, whatever a wake-up through the wait costs on this host (an unpolled idle can't tell a wake-up that
+ * came within the poll from one past it plus the wait's latency: ~16 µs on the Mac, ~36 in the dev VM, more on a busy
+ * host; bench/boot/REPORT.md "PERF loop 100").
+ */
+export const POLL_PROBE = 16;
+/** A polled idle that ended within this much of its poll's end was ended by the poll: a wait's wake-up takes longer. */
+const POLL_END_MS = 0.008;
 
 /**
- * A wake-up through `Atomics.wait` comes this much later than one a poll sees at most: ~16 µs a hand-off on the Mac,
- * ~36 µs in the dev VM (the atomics stress's pingpong without a poll against with one: PERF loop 83).
+ * A vCPU's poll before each idle's sleep (`idle`'s `spinMs`): `spinMs`, or after `misses` idles in a row that a poll
+ * didn't end, `spinMs` one idle in `probe` and none in the others. An idle counts as caught when its poll ended it or,
+ * unpolled, its wake-up came within the poll's length (one a poll would have caught, whatever the wait's latency).
  */
-export const WAIT_WAKE_MS = 0.06;
-
-/**
- * A vCPU's poll before each idle's sleep (`idle`'s `spinMs`): `spinMs`, or none after `misses` idles in a row that a
- * poll didn't end, or, when the idle didn't poll, that a poll wouldn't have: a wake-up within the poll and
- * `WAIT_WAKE_MS` of the idle's start counts as one it would have caught.
- */
-export function pollRule(spinMs = SPIN_MS, misses = POLL_MISSES) {
+export function pollRule(spinMs = SPIN_MS, misses = POLL_MISSES, probe = POLL_PROBE) {
   let n = 0;
+  let k = 0;
   return {
-    /** This idle's poll, in ms. */
-    spin: () => (misses > 0 && n >= misses ? 0 : spinMs),
+    /** This idle's poll, in ms (once an idle: it counts the probes). */
+    spin: () => {
+      if (misses <= 0 || n < misses) return spinMs;
+      k = (k + 1) % probe;
+      return k === 0 ? spinMs : 0;
+    },
     /** The idle (its poll `spun` ms) ended `ms` after its start, by a wake-up (`woken`: its word moved) or not. */
     seen: (spun: number, woken: boolean, ms: number) => {
-      n = woken && ms < (spun > 0 ? 2 * spun : spinMs + WAIT_WAKE_MS) ? 0 : Math.min(n + 1, misses);
+      const caught = woken && ms < (spun > 0 ? spun + POLL_END_MS : spinMs);
+      n = caught ? 0 : Math.min(n + 1, misses);
+      if (caught) k = 0;
     },
   };
 }
@@ -161,12 +172,21 @@ export function idle(
 }
 
 /**
- * A TX_FULL exit: the coordinator drains the console (its word bumped) while the vCPU waits a ms or a wake-up. The
- * liveness block's `handled` before the wait: the wait isn't host work.
+ * A TX_FULL exit: the coordinator drains the console (its word bumped) while the vCPU waits for the drain (the TX
+ * ring's tail moving: web/vm.ts `drain` notifies it), a ms at most. `ring` is the ring's head and tail
+ * (core/src/pl011.rs `Rings`), `size` its bytes; a ring with room already (drained since the exit) isn't waited for.
+ * The liveness block's `handled` before the wait: the wait isn't host work.
  */
-export function txFull(ctl: Int32Array, wake: Int32Array, live: { handled(): void } | undefined, h: Host = HOST) {
+export function txFull(
+  ctl: Int32Array,
+  ring: Int32Array,
+  live: { handled(): void } | undefined,
+  h: Host = HOST,
+  size = 4096,
+) {
   Atomics.add(ctl, 0, 1);
   Atomics.notify(ctl, 0);
   live?.handled();
-  h.wait(wake, 0, Atomics.load(wake, 0), 1);
+  const tail = Atomics.load(ring, 1);
+  if ((Atomics.load(ring, 0) - tail) >>> 0 >= size) h.wait(ring, 1, tail, 1);
 }

@@ -147,9 +147,13 @@ indexes of their instance).
   them ended in a wake-up in Firefox's pages session, so 20 µs instead of M7 loop 8's 50 took 2.8% off the pages
   session's renderer CPU and 12% off an idle guest's, the guest's speed unchanged; none took twice that but slowed the
   hand-offs: bench/boot/REPORT.md "PERF loop 83"). **The poll adapts** (`pollRule`, PERF loop 98): after
-  `POLL_MISSES` (8) idles in a row that a poll didn't end, the vCPU sleeps at once, until an idle's wake-up comes
-  within the poll and a wait's wake-up (`WAIT_WAKE_MS`, 60 µs: a wake-up through `Atomics.wait` is ~16 µs later than a
-  poll's on the Mac, ~36 µs in the dev VM) of its start, which brings the poll back. The catches come in runs where the
+  `POLL_MISSES` (8) idles in a row that a poll didn't end, the vCPU sleeps at once but polls one idle in
+  `POLL_PROBE` (16), and a catch (a poll that ended its idle, or an unpolled idle woken within the poll's length)
+  brings the poll back. An unpolled idle can't tell a wake-up within the poll from one past it plus the wait's latency
+  (a wake-up through `Atomics.wait` is ~16 µs later than a poll's on the Mac, ~36 µs in the dev VM, more on a busy
+  host), so the probe is what brings it back: loop 98's rule counted an unpolled wake-up within 60 µs past the poll as
+  a catch, so wake-ups 40-80 µs into the idle had 8 idles in 9 poll in vain, and a host waking slower than that never
+  polled again (PERF loop 100; the hand-offs and the idle guest unchanged). The catches come in runs where the
   poll matters (the pingpong's hand-offs: 95% of its idles end in the poll) and scattered elsewhere (6% of the pages
   session's idles, 5-10% of the parallel boots', none of an idle guest's, whose idles end at their timers; nothing
   separates them by the idle's deadline), so a streak of misses tells them apart; a miss count of 1 or 4 slowed the
@@ -294,7 +298,9 @@ and blocks are keyed by PA. The bare-metal `maint` test covers every IS flavor a
   (idle or anywhere else: it drains on re-entry, having set `RUN` first, sequentially consistent
   against the issuer's push and check), or `OFF`. The waiter drains its own queue while it waits
   (two issuers can't deadlock), sleeps on its wake word in 1 ms steps (a vCPU that drains wakes
-  the vCPUs flagged as waiting), and panics after 10 s of *waiting* (a bug). It counts time only
+  the vCPUs flagged as waiting, and so does one that leaves `vm_run_cpu` or turns itself off with operations still
+  queued for it: the waiter then takes it as done; without that, a target that went idle between its last drain and
+  its return left the waiter its whole 1 ms step, PERF loop 100), and panics after 10 s of *waiting* (a bug). It counts time only
   for passes of its loop shorter than 100 ms: a longer pass means its own worker thread stalled
   (descheduled, paused, a GC), which says nothing about the vCPUs it waits for, and the loop looks at
   their state again right after it. Those passes are reported apart (`DsbBudget`, parallel.rs), and
@@ -673,7 +679,10 @@ and complete in the run loop (exact counts).
 DR, FR, IBRD/FBRD, LCR_H, CR, IFLS, IMSC, RIS/MIS/ICR, DMACR, PeriphID/PCellID. Transmit is
 instant (FR.TXFE always set; TXRIS set per byte, cleared by ICR); RX/RT pending while the RX ring
 has data. The console is two SPSC byte rings ([abi.md](abi.md)); a DR write into a full TX ring
-returns the TX-full exit with the store not retired.
+returns the TX-full exit with the store not retired. In parallel mode the vCPU's worker then tells the coordinator
+(its word) and waits for the drain, a ms at most: `web/vm.ts` `drain` notifies the TX ring's tail, which the worker
+waits on (`web/idle-wait.ts` `txFull`; until PERF loop 100 it waited on its wake word, which the drain doesn't bump, so
+every TX_FULL stopped the vCPU a whole ms).
 
 **Console input** (M8): the host is the RX ring's one producer. `web/vm.ts` `send(bytes | string)`
 queues input and pumps what fits into the ring, then raises `SIGNAL_RX` (so an idle vCPU wakes

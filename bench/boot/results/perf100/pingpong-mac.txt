@@ -1,0 +1,10 @@
+base 1 {"misses":8,"lseS":0.73,"llscS":0.66,"wallS":1.76}
+new 1 {"misses":8,"lseS":0.69,"llscS":0.61,"wallS":1.59}
+new 2 {"misses":8,"lseS":0.77,"llscS":0.68,"wallS":1.74}
+base 2 {"misses":8,"lseS":0.73,"llscS":0.66,"wallS":1.68}
+base 3 {"misses":8,"lseS":0.69,"llscS":0.62,"wallS":1.59}
+new 3 {"misses":8,"lseS":0.72,"llscS":0.65,"wallS":1.66}
+new 4 {"misses":8,"lseS":0.71,"llscS":0.63,"wallS":1.61}
+base 4 {"misses":8,"lseS":0.71,"llscS":0.66,"wallS":1.66}
+base 5 {"misses":8,"lseS":0.69,"llscS":0.62,"wallS":1.6}
+new 5 {"misses":8,"lseS":0.7,"llscS":0.63,"wallS":1.62}

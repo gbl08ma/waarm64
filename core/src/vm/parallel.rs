@@ -103,11 +103,11 @@ pub(super) struct CpuPar {
     /// Maintenance other vCPUs queued for it.
     queue: Mutex<Queue>,
     /// `queue` isn't empty (checked at every chunk boundary).
-    pending: AtomicBool,
+    pub(super) pending: AtomicBool,
     /// `Queue::queued` as of its last drain.
     applied: AtomicU64,
     /// It's in a DSB wait: whoever drains a queue wakes it.
-    waiting: AtomicBool,
+    pub(super) waiting: AtomicBool,
     /// The ASID its TLB holds nG entries of, published before each chunk
     /// and again by a write that changes it or the MMU enable mid-chunk
     /// (`Tlb::republish`), before anything walks with it; `ANY` with the MMU
@@ -319,6 +319,12 @@ impl Vm {
         let _ = p
             .state
             .compare_exchange(RUN, OUT, Ordering::SeqCst, Ordering::SeqCst);
+        // Out (or off: CPU_OFF), it no longer uses its TLB, so a DSB elsewhere that waits for its drain is done
+        // (`sync` takes a vCPU that isn't `RUN` as done): wake it, as a drain would. After the store: a waiter
+        // that saw it `RUN` had marked itself waiting before that read, and queued what's pending before.
+        if p.pending.load(Ordering::SeqCst) {
+            self.wake_waiters(c);
+        }
         self.publish_cpu(c, v, own, true);
         own.out = Some(self.clock.ns());
         own.exit.kind = kind as u64;
@@ -382,10 +388,24 @@ impl Vm {
             }
             // Read before looking for work (see the module docs).
             let wake = sh.wake.load(Ordering::SeqCst);
-            let sig = self.shared.signal.load(Ordering::Acquire);
+            let mut sig = self.shared.signal.load(Ordering::Acquire);
             if sig & SIGNAL_STOP != 0 {
                 // Not cleared: every vCPU must see it; the host clears it.
                 return exit::STOP;
+            }
+            // An off vCPU leaves the device and RX bits to an on one, which the same signal woke: what they make
+            // can need an on vCPU's pass (the xHCI's due time, which only its tick and idle deadline look at, and
+            // which nobody is woken for). With every vCPU off (SYSTEM_SUSPEND) an off one takes them. An on vCPU
+            // that turns itself off sees them in its next pass (the wake word read above protects that read).
+            if sig & (SIGNAL_RX | SIGNAL_DEVICE) != 0
+                && p.state.load(Ordering::SeqCst) == OFF
+                && self
+                    .shared
+                    .cpus
+                    .iter()
+                    .any(|s| s.par.state.load(Ordering::SeqCst) != OFF)
+            {
+                sig &= !(SIGNAL_RX | SIGNAL_DEVICE);
             }
             if sig & SIGNAL_RX != 0
                 && self.shared.signal.fetch_and(!SIGNAL_RX, Ordering::AcqRel) & SIGNAL_RX != 0
@@ -964,6 +984,11 @@ impl Vm {
         // blocks, and this one's table catches up before its next block runs.
         p.applied.store(queued, Ordering::SeqCst);
         bump(&self.shared.cpus[c].counters.par[PAR_DRAINS]);
+        self.wake_waiters(c);
+    }
+
+    /// Wakes the vCPUs other than `c` in a DSB wait (`sync`): `c` drained, or left the core.
+    fn wake_waiters(&self, c: usize) {
         for (o, s) in self.shared.cpus.iter().enumerate() {
             if o != c && s.par.waiting.load(Ordering::SeqCst) {
                 self.wake(o);

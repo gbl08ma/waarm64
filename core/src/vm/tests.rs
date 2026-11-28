@@ -2029,3 +2029,67 @@ fn round_robins_fast_completion_declines_once_a_host_signal_arrives() {
     assert_eq!(*t.cpu(), want);
     assert_eq!(svcs(&t), 1, "counted as `Vm::exception` counts it");
 }
+
+#[test]
+fn an_off_vcpu_leaves_the_host_signals_to_an_on_one() {
+    // The host's signals wake every vCPU, and an off one's pass returns at the off branch: the
+    // completions it took there (`complete`, `refresh`) may leave the xHCI a due time that only an
+    // on vCPU's pass ticks, and announce it to nobody (the review of PERF loop 98, finding 1). So
+    // an off vCPU leaves the bits to the on ones (whom the same signal woke), unless all are off.
+    let a = T::new(&[B_SELF], par(2));
+    let signal = |a: &T| a.vm.shared.signal.load(Ordering::SeqCst);
+    for bit in [SIGNAL_DEVICE, SIGNAL_RX] {
+        a.vm.signal(bit);
+        // SAFETY: this thread is the only one, and runs one vCPU at a time.
+        unsafe {
+            assert_eq!(a.vm.run_cpu(1, 10), exit::IDLE);
+            assert_ne!(
+                signal(&a) & bit,
+                0,
+                "{bit}: the off vCPU 1 took it, vCPU 0 is on"
+            );
+            assert_eq!(a.vm.run_cpu(0, 10), exit::BUDGET);
+        }
+        assert_eq!(signal(&a) & bit, 0, "{bit}: vCPU 0 took it");
+    }
+    // All off (SYSTEM_SUSPEND's case): an off one takes them.
+    a.vm.shared.cpus[0].par.state.store(0, Ordering::SeqCst);
+    a.vm.signal(SIGNAL_DEVICE | SIGNAL_RX);
+    // SAFETY: as above.
+    assert_eq!(unsafe { a.vm.run_cpu(1, 10) }, exit::IDLE);
+    assert_eq!(
+        signal(&a) & (SIGNAL_DEVICE | SIGNAL_RX),
+        0,
+        "nobody took them"
+    );
+}
+
+#[test]
+fn a_vcpu_that_leaves_with_maintenance_queued_wakes_the_dsb_waiters() {
+    // vCPU 0 calls CPU_OFF. Between its pass's drain and its leaving, vCPU 1 queues a TLBI IS for
+    // it and waits in its DSB (here: with the platform's lock held, which CPU_OFF takes, another
+    // thread marks vCPU 0's queue pending and vCPU 1 waiting). vCPU 0 off doesn't use its TLB, so
+    // the wait is over: it must wake vCPU 1, which otherwise sleeps its wait's whole timeout (1 ms
+    // on wasm; the review of PERF loop 98, finding 2). The same for a WFI's IDLE (`RUN` → `OUT`).
+    let mut a = T::new(&[HVC, B_SELF], par(2));
+    a.cpu().x[0] = 0x8400_0002; // CPU_OFF
+    let vm = &a.vm;
+    let (tx, rx) = std::sync::mpsc::channel();
+    let woken = std::thread::scope(|s| {
+        s.spawn(move || {
+            let _g = vm.plat.lock();
+            tx.send(()).unwrap();
+            // vCPU 0 is past its drain and waits for the lock in CPU_OFF.
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            vm.shared.cpus[0].par.pending.store(true, Ordering::SeqCst);
+            vm.shared.cpus[1].par.waiting.store(true, Ordering::SeqCst);
+        });
+        rx.recv().unwrap();
+        let w = vm.shared.cpus[1].wake.load(Ordering::SeqCst);
+        // SAFETY: this thread is the only one that runs a vCPU.
+        assert_eq!(unsafe { vm.run_cpu(0, 10) }, exit::IDLE);
+        vm.shared.cpus[1].wake.load(Ordering::SeqCst) != w
+    });
+    assert_eq!(a.vm.power(0), Power::Off);
+    assert!(woken, "vCPU 1's DSB wait wasn't woken");
+}
