@@ -240,7 +240,8 @@ moved to the offset from the centre or to the sample's position along its fine d
 exact for linear interpolation, within a pixel close for perspective (dEQP-VK's `multisample_interpolation` samples_4
 cases of it pass); a flat input as it is.
 At the sample rate `gl_SampleMaskIn` is the coverage with only the invocation's own sample's bit (`smask & (1u << sid)`:
-Vulkan's; D3D12's coverage input had every covered sample, dEQP-VK's `sample_mask.bit_count` at 4 samples). A bitfield
+Vulkan's; D3D12's coverage input had every covered sample, dEQP-VK's `sample_mask.bit_count` at 4 samples), and always
+with the pipeline's sample mask (`wg_smask`, an override the driver sets: the M4's Metal coverage lacks it, VK4 T50). A bitfield
 extract of a count of 0 is selected as 0 (`select(extractBits(…), 0, n == 0u)`: WGSL defines it so, and Dawn's D3D12
 gave an ivec4's sign in some lanes).
 
@@ -532,7 +533,12 @@ a guest through Mesa 26.3's Venus on: 26.2's leaves it out). Two memory types, e
   location 0, target 0 not location 0's under a location map, a stage writing `sample_mask`, or alpha to one, whose
   alpha 1 its coverage would see) is the stage's `sample_mask`, the first `round(alpha · samples)` samples of location
   0's alpha wherever the map puts it (and the stage's own mask); alpha to one sets the float
-  outputs' alpha to 1 after the coverage is taken. Stencil state per
+  outputs' alpha to 1 after the coverage is taken. A sample mask that leaves samples out, where the draw writes stencil
+  and the stage writes depth (its own or the bias's), is also the stage's: run at the sample rate, it discards the
+  samples the mask leaves out (`post_mask`; VK4 T50: on the M4's Metal such a pipeline wrote stencil to every sample
+  whatever its mask, or the `sample_mask` the stage wrote, while its depth kept to the mask), and a pipeline without a
+  fragment stage whose mask leaves samples out gets an empty one (without one, the M4 wrote depth and stencil to every
+  sample). Stencil state per
   face (WebGPU has one reference and one pair of masks, Vulkan a set a face): a draw whose faces both use one of them
   with different values (a reference compared or replaced, a compare mask compared, a write mask written), both faces
   drawn, is two draws, its front faces with the front's (the back culled) and then its back faces with the back's, so

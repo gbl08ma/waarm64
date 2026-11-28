@@ -1,0 +1,76 @@
+{
+ "api": "vk",
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "chromium": "158.0.8127.88",
+ "stride": 50,
+ "offset": 0,
+ "jobs": 1,
+ "jobsBlock": 0,
+ "adapter": "apple metal-3",
+ "info": "7.3.5-arch1-1mesa 1:26.3.1-2 vk vk-main.txt",
+ "cases": 3675,
+ "seconds": 121.87018779200001,
+ "pipelines": {
+  "pipelines": 11126,
+  "ready": 11126,
+  "readyMs": 70436.84000754356,
+  "deferred": 7030,
+  "deferredMs": 85145.02000522614,
+  "syncPipelines": 0,
+  "premade": 0,
+  "premadeUsed": 0,
+  "translations": 13554,
+  "translateMs": 1559.5100000001105,
+  "cacheHits": 28832,
+  "cacheMisses": 1737,
+  "cacheStores": 1737,
+  "cacheBytes": 3142236,
+  "cacheHeld": 3142236,
+  "cacheEntries": 1737,
+  "cacheInflateMs": 348.82999897003174
+ },
+ "counts": {
+  "Pass": 3675
+ },
+ "notPassed": [],
+ "slowest": [
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.sampled_image.image_type.cube_array.format.d16_unorm_s8_uint_stencil_read_dynamic_zero_static Pass 3",
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.combined_image_sampler.image_type.cube_array.format.d16_unorm_s8_uint_stencil_read_dynamic_zero_static Pass 3",
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.sampled_image.image_type.cube_array.format.d32_sfloat_s8_uint_stencil_read_dynamic_zero_static Pass 2",
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.sampled_image.image_type.cube_array.format.d32_sfloat_s8_uint_stencil_read Pass 2",
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.sampled_image.image_type.cube_array.format.d24_unorm_s8_uint_stencil_read_dynamic_bad_static Pass 2",
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.sampled_image.image_type.cube_array.format.d16_unorm_s8_uint_stencil_read Pass 2",
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.combined_image_sampler.image_type.cube_array.format.d32_sfloat_s8_uint_stencil_read_dynamic_zero_static Pass 2",
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.combined_image_sampler.image_type.cube_array.format.d32_sfloat_s8_uint_stencil_read Pass 2",
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.combined_image_sampler.image_type.cube_array.format.d24_unorm_s8_uint_stencil_read_dynamic_bad_static Pass 2",
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.combined_image_sampler.image_type.cube_array.format.d16_unorm_s8_uint_stencil_read Pass 2"
+ ],
+ "last": "dEQP-VK.renderpasses.renderpass2.suballocation.unused_clear_attachments.colorunused_colorused_colorunused_colorunused_depthstencil_d32s8_unused Pass 0dEQP-VK.renderpasses.renderpass2.suballocation.unused_clear_attachments.colorused_colorused_colorused_colorused_depthstencil_d32s8_used Pass 0dEQP-VK.texture.filtering.cube.formats.d24_unorm_s8_uint_stencil.nearest.non_seamless Pass 0",
+ "output": [
+  ": dEQP Core vulkan-cts-1.4.7.0-0-ge272471311301a35aae6364def1a3f5ea35215f7 (0xe2724713) starting..",
+  ": DONE!"
+ ],
+ "kernel": [
+  "[    0.166025] psci-cpuidle-domain psci: CLIDR_EL1.LoC == 0, treating as coherent",
+  "[    0.167985] uart-pl011 9000000.pl011: CLIDR_EL1.LoC == 0, treating as coherent",
+  "[    0.873679] psci_checker: cpuidle not available on CPU 0, ignoring",
+  "[    0.873715] psci_checker: cpuidle not available on CPU 1, ignoring",
+  "[    0.873745] psci_checker: cpuidle not available on CPU 2, ignoring",
+  "[    0.873765] psci_checker: cpuidle not available on CPU 3, ignoring",
+  "[    0.873804] psci_checker: Could not start suspend tests on any CPU",
+  "[   10.342562] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2",
+  "[   21.656725] coredump: 432(sh): Unsafe core_pattern used with fs.suid_dumpable=2: pipe handler or fully qualified core dump path required. Set kernel.core_pattern before fs.suid_dumpable."
+ ],
+ "memory": {
+  "highMiB": 1021.8,
+  "touchedMiB": 178.8,
+  "arenaMiB": 1280,
+  "arenaTouchedMiB": 17.5,
+  "arenaHighMiB": 63.8
+ },
+ "detail": [],
+ "warnings": {
+  "venus: the WebGPU device's ballots are wrong in divergent control flow unless anchored: anchored": 1,
+  "venus: Vulkan on apple metal-3 adapter; its frames reach virgl by bitmap, checked at the first copies": 1
+ }
+}

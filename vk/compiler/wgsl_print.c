@@ -900,6 +900,7 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
       break;
    case nir_intrinsic_load_sample_mask_in:
       c->uses_sample_mask_in = true;
+      c->info->mask_in = true;
       break;
    case nir_intrinsic_demote:
    case nir_intrinsic_demote_if:
@@ -1557,6 +1558,10 @@ declare_io(struct ctx *c)
                  loc, base_name(c->vary.base[loc]));
          line(c, "}");
       }
+      /* The pipeline's sample mask, which the coverage gl_SampleMaskIn reads has on SwiftShader but not on the M4
+       * (Chrome for Testing 158, Metal: dEQP-VK's multisample_shader_builtin.sample_mask.pattern): the driver's. */
+      if (c->info->mask_in)
+         line(c, "override wg_smask: u32 = 0xffffffffu;");
       /* At the sample rate, a sample's position (gl_SamplePosition; gl_FragCoord is at it, as Vulkan has it, where
        * WGSL's position is the pixel's centre): Vulkan's standard locations, by the pipeline's sample count (the
        * driver's override). */
@@ -3015,9 +3020,9 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
       /* At the sample rate an invocation's mask is its sample's bit (Vulkan's; D3D12's coverage had every covered
        * sample: dEQP-VK's multisample_shader_builtin.sample_mask.bit_count at 4 samples). */
       if (c->uses_sample_id || c->nir->info.fs.uses_sample_shading)
-         line(c, "t%u = smask & (1u << sid);", def->index);
+         line(c, "t%u = smask & wg_smask & (1u << sid);", def->index);
       else
-         line(c, "t%u = smask;", def->index);
+         line(c, "t%u = smask & wg_smask;", def->index);
       return;
    case nir_intrinsic_load_local_invocation_id:
       line(c, "t%u = lid;", def->index);

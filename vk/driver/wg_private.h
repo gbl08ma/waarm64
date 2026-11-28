@@ -773,6 +773,8 @@ struct wg_program *wg_program_merge(struct wg_program *a, const struct wg_progra
                                     const struct wgsl_info *fs);
 /* VK4 T37's test of the merge's refusal (wg_test.c `wgt_merge_refused`). */
 int wg_merge_refuses(void);
+/* VK4 T50's test of the sample mask's stand-ins for Metal (wg_test.c `wgt_mask_posts`). */
+int wg_mask_posts(void);
 
 /* The state a render pipeline is made with (wg_cmd.c fills it at each draw; zeroed whole so it hashes as bytes). */
 #define WG_VERTEX_BINDINGS 16

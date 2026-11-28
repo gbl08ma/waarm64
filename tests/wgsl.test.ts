@@ -816,6 +816,21 @@ test('scratch is an array of vec4<u32>s, read and written a word at a time (VK4 
   }
 });
 
+test('gl_SampleMaskIn has the pipeline\'s sample mask, the driver\'s override (VK4 T50)', { skip: noGlslc, timeout: 60_000 }, async () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
+  try {
+    const translate = await translator();
+    // Metal's coverage lacks the pipeline's mask (dEQP-VK's multisample_shader_builtin.sample_mask.pattern on the M4).
+    const r = glslStage(translate, tmp, 'tests/venus/t50/mask-in.frag');
+    assert.equal(r.rc, 0, r.text);
+    assert.match(r.text, /override wg_smask: u32 = 0xffffffffu;/);
+    assert.match(r.text, /= smask & wg_smask;/);
+    assert.doesNotMatch(r.text, /= smask;/);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('8-bit storage and 8- and 16-bit integer arithmetic at 32 bits, bytes of words (VK4 T29)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
@@ -1164,11 +1179,11 @@ test('at the sample rate gl_SampleMaskIn is the invocation\'s own sample\'s bit 
   try {
     const translate = await translator();
     const file = 'tests/venus/sample-mask.frag';
-    const own = /= smask & \(1u << sid\);/;
+    const own = /= smask & wg_smask & \(1u << sid\);/;
     const pixel = glslStage(translate, tmp, file);
     assert.equal(pixel.rc, 0, pixel.text);
     assert.doesNotMatch(pixel.text, own);
-    assert.match(pixel.text, /= smask;/);
+    assert.match(pixel.text, /= smask & wg_smask;/);
     const shading = glslStage(translate, tmp, file, { features: WGSL.DUAL_SOURCE | TEST_SAMPLE_SHADING });
     assert.equal(shading.rc, 0, shading.text);
     assert.match(shading.text, own);

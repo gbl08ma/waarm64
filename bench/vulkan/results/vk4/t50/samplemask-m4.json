@@ -1,0 +1,75 @@
+{
+ "api": "vk",
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "chromium": "158.0.8127.88",
+ "stride": 50,
+ "offset": 0,
+ "jobs": 1,
+ "jobsBlock": 0,
+ "adapter": "apple metal-3",
+ "info": "7.3.5-arch1-1mesa 1:26.3.1-2 vk vk-main.txt",
+ "cases": 120,
+ "seconds": 2.8118743749999995,
+ "pipelines": {
+  "pipelines": 0,
+  "ready": 0,
+  "readyMs": 0,
+  "deferred": 0,
+  "deferredMs": 0,
+  "syncPipelines": 0,
+  "premade": 0,
+  "premadeUsed": 0,
+  "translations": 0,
+  "translateMs": 0,
+  "cacheHits": 0,
+  "cacheMisses": 0,
+  "cacheStores": 0,
+  "cacheBytes": 0,
+  "cacheHeld": 0,
+  "cacheEntries": 0,
+  "cacheInflateMs": 0
+ },
+ "counts": {
+  "Pass": 120
+ },
+ "notPassed": [],
+ "slowest": [
+  "dEQP-VK.renderpasses.renderpass2.depth_stencil_resolve.image_2d_17_1.samples_4.d16_unorm_s8_uint_separate_layouts.depth_zero_stencil_zero_unused_resolve_testing_stencil_samplemask Pass 1",
+  "dEQP-VK.renderpasses.renderpass2.depth_stencil_resolve.image_2d_8_32.samples_4.d32_sfloat_s8_uint_separate_layouts.depth_zero_stencil_zero_testing_stencil_samplemask Pass 0",
+  "dEQP-VK.renderpasses.renderpass2.depth_stencil_resolve.image_2d_8_32.samples_4.d32_sfloat_s8_uint_separate_layouts.depth_zero_stencil_min_testing_stencil_samplemask Pass 0",
+  "dEQP-VK.renderpasses.renderpass2.depth_stencil_resolve.image_2d_8_32.samples_4.d32_sfloat_s8_uint.depth_zero_stencil_zero_testing_stencil_samplemask Pass 0",
+  "dEQP-VK.renderpasses.renderpass2.depth_stencil_resolve.image_2d_8_32.samples_4.d32_sfloat_s8_uint.depth_zero_stencil_min_testing_stencil_samplemask Pass 0",
+  "dEQP-VK.renderpasses.renderpass2.depth_stencil_resolve.image_2d_8_32.samples_4.d24_unorm_s8_uint_separate_layouts.depth_zero_stencil_zero_testing_stencil_samplemask Pass 0",
+  "dEQP-VK.renderpasses.renderpass2.depth_stencil_resolve.image_2d_8_32.samples_4.d24_unorm_s8_uint_separate_layouts.depth_zero_stencil_min_testing_stencil_samplemask Pass 0",
+  "dEQP-VK.renderpasses.renderpass2.depth_stencil_resolve.image_2d_8_32.samples_4.d24_unorm_s8_uint.depth_zero_stencil_zero_testing_stencil_samplemask Pass 0",
+  "dEQP-VK.renderpasses.renderpass2.depth_stencil_resolve.image_2d_8_32.samples_4.d24_unorm_s8_uint.depth_zero_stencil_min_testing_stencil_samplemask Pass 0",
+  "dEQP-VK.renderpasses.renderpass2.depth_stencil_resolve.image_2d_8_32.samples_4.d16_unorm_s8_uint_separate_layouts.depth_zero_stencil_zero_unused_resolve_testing_stencil_samplemask Pass 0"
+ ],
+ "last": "dEQP-VK.renderpasses.renderpass2.depth_stencil_resolve.image_2d_8_32.samples_4.d32_sfloat_s8_uint.depth_zero_stencil_zero_testing_stencil_samplemask Pass 0dEQP-VK.renderpasses.renderpass2.depth_stencil_resolve.image_2d_8_32.samples_4.d32_sfloat_s8_uint_separate_layouts.depth_zero_stencil_min_testing_stencil_samplemask Pass 0dEQP-VK.renderpasses.renderpass2.depth_stencil_resolve.image_2d_8_32.samples_4.d32_sfloat_s8_uint_separate_layouts.depth_zero_stencil_zero_testing_stencil_samplemask Pass 0",
+ "output": [
+  ": dEQP Core vulkan-cts-1.4.7.0-0-ge272471311301a35aae6364def1a3f5ea35215f7 (0xe2724713) starting..",
+  ": DONE!"
+ ],
+ "kernel": [
+  "[    0.137714] psci-cpuidle-domain psci: CLIDR_EL1.LoC == 0, treating as coherent",
+  "[    0.139474] uart-pl011 9000000.pl011: CLIDR_EL1.LoC == 0, treating as coherent",
+  "[    0.766337] psci_checker: cpuidle not available on CPU 0, ignoring",
+  "[    0.766367] psci_checker: cpuidle not available on CPU 1, ignoring",
+  "[    0.766387] psci_checker: cpuidle not available on CPU 2, ignoring",
+  "[    0.766412] psci_checker: cpuidle not available on CPU 3, ignoring",
+  "[    0.766442] psci_checker: Could not start suspend tests on any CPU",
+  "[    8.816842] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2",
+  "[   19.684750] coredump: 432(sh): Unsafe core_pattern used with fs.suid_dumpable=2: pipe handler or fully qualified core dump path required. Set kernel.core_pattern before fs.suid_dumpable."
+ ],
+ "memory": {
+  "highMiB": 1021.8,
+  "touchedMiB": 143.3,
+  "arenaMiB": 1280,
+  "arenaTouchedMiB": 8.7,
+  "arenaHighMiB": 21.7
+ },
+ "warnings": {
+  "venus: the WebGPU device's ballots are wrong in divergent control flow unless anchored: anchored": 1,
+  "venus: Vulkan on apple metal-3 adapter; its frames reach virgl by bitmap, checked at the first copies": 1
+ }
+}

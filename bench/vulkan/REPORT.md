@@ -811,6 +811,43 @@ the dev VM (SwiftShader, Chromium 155.0.8059.84). JSON in `results/vk4/t50/`.
   one failure, `image_robustness.push.notemplate.rgba32ui.unroll.volatile.storage_image.fmt_qual.img.samples_1.3d.vert`,
   fails with the printer of before too (its cube siblings' kind), and leaves the list.
 
+### The M4's stencil `samplemask` resolves: Metal's sample mask lost where the stage writes depth
+
+**2026-11-28**, the same hosts. The 120 `depth_stencil_resolve.*_testing_stencil_samplemask` cases (`m4-cases.txt`)
+failed 60 on the M4 (`fix-m4.json`): every MIN and SAMPLE_ZERO stencil resolve of D16S8, D24S8 and D32S8, at every
+size; MAX, NONE and the unused resolves passed. dEQP draws four passes into a 4-sample attachment, pass i with sample
+mask 1 << i and stencil reference 1 (samples 0, 1) or 255 (2, 3), its stage writing `gl_FragDepth`: samples 0 and 1
+read 255, so the masks were lost and MAX is right by chance. In plain WebGPU (`bench/vulkan/metal-mask.ts`,
+`mask-m4.json`, `mask-swiftshader.json`), what the pipeline's mask keeps on the M4, by fragment stage:
+
+| fragment stage | stencil (4 passes, masks 1 << i) | depth (mask 1) |
+|---|---|---|
+| none | **every sample written** | **every sample written** |
+| empty | right | right |
+| writes `sample_mask` (all ones) | right | right |
+| writes `frag_depth` | **every sample written** | right |
+| writes `frag_depth` and `sample_mask` (all ones, or the mask) | **every sample written** | right |
+| writes `frag_depth`, discards the samples outside the mask at the sample rate | right | right |
+
+SwiftShader is right in every row. **The stand-ins** (wg_shader.c, vk/README.md "Commands"): a draw that writes
+stencil whose stage writes depth (its own or the bias's), with a mask that leaves samples out, discards those samples
+in the stage at the sample rate (`post_mask`, through `post_text`); a pipeline without a fragment stage whose mask
+leaves samples out gets an empty one. And `gl_SampleMaskIn` lacked the pipeline's mask on the M4
+(`multisample_shader_builtin.sample_mask.pattern.128_128_1.samples_4`: "gl_SampleMaskIn bits have not been killed by
+pSampleMask state", the build of before too: `pattern-before-m4.json`): the printer ANDs it with an override the
+driver sets to the mask (`wg_smask`). Tests: `wg_mask_posts` (wg_test.c `wgt_mask_posts`, in
+tests/venus-driver.test.ts's `depthResolveArea`: failing with `post_mask` planted to 0), tests/wgsl.test.ts "gl_SampleMaskIn
+has the pipeline's sample mask…".
+
+- **On the M4**: the 120 pass (`samplemask-m4.json`), and with the pattern case and every `sample_mask` case of the list
+  (`samplemask-pattern-m4.json`, 130 pass). Every case of the list under `depth_stencil_resolve`, `sample_mask`,
+  `samplemask`, `multisample` or `stencil` (`grep -v '^#' tests/deqp/vk.txt | grep -E
+  'depth_stencil_resolve|sample_mask|samplemask|multisample|stencil'`, 7,350) in two halves, odd and even lines:
+  3,675 and 3,675 pass (`related-odd-m4.json`, `related-even-m4.json`). The issue's other M4 failures don't change.
+- **On SwiftShader**: those 7,350 and the 120 pass (`related-swiftshader.json`, 7,467 cases: three of the 120 were
+  in the list, 755 s at JOBS 2).
+- **117 join `tests/deqp/vk.txt`**: T27's 40 that failed on the M4 and its 77 D16S8 ones, NotSupported then.
+
 ## dEQP-VK's processes a machine: two, the whole list 14% faster
 
 2026-11-07, the dev VM (SwiftShader, Chromium 155.0.8059.84). JSON in `results/vk4/jobs/`: `slice.txt` (every 29th case

@@ -702,7 +702,11 @@ export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mu
       depth[i] = inside ? 0.25 : 1.0;
       stencil[i] = inside ? 0x5a : 0x33;
     }
-    Object.assign(checks, { depth: [0, 256, want], stencil: [256, 4096, want] });
+    // And wg_shader.c's stand-ins for a sample mask that leaves samples out, which Metal doesn't keep (VK4 T50): the
+    // samples discarded by a stage that writes depth where stencil is written, an empty stage where there's none, 31.
+    got[1024] = (ex as unknown as { wgt_mask_posts(): number }).wgt_mask_posts();
+    want[1024] = 31;
+    Object.assign(checks, { depth: [0, 256, want], stencil: [256, 1024, want], maskPosts: [1024, 1025, want], rest: [1025, 4096, want] });
   } else if (scenario === 'emptyAfterHeld') {
     want.fill(0x22, 0, 64);
     Object.assign(checks, { copied: [0, 4096, want] });

@@ -2666,10 +2666,31 @@ post_float_outputs(const struct wg_pipeline_key *k)
    return k->fs && k->fs->info.dual_source ? 0 : mask;
 }
 
+/* The samples of the pipeline's count its sample mask leaves out (0: none). */
+static uint32_t
+masked_out(const struct wg_pipeline_key *k)
+{
+   const uint32_t all = k->samples > 1 && k->samples < 32 ? (1u << k->samples) - 1 : 0;
+   return all & ~k->sample_mask;
+}
+
+/* The samples the key's sample mask leaves out where the stage writes depth and the draw writes stencil, which the
+ * stage discards itself at the sample rate (VK4 T50): on the M4 (Chrome for Testing 158, Metal) a pipeline whose stage
+ * writes `frag_depth` writes stencil to every sample whatever its mask (and whatever `sample_mask` it outputs), while
+ * its depth keeps to the mask; on SwiftShader both do (bench/vulkan/REPORT.md "VK4 T50"). 0: none. */
+static uint32_t
+post_mask(const struct wg_pipeline_key *k)
+{
+   const struct wg_texture_format *ds = k->depth ? wg_texture_format(k->depth) : NULL;
+   const bool stencil = ds && (ds->flags & WG_FMT_STENCIL) && k->stencil_test && k->stencil_write;
+   const bool depth = ds && (ds->flags & WG_FMT_DEPTH) && ((k->fs && k->fs->info.writes_depth) || post_bias(k));
+   return stencil && depth ? masked_out(k) : 0;
+}
+
 static bool
 key_posts(const struct wg_pipeline_key *k)
 {
-   return post_bias(k) || (k->fs && (k->a2c_mask || (k->alpha_to_one && post_float_outputs(k))));
+   return post_bias(k) || post_mask(k) || (k->fs && (k->a2c_mask || (k->alpha_to_one && post_float_outputs(k))));
 }
 
 /*
@@ -2697,6 +2718,13 @@ post_text(const struct wg_pipeline_key *k, char *text)
    const bool wg_pos = strstr(params, "@builtin(position) wg_pos: vec4<f32>") != NULL; /* dst_text's */
    const bool bias = post_bias(k), cover = k->fs && k->a2c_mask;
    const bool own_mask = k->fs && k->fs->info.writes_sample_mask;
+   const uint32_t masked = post_mask(k);
+   /* The sample's index for `masked`: the stage's own, `dst_text`'s, or a parameter of the new `main`. */
+   const char *sid = strstr(params, "@builtin(sample_index) sid: u32") ? "sid"
+                     : strstr(params, "@builtin(sample_index) wg_sid: u32") ? "wg_sid" : NULL;
+   const bool add_sid = masked && !sid;
+   if (add_sid)
+      sid = "wg_sid";
    const uint32_t ones = k->alpha_to_one ? post_float_outputs(k) : 0;
    /* `main` renamed, its parameters bare, then Out's new members (or Out itself, for a stage without outputs). */
    const size_t at_main = at - text;
@@ -2720,8 +2748,9 @@ post_text(const struct wg_pipeline_key *k, char *text)
       text = spliced(text, at_main, 0, st); /* past the directives, which come first */
    }
    struct wg_json j = { 0 };
-   wg_json_printf(&j, "%s@fragment fn main(%s%s%s) -> Out {\n", text, params, *params && !in_pos && !wg_pos ? ", " : "",
-                  in_pos || wg_pos ? "" : "@builtin(position) wg_pos: vec4<f32>");
+   wg_json_printf(&j, "%s@fragment fn main(%s%s%s%s) -> Out {\n", text, params, *params && !in_pos && !wg_pos ? ", " : "",
+                  in_pos || wg_pos ? "" : "@builtin(position) wg_pos: vec4<f32>",
+                  add_sid ? ", @builtin(sample_index) wg_sid: u32" : "");
    const char *pos = in_pos ? "i.pos" : "wg_pos";
    /* The slope where the control flow is uniform: before the stage, which may discard. */
    if (bias) {
@@ -2768,10 +2797,54 @@ post_text(const struct wg_pipeline_key *k, char *text)
       else
          wg_json_printf(&j, "  r.wg_depth = wg_z + wg_o;\n");
    }
+   if (masked)
+      wg_json_printf(&j, "  if (((0x%xu >> %s) & 1u) != 0u) { discard; }\n", masked, sid);
    wg_json_printf(&j, "  return r;\n}\n");
    wg_json_free(&args);
    free(text);
    return j.data;
+}
+
+/* VK4 T50's test (wg_test.c `wgt_mask_posts`): the sample mask's stand-ins for Metal. Bit 0: a key at 4 samples whose
+ * mask leaves samples out, writing stencil, its stage writing depth, discards those samples (0xe out of mask 1) at the
+ * sample rate, through a sample index of its own (bit 1) or the stage's `sid` (bit 2); bit 3: not with every sample in
+ * the mask, nor without a stencil write or a depth the stage writes; bit 4: a key without a stage leaves samples out
+ * (an empty stage is made for it) and not with every sample. */
+int
+wg_mask_posts(void)
+{
+   struct wg_shader *fs = calloc(1, sizeof(*fs));
+   fs->info.writes_depth = true;
+   struct wg_pipeline_key k = { .fs = fs, .samples = 4, .sample_mask = 1, .depth = VK_FORMAT_D24_UNORM_S8_UINT,
+                                .stencil_test = 1, .stencil_write = 0xff };
+   int ok = 0;
+   ok |= (post_mask(&k) == 0xe && key_posts(&k)) << 0;
+   static const char out[] = "struct Out {\n  @builtin(frag_depth) depth: f32,\n}\n";
+   static const char bodies[2][128] = { "@fragment fn main() -> Out {\n  var o: Out;\n  o.depth = 0.5;\n  return o;\n}\n",
+                                        "@fragment fn main(@builtin(sample_index) sid: u32) -> Out {\n  var o: Out;\n"
+                                        "  o.depth = f32(sid);\n  return o;\n}\n" };
+   for (uint32_t b = 0; b < 2; b++) {
+      char *text = malloc(sizeof(out) + sizeof(bodies[b]));
+      snprintf(text, sizeof(out) + sizeof(bodies[b]), "%s%s", out, bodies[b]);
+      char *t = post_text(&k, text);
+      const char *sid = b ? "sid" : "wg_sid";
+      char discard[96];
+      snprintf(discard, sizeof(discard), "  if (((0xeu >> %s) & 1u) != 0u) { discard; }\n  return r;\n}\n", sid);
+      const bool own = t && strstr(t, "@builtin(sample_index) wg_sid: u32") != NULL;
+      ok |= (t && strstr(t, discard) && own == !b) << (1 + b);
+      free(t);
+   }
+   struct wg_pipeline_key full = k, no_stencil = k, no_depth = k;
+   full.sample_mask = 0xffffffffu, no_stencil.stencil_write = 0;
+   struct wg_shader *plain = calloc(1, sizeof(*plain));
+   no_depth.fs = plain;
+   ok |= (!post_mask(&full) && !post_mask(&no_stencil) && !post_mask(&no_depth)) << 3;
+   struct wg_pipeline_key bare = { .samples = 4, .sample_mask = 1, .depth = VK_FORMAT_D32_SFLOAT }, all = bare;
+   all.sample_mask = 0xffffffffu;
+   ok |= (masked_out(&bare) == 0xe && !masked_out(&all)) << 4;
+   free(fs);
+   free(plain);
+   return ok;
 }
 
 /* A fragment module of a key reading its attachments (`dst_text`), or doing more than its outputs (`post_text`), kept
@@ -2967,11 +3040,16 @@ render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k, bool prem
       for (uint32_t i = 0; k->fs->info.int_clamp && i < k->color_count && i < 8; i++)
          if (k->colors[i] && (k->fs->info.int_clamp & (1u << i)))
             int_clamp |= int_range(k->colors[i]) << (2 * i);
-      if (k->fs->info.per_sample || k->fs->info.uses_view || k->fs->info.uses_layer || a2c || alpha_red || int_clamp) {
+      if (k->fs->info.per_sample || k->fs->info.mask_in || k->fs->info.uses_view || k->fs->info.uses_layer || a2c ||
+          alpha_red || int_clamp) {
          wg_json_printf(&j, "\"constants\":{");
          const char *sep = "";
          if (k->fs->info.per_sample) {
             wg_json_printf(&j, "\"wg_samples\":%u", k->samples);
+            sep = ",";
+         }
+         if (k->fs->info.mask_in) {
+            wg_json_printf(&j, "%s\"wg_smask\":%u", sep, k->sample_mask);
             sep = ",";
          }
          if (k->fs->info.uses_view) {
@@ -3053,7 +3131,9 @@ render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k, bool prem
                wg_json_printf(&j, "%snull", i ? "," : "");
          }
          wg_json_printf(&j, "]}");
-      } else if (colour) {
+      } else if (colour || masked_out(k)) {
+         /* Also for a sample mask that leaves samples out (VK4 T50): on the M4 (Metal) a pipeline without a fragment
+          * stage writes depth and stencil to every sample whatever its mask; with an empty one, as the mask says. */
          if (!k->vs->empty_fs) {
             static const char empty[] = "@fragment fn main() {}\n";
             k->vs->empty_fs = wg_id();

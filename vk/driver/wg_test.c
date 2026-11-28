@@ -80,6 +80,9 @@ int wgt_info_refused(void);
 int wgt_merge_refused(void);
 /* wg_shader.c: VK4 T37's test of its merge. */
 int wg_merge_refuses(void);
+/* wg_shader.c: VK4 T50's test of the sample mask's stand-ins. */
+int wg_mask_posts(void);
+int wgt_mask_posts(void);
 /* wg_cmd.c: the syncs held submits signal or wait on. */
 int wg_held_syncs(void);
 
@@ -9544,6 +9547,13 @@ EXPORT int
 wgt_merge_refused(void)
 {
    return wg_merge_refuses();
+}
+
+/* wg_shader.c's stand-ins for a sample mask Metal doesn't keep (31; VK4 T50). */
+EXPORT int
+wgt_mask_posts(void)
+{
+   return wg_mask_posts();
 }
 
 /* wg_shader.c's look at a shader store's counts: whether it refuses a count past its array. */

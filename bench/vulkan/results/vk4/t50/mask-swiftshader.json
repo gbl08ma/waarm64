@@ -1,0 +1,510 @@
+{
+ "browser": "155.0.8059.84",
+ "adapter": "google swiftshader",
+ "rows": [
+  {
+   "aspect": "stencil",
+   "format": "depth24plus-stencil8",
+   "stage": "none",
+   "samples": [
+    1,
+    1,
+    255,
+    255
+   ],
+   "right": true
+  },
+  {
+   "aspect": "stencil",
+   "format": "depth24plus-stencil8",
+   "stage": "empty",
+   "samples": [
+    1,
+    1,
+    255,
+    255
+   ],
+   "right": true
+  },
+  {
+   "aspect": "stencil",
+   "format": "depth24plus-stencil8",
+   "stage": "depth",
+   "samples": [
+    1,
+    1,
+    255,
+    255
+   ],
+   "right": true
+  },
+  {
+   "aspect": "stencil",
+   "format": "depth24plus-stencil8",
+   "stage": "mask",
+   "samples": [
+    1,
+    1,
+    255,
+    255
+   ],
+   "right": true
+  },
+  {
+   "aspect": "stencil",
+   "format": "depth24plus-stencil8",
+   "stage": "depth+mask",
+   "samples": [
+    1,
+    1,
+    255,
+    255
+   ],
+   "right": true
+  },
+  {
+   "aspect": "stencil",
+   "format": "depth24plus-stencil8",
+   "stage": "depth+own mask",
+   "samples": [
+    1,
+    1,
+    255,
+    255
+   ],
+   "right": true
+  },
+  {
+   "aspect": "stencil",
+   "format": "depth24plus-stencil8",
+   "stage": "depth+discard",
+   "samples": [
+    1,
+    1,
+    255,
+    255
+   ],
+   "right": true
+  },
+  {
+   "aspect": "stencil",
+   "format": "depth32float-stencil8",
+   "stage": "none",
+   "samples": [
+    1,
+    1,
+    255,
+    255
+   ],
+   "right": true
+  },
+  {
+   "aspect": "stencil",
+   "format": "depth32float-stencil8",
+   "stage": "empty",
+   "samples": [
+    1,
+    1,
+    255,
+    255
+   ],
+   "right": true
+  },
+  {
+   "aspect": "stencil",
+   "format": "depth32float-stencil8",
+   "stage": "depth",
+   "samples": [
+    1,
+    1,
+    255,
+    255
+   ],
+   "right": true
+  },
+  {
+   "aspect": "stencil",
+   "format": "depth32float-stencil8",
+   "stage": "mask",
+   "samples": [
+    1,
+    1,
+    255,
+    255
+   ],
+   "right": true
+  },
+  {
+   "aspect": "stencil",
+   "format": "depth32float-stencil8",
+   "stage": "depth+mask",
+   "samples": [
+    1,
+    1,
+    255,
+    255
+   ],
+   "right": true
+  },
+  {
+   "aspect": "stencil",
+   "format": "depth32float-stencil8",
+   "stage": "depth+own mask",
+   "samples": [
+    1,
+    1,
+    255,
+    255
+   ],
+   "right": true
+  },
+  {
+   "aspect": "stencil",
+   "format": "depth32float-stencil8",
+   "stage": "depth+discard",
+   "samples": [
+    1,
+    1,
+    255,
+    255
+   ],
+   "right": true
+  },
+  {
+   "aspect": "depth",
+   "format": "depth24plus",
+   "stage": "none",
+   "samples": [
+    0.25,
+    1,
+    1,
+    1
+   ],
+   "right": true
+  },
+  {
+   "aspect": "depth",
+   "format": "depth24plus",
+   "stage": "empty",
+   "samples": [
+    0.25,
+    1,
+    1,
+    1
+   ],
+   "right": true
+  },
+  {
+   "aspect": "depth",
+   "format": "depth24plus",
+   "stage": "depth",
+   "samples": [
+    0.5,
+    1,
+    1,
+    1
+   ],
+   "right": true
+  },
+  {
+   "aspect": "depth",
+   "format": "depth24plus",
+   "stage": "mask",
+   "samples": [
+    0.25,
+    1,
+    1,
+    1
+   ],
+   "right": true
+  },
+  {
+   "aspect": "depth",
+   "format": "depth24plus",
+   "stage": "depth+mask",
+   "samples": [
+    0.5,
+    1,
+    1,
+    1
+   ],
+   "right": true
+  },
+  {
+   "aspect": "depth",
+   "format": "depth24plus",
+   "stage": "depth+own mask",
+   "samples": [
+    0.5,
+    1,
+    1,
+    1
+   ],
+   "right": true
+  },
+  {
+   "aspect": "depth",
+   "format": "depth24plus",
+   "stage": "depth+discard",
+   "samples": [
+    0.5,
+    1,
+    1,
+    1
+   ],
+   "right": true
+  },
+  {
+   "aspect": "depth",
+   "format": "depth32float",
+   "stage": "none",
+   "samples": [
+    0.25,
+    1,
+    1,
+    1
+   ],
+   "right": true
+  },
+  {
+   "aspect": "depth",
+   "format": "depth32float",
+   "stage": "empty",
+   "samples": [
+    0.25,
+    1,
+    1,
+    1
+   ],
+   "right": true
+  },
+  {
+   "aspect": "depth",
+   "format": "depth32float",
+   "stage": "depth",
+   "samples": [
+    0.5,
+    1,
+    1,
+    1
+   ],
+   "right": true
+  },
+  {
+   "aspect": "depth",
+   "format": "depth32float",
+   "stage": "mask",
+   "samples": [
+    0.25,
+    1,
+    1,
+    1
+   ],
+   "right": true
+  },
+  {
+   "aspect": "depth",
+   "format": "depth32float",
+   "stage": "depth+mask",
+   "samples": [
+    0.5,
+    1,
+    1,
+    1
+   ],
+   "right": true
+  },
+  {
+   "aspect": "depth",
+   "format": "depth32float",
+   "stage": "depth+own mask",
+   "samples": [
+    0.5,
+    1,
+    1,
+    1
+   ],
+   "right": true
+  },
+  {
+   "aspect": "depth",
+   "format": "depth32float",
+   "stage": "depth+discard",
+   "samples": [
+    0.5,
+    1,
+    1,
+    1
+   ],
+   "right": true
+  },
+  {
+   "aspect": "depth",
+   "format": "depth24plus-stencil8",
+   "stage": "none",
+   "samples": [
+    0.25,
+    1,
+    1,
+    1
+   ],
+   "right": true
+  },
+  {
+   "aspect": "depth",
+   "format": "depth24plus-stencil8",
+   "stage": "empty",
+   "samples": [
+    0.25,
+    1,
+    1,
+    1
+   ],
+   "right": true
+  },
+  {
+   "aspect": "depth",
+   "format": "depth24plus-stencil8",
+   "stage": "depth",
+   "samples": [
+    0.5,
+    1,
+    1,
+    1
+   ],
+   "right": true
+  },
+  {
+   "aspect": "depth",
+   "format": "depth24plus-stencil8",
+   "stage": "mask",
+   "samples": [
+    0.25,
+    1,
+    1,
+    1
+   ],
+   "right": true
+  },
+  {
+   "aspect": "depth",
+   "format": "depth24plus-stencil8",
+   "stage": "depth+mask",
+   "samples": [
+    0.5,
+    1,
+    1,
+    1
+   ],
+   "right": true
+  },
+  {
+   "aspect": "depth",
+   "format": "depth24plus-stencil8",
+   "stage": "depth+own mask",
+   "samples": [
+    0.5,
+    1,
+    1,
+    1
+   ],
+   "right": true
+  },
+  {
+   "aspect": "depth",
+   "format": "depth24plus-stencil8",
+   "stage": "depth+discard",
+   "samples": [
+    0.5,
+    1,
+    1,
+    1
+   ],
+   "right": true
+  },
+  {
+   "aspect": "depth",
+   "format": "depth32float-stencil8",
+   "stage": "none",
+   "samples": [
+    0.25,
+    1,
+    1,
+    1
+   ],
+   "right": true
+  },
+  {
+   "aspect": "depth",
+   "format": "depth32float-stencil8",
+   "stage": "empty",
+   "samples": [
+    0.25,
+    1,
+    1,
+    1
+   ],
+   "right": true
+  },
+  {
+   "aspect": "depth",
+   "format": "depth32float-stencil8",
+   "stage": "depth",
+   "samples": [
+    0.5,
+    1,
+    1,
+    1
+   ],
+   "right": true
+  },
+  {
+   "aspect": "depth",
+   "format": "depth32float-stencil8",
+   "stage": "mask",
+   "samples": [
+    0.25,
+    1,
+    1,
+    1
+   ],
+   "right": true
+  },
+  {
+   "aspect": "depth",
+   "format": "depth32float-stencil8",
+   "stage": "depth+mask",
+   "samples": [
+    0.5,
+    1,
+    1,
+    1
+   ],
+   "right": true
+  },
+  {
+   "aspect": "depth",
+   "format": "depth32float-stencil8",
+   "stage": "depth+own mask",
+   "samples": [
+    0.5,
+    1,
+    1,
+    1
+   ],
+   "right": true
+  },
+  {
+   "aspect": "depth",
+   "format": "depth32float-stencil8",
+   "stage": "depth+discard",
+   "samples": [
+    0.5,
+    1,
+    1,
+    1
+   ],
+   "right": true
+  }
+ ]
+}

@@ -174,6 +174,8 @@ struct wgsl_info {
                                  * is drawn a layer at a time, a pipeline each) */
    bool uses_layer;             /* fragment: reads gl_Layer, declares `override wg_layer` (the pipeline's layer) */
    bool per_sample;             /* fragment: at the sample rate, declares `override wg_samples` (the pipeline's) */
+   bool mask_in;                /* fragment: reads gl_SampleMaskIn, declares `override wg_smask` (the pipeline's
+                                 * sample mask, which Metal's coverage doesn't have: VK4 T50) */
    bool a2c;                    /* fragment: location 0 a float, declares `override wg_a2c`: alpha to coverage at
                                  * one sample (WebGPU's needs several), its fragments under half alpha discarded */
    uint8_t alpha_red;           /* fragment: the float outputs (by location), declares `override wg_ar`: those whose
