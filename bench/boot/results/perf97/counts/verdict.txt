@@ -1,0 +1,19 @@
+node: 2 pairs against a
+  arm          pairs wall                                 cpu                                 
+  b                2 -1.69% [-2.24%, -1.14%] LOWER        -1.48% [-16.61%, +16.40%] open      
+  ended: every stop measure decided
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  a                   12951            -         1766        715.9        372.6        50.93         1417    484981500
+  b                   12732            -         1570        708.5        371.7        50.93         1417    484981500
+smp: 2 pairs against a
+  arm          pairs wall                                 cpu                                 
+  b                2 -0.60% [-56.46%, +126.96%] open      -0.83% [-14.26%, +14.71%] open      
+  ended: the cap of 2 pairs
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  a                   15112            -         2414       1412.3        638.1        92.07         2890   1199182162
+  b                   15020            -         2184       1409.8        622.0        91.09         2816   1194336888
+  arm          compiled %   interp %    overdue      parks    modules  worker ms   ready ms  ready p50  ready p99  ready top top of any   stall ms     of any stall ms/s   out ms/s
+  a                 94.65       5.35          0      10067       2588       1798       1.08          1          8         16         16         14         16       11.4        101
+  b                 94.65       5.35          0       9837       2519       1791       1.09          1          8         32         32         10         10        8.8        115
+arms: a 9903274 bytes; b 9903274 bytes
+rule: a pair a fresh browser (warm-up none, 1 round), pairs 2-2, band ±0.5%, stop on cycles and wall (node), wall (smp) (no cycles or instructions on this host), each interval's tail 1.00e-2 (0.01 over all its looks, an interval: several arms and measures each take that chance); Chromium 155.0.8059.84

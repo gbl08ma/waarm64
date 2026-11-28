@@ -47,9 +47,11 @@
 //! by a hash of class and block, so the kernel's 2 MiB entries (live all the
 //! time) don't send every flush in their half through 512 indices, nor a
 //! 1 GiB block's through all of them.
-// ponytail: the nG entries of the previous ASID are dropped, not kept for when
-// it's current again (per-ASID stashes; 0.3M nG refills in Alpine's boot):
-// https://github.com/gbl08ma/waarm64/issues/316.
+//!
+//! The previous ASID's nG entries are dropped at a switch, not stashed for
+//! when it is current again: a stash would serve at most ~1.2% of a Firefox
+//! session's busy time before its own costs, under 0.4% elsewhere
+//! (docs/cpu.md "ASIDs", bench/boot/REPORT.md "PERF loop 97").
 //
 // **The transfer cache** (`Tlb::xc`): JIT blocks find the compiled block an
 // indirect branch (or a by-VA link) goes to by its VA in one probe, without

@@ -1,0 +1,514 @@
+diff --git a/bench/boot/preempt-counts.ts b/bench/boot/preempt-counts.ts
+index 0c15922b..6f1ad352 100644
+--- a/bench/boot/preempt-counts.ts
++++ b/bench/boot/preempt-counts.ts
+@@ -21,7 +21,7 @@ import { DISTROS } from '../../web/test-guests.ts';
+ /** core/src/tally.rs's slots. */
+ const JIT = ['back-edge', 'forward edge', 'transfer cache hit', 'miss function', 'jump cache hit (MMU off)', 'chain back', 'chain fwd', 'chain via jc back', 'chain via jc fwd', 'by-VA link back', 'by-VA link fwd', 'host call', 'host return', 'poll (polled code)', 'Resync done in place', 'exception in place'];
+ const END = ['budget', 'early (stop word, park)', 'Resync (ISB/DSB/ERET/unmask)', 'Invalidate (IC)', 'WFI', 'WFE', 'SEV', 'TLBI IS', 'HVC', 'counter read', 'platform (timer/GIC regs)', 'device (MMIO)', 'SVC', 'exception', 'other'];
+-const N = 80, END_AT = 16, END_STEPS = 32, BETWEEN = 31, BETWEEN_NS = 47, TIMER_LATE = 48, IRQ_LATE = 54, IRQ_HIST = 60, TIMER_SET = 64, IRQS = 67, PLATFORM_BY = 68, TIMER_ACC = 72;
++const N = 120, END_AT = 16, END_STEPS = 32, BETWEEN = 31, BETWEEN_NS = 47, TIMER_LATE = 48, IRQ_LATE = 54, IRQ_HIST = 60, TIMER_SET = 64, IRQS = 67, PLATFORM_BY = 68, TIMER_ACC = 72;
+ 
+ type Tallies = number[];
+ type Phase = { name: string; steps: number; t: Tallies };
+@@ -69,6 +69,9 @@ function print(r: Run) {
+   const rows: [string, number, Tallies][] = [['all', r.steps, r.t], ...r.phases.map((p) => [p.name, p.steps, p.t] as [string, number, Tallies])];
+   console.log(`${'per 1000 steps'.padEnd(24)} ${rows.map(([n]) => n.slice(0, 9).padStart(9)).join(' ')}`);
+   JIT.forEach((n, i) => console.log(`${n.padEnd(24).slice(0, 24)} ${rows.map(([, s, t]) => ((1000 * t[i]) / s).toFixed(3).padStart(9)).join(' ')}`));
++  const P97 = ['switches', 'to a stashed ASID', 'entries stashed', 'restorable', 'peak entries', 'peak ASIDs', 'nG fills EL0 r', 'nG fills EL0 w', 'nG fills EL0 x', 'nG fills EL1', 'served EL0 r', 'served EL0 w', 'served EL0 x', 'served EL1', 'stale', 'VA drops', 'VA dropped', 'ASIDE', 'ASIDE other', 'ASIDE other live', 'ASIDE dropped', 'flush all', 'nG unknown', 'all dropped', 'sibling of stashed', 'all primary fills', 'strict EL0 r', 'strict EL0 w', 'strict EL0 x', 'strict EL1', 'strict restored', 'restore on global', 'restore on other', 'ASIDE lost refilled'];
++  console.log(`p97 (counts) ${rows.map(([n]) => n.slice(0, 12).padStart(12)).join(' ')}`);
++  P97.forEach((n, k) => console.log(`  ${n.padEnd(20)} ${rows.map(([, , t]) => String(t[80 + k]).padStart(12)).join(' ')}`));
+   const chunks = END.reduce((s, _, k) => s + r.t[END_AT + k], 0);
+   console.log(`chunks: ${chunks} (${(r.steps / chunks).toFixed(0)} steps each); by how they ended: count, share, mean steps`);
+   END.forEach((n, k) => {
+diff --git a/core/src/interp/sys.rs b/core/src/interp/sys.rs
+index 46893f84..9e700acc 100644
+--- a/core/src/interp/sys.rs
++++ b/core/src/interp/sys.rs
+@@ -369,7 +369,11 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, op: Op) -> R {
+             (0, 8, crm @ (3 | 7), op2 @ (0 | 2 | 1 | 3 | 5 | 7)) => {
+                 match op2 {
+                     0 => m.flush_all(),
+-                    2 => m.flush_ng(),
++                    2 => {
++                        #[cfg(feature = "diag")]
++                        crate::mmu::P97_HINT.with(|h| h.set((2, c.reg(rt) >> 48, 0)));
++                        m.flush_ng()
++                    }
+                     // VAE1, VAAE1, VALE1, VAALE1: Xt[43:0] is VA[55:12].
+                     _ => m.flush_va(c.reg(rt) << 12),
+                 }
+@@ -728,6 +732,8 @@ fn write(c: &mut Cpu, m: &mut impl Bus, i: u32, key: u32, v: u64) -> R {
+         m.flush_all();
+         m.republish(c);
+     } else if mmu::asid(c) != asid {
++        #[cfg(feature = "diag")]
++        crate::mmu::P97_HINT.with(|h| h.set((1, asid, mmu::asid(c))));
+         m.flush_ng();
+         m.republish(c);
+     }
+diff --git a/core/src/mmu.rs b/core/src/mmu.rs
+index f4add651..ac603f28 100644
+--- a/core/src/mmu.rs
++++ b/core/src/mmu.rs
+@@ -193,6 +193,86 @@ pub struct Tlb {
+     nwatched: u32,
+     /// The watch's generation this TLB last caught up with (`Tlb::catch_up`).
+     pub watch_gen: u32,
++    /// PERF loop 97 (temporary): the per-ASID stash model; null until first used.
++    #[cfg(feature = "diag")]
++    pub p97: *mut P97,
++}
++
++/// PERF loop 97 (temporary): what a per-ASID stash of nG entries would serve. At an ASID switch the live nG
++/// entries are kept for the old ASID (with what was kept before and not refilled since: a generous model, with no
++/// capacity); a later walk's fill of a page and array the current ASID has kept, with the same tag and addend, is a
++/// refill the stash would have saved. TLBI by VA drops the page from every stash, by ASID that ASID's, everything
++/// all of them; a flush of nG entries whose ASID isn't known (a collapsed queue) drops all of them.
++#[cfg(feature = "diag")]
++pub struct P97 {
++    cur: u64,
++    stash: std::collections::HashMap<u64, std::collections::HashMap<u64, (u64, u64)>>,
++    total: u64,
++    primary: u64,
++    /// The strict model: only what was live at the ASID's last switch away, restored at its next switch in.
++    strict: std::collections::HashMap<u64, std::collections::HashMap<u64, (u64, u64)>>,
++    /// The current ASID's live nG entries a TLBI ASIDE1 of another ASID dropped (since the last switch).
++    lost: std::collections::HashMap<u64, (u64, u64)>,
++    pub n: [u64; P97_N],
++}
++
++/// The model's counts: `P97::n`'s slots.
++#[cfg(feature = "diag")]
++pub const P97_N: usize = 40;
++#[cfg(feature = "diag")]
++pub mod p97 {
++    /// ASID switches; of them to an ASID with a stash; entries stashed at the switches (live nG ones); entries the
++    /// new ASID's stash held at the switches (what a stash would restore).
++    pub const SWITCHES: usize = 0;
++    pub const TO_STASHED: usize = 1;
++    pub const STASHED: usize = 2;
++    pub const RESTORABLE: usize = 3;
++    /// The most entries all stashes held at once; the most ASIDs with a stash.
++    pub const PEAK: usize = 4;
++    pub const PEAK_ASIDS: usize = 5;
++    /// Walks' (primary) nG fills: EL0 read, write, exec, EL1 any.
++    pub const FILLS: usize = 6;
++    /// Of those, served by the stash: EL0 read, write, exec, EL1 any.
++    pub const SERVED: usize = 10;
++    /// Primary nG fills of a stashed page and array with another translation (stale).
++    pub const STALE: usize = 14;
++    /// TLBI by VA that dropped stashed entries; the entries.
++    pub const VA_DROPS: usize = 15;
++    pub const VA_DROPPED: usize = 16;
++    /// TLBI by ASID: count; of another ASID than the current (the TLB drops the current's nG entries anyway); the
++    /// live nG entries those dropped; stashed entries dropped.
++    pub const ASIDE: usize = 17;
++    pub const ASIDE_OTHER: usize = 18;
++    pub const ASIDE_OTHER_LIVE: usize = 19;
++    pub const ASIDE_DROPPED: usize = 20;
++    /// Flushes of everything; nG flushes of no known ASID (collapsed queues, IS drains of ASIDE1 under round-robin
++    /// are known); stashed entries those two dropped.
++    pub const ALL: usize = 21;
++    pub const UNKNOWN: usize = 22;
++    pub const ALL_DROPPED: usize = 23;
++    /// Sibling fills of a stashed entry (no walk saved).
++    pub const SIBLING: usize = 24;
++    /// All primary fills (global ones too).
++    pub const ALL_FILLS: usize = 25;
++    /// The strict model's served refills (EL0 read, write, exec, EL1); entries it restores at the switches; of
++    /// them into a slot holding a global entry, another entry.
++    pub const SERVED2: usize = 26;
++    pub const RESTORED2: usize = 30;
++    pub const COLL_GLOBAL: usize = 31;
++    pub const COLL_OTHER: usize = 32;
++    /// Primary nG fills of an entry a TLBI ASIDE1 of another ASID dropped (since the last switch).
++    pub const ASIDE_REFILLED: usize = 33;
++}
++
++#[cfg(feature = "diag")]
++std::thread_local! {
++    /// What the next `flush_ng` on this thread is: 0 unknown, 1 a switch (old, new), 2 TLBI ASIDE1 (asid).
++    pub static P97_HINT: core::cell::Cell<(u8, u64, u64)> = const { core::cell::Cell::new((0, 0, 0)) };
++}
++
++#[cfg(feature = "diag")]
++fn p97_key(array: usize, tag: u64) -> u64 {
++    tag & VA_PAGE | array as u64
+ }
+ 
+ /// Bits in each of `Tlb::xpages`' maps.
+@@ -316,7 +396,216 @@ impl Tlb {
+         };
+     }
+ 
++    #[cfg(feature = "diag")]
++    fn p97(&mut self) -> &mut P97 {
++        if self.p97.is_null() {
++            self.p97 = Box::into_raw(Box::new(P97 {
++                cur: u64::MAX,
++                stash: Default::default(),
++                total: 0,
++                primary: u64::MAX,
++                strict: Default::default(),
++                lost: Default::default(),
++                n: [0; P97_N],
++            }));
++        }
++        // SAFETY: a leaked box of this TLB's alone (diagnostic build).
++        unsafe { &mut *self.p97 }
++    }
++
++    /// The model's count `k`.
++    #[cfg(feature = "diag")]
++    pub fn p97_n(&self, k: usize) -> u64 {
++        // SAFETY: as in `p97`.
++        unsafe { self.p97.as_ref() }.map_or(0, |p| p.n[k])
++    }
++
++    /// The next fill of `array` for `va` is a walk's (not a sibling's).
++    #[cfg(feature = "diag")]
++    fn p97_primary(&mut self, array: usize, va: u64) {
++        let p = self.p97();
++        p.primary = p97_key(array, va);
++        p.n[p97::ALL_FILLS] += 1;
++    }
++
++    /// At a fill of `array` for `va` with `e`.
++    #[cfg(feature = "diag")]
++    fn p97_fill(&mut self, array: usize, va: u64, e: Entry, ng: bool) {
++        use p97::*;
++        let p = self.p97();
++        let key = p97_key(array, va);
++        let primary = core::mem::replace(&mut p.primary, u64::MAX) == key;
++        if !ng {
++            return;
++        }
++        let class = if array < 3 { array } else { 3 };
++        if primary {
++            p.n[FILLS + class] += 1;
++        }
++        let cur = p.cur;
++        if let Some(old) = p.lost.remove(&key)
++            && primary
++            && old == (e.tag, e.addend)
++        {
++            p.n[ASIDE_REFILLED] += 1;
++        }
++        if let Some(m) = p.strict.get_mut(&cur)
++            && let Some(old) = m.remove(&key)
++            && primary
++            && old == (e.tag, e.addend)
++        {
++            p.n[SERVED2 + class] += 1;
++        }
++        let Some(m) = p.stash.get_mut(&cur) else { return };
++        let Some(old) = m.remove(&key) else { return };
++        p.total -= 1;
++        if primary {
++            if old == (e.tag, e.addend) {
++                p.n[SERVED + class] += 1;
++            } else {
++                p.n[STALE] += 1;
++            }
++        } else if old == (e.tag, e.addend) {
++            p.n[SIBLING] += 1;
++        }
++    }
++
++    /// The live nG entries: (key, entry).
++    #[cfg(feature = "diag")]
++    fn p97_live(&self) -> Vec<(u64, Entry)> {
++        let n = self.ng_len as usize;
++        let mut v = Vec::new();
++        let mut at = |s: usize| {
++            if self.blk[s] & NG != 0 {
++                let e = self.e[s / TLB_SLOTS].0[s % TLB_SLOTS];
++                if e.tag != 0 {
++                    v.push((p97_key(s % TLB_SLOTS, e.tag), e));
++                }
++            }
++        };
++        if n <= NG_SLOTS {
++            for k in 0..n {
++                at(self.ng[k] as usize);
++            }
++        } else {
++            for s in 0..self.blk.len() {
++                at(s);
++            }
++        }
++        v
++    }
++
++    /// Before `flush_ng` drops the nG entries.
++    #[cfg(feature = "diag")]
++    fn p97_flush_ng(&mut self) {
++        use p97::*;
++        let (kind, a, b) = P97_HINT.with(|h| h.replace((0, 0, 0)));
++        let live = if kind != 0 { self.p97_live() } else { Vec::new() };
++        // The strict model's restore at a switch to `b`: what its entries' slots hold now (globals survive the flush).
++        let (mut cg, mut co, mut nr) = (0, 0, 0);
++        if kind == 1 {
++            // SAFETY: as in `p97`.
++            if let Some(m) = unsafe { self.p97.as_ref() }.and_then(|p| p.strict.get(&b)) {
++                for &k in m.keys() {
++                    let s = index(k & VA_PAGE) * TLB_SLOTS + (k & 7) as usize;
++                    let e = self.e[s / TLB_SLOTS].0[s % TLB_SLOTS];
++                    nr += 1;
++                    if e.tag != 0 {
++                        if self.blk[s] & NG == 0 {
++                            cg += 1;
++                        } else {
++                            co += 1;
++                        }
++                    }
++                }
++            }
++        }
++        let p = self.p97();
++        p.n[RESTORED2] += nr;
++        p.n[COLL_GLOBAL] += cg;
++        p.n[COLL_OTHER] += co;
++        match kind {
++            1 => {
++                p.lost.clear();
++                p.strict.insert(a, live.iter().map(|&(k, e)| (k, (e.tag, e.addend))).collect());
++                p.n[SWITCHES] += 1;
++                p.n[STASHED] += live.len() as u64;
++                let m = p.stash.entry(a).or_default();
++                let before = m.len();
++                for (k, e) in live {
++                    m.insert(k, (e.tag, e.addend));
++                }
++                p.total += (m.len() - before) as u64;
++                p.cur = b;
++                if let Some(m) = p.stash.get(&b)
++                    && !m.is_empty()
++                {
++                    p.n[TO_STASHED] += 1;
++                    p.n[RESTORABLE] += m.len() as u64;
++                }
++                p.n[PEAK] = p.n[PEAK].max(p.total);
++                let asids = p.stash.values().filter(|m| !m.is_empty()).count() as u64;
++                p.n[PEAK_ASIDS] = p.n[PEAK_ASIDS].max(asids);
++            }
++            2 => {
++                p.n[ASIDE] += 1;
++                if a != p.cur {
++                    p.n[ASIDE_OTHER] += 1;
++                    p.n[ASIDE_OTHER_LIVE] += live.len() as u64;
++                    for &(k, e) in &live {
++                        p.lost.insert(k, (e.tag, e.addend));
++                    }
++                }
++                p.strict.remove(&a);
++                if let Some(m) = p.stash.remove(&a) {
++                    p.n[ASIDE_DROPPED] += m.len() as u64;
++                    p.total -= m.len() as u64;
++                }
++            }
++            _ => {
++                p.n[UNKNOWN] += 1;
++                p.n[ALL_DROPPED] += p.total;
++                p.stash.clear();
++                p.strict.clear();
++                p.lost.clear();
++                p.total = 0;
++            }
++        }
++    }
++
++    #[cfg(feature = "diag")]
++    fn p97_flush_va(&mut self, va: u64) {
++        use p97::*;
++        let p = self.p97();
++        let mut n = 0;
++        for m in p.stash.values_mut() {
++            for a in 0..6 {
++                n += m.remove(&p97_key(a, va)).is_some() as u64;
++            }
++        }
++        for m in p.strict.values_mut().chain(core::iter::once(&mut p.lost)) {
++            for a in 0..6 {
++                m.remove(&p97_key(a, va));
++            }
++        }
++        if n != 0 {
++            p.n[VA_DROPS] += 1;
++            p.n[VA_DROPPED] += n;
++            p.total -= n;
++        }
++    }
++
+     pub(crate) fn flush_all(&mut self) {
++        #[cfg(feature = "diag")]
++        {
++            let p = self.p97();
++            p.n[p97::ALL] += 1;
++            p.n[p97::ALL_DROPPED] += p.total;
++            p.stash.clear();
++            p.strict.clear();
++            p.lost.clear();
++            p.total = 0;
++        }
+         self.stats.flushes += 1;
+         self.bump();
+         self.e.fill(Slots::default());
+@@ -352,6 +641,8 @@ impl Tlb {
+ 
+     /// Drops every nG entry: the global ones match any ASID.
+     pub(crate) fn flush_ng(&mut self) {
++        #[cfg(feature = "diag")]
++        self.p97_flush_ng();
+         let n = self.ng_len as usize;
+         self.stats.flushes += 1;
+         for el in 0..2 {
+@@ -405,6 +696,8 @@ impl Tlb {
+             tag: (va | 0xfff) ^ (host.mem() as u64) << 3 ^ if device { DEVICE } else { 0 },
+             addend: host.0.wrapping_sub(va & !0xfff),
+         };
++        #[cfg(feature = "diag")]
++        self.p97_fill(array, va, self.e[index(va)].0[array], ng);
+         if level < 3 {
+             let k = block_class(va, level);
+             self.blk[s] = k;
+@@ -485,6 +778,8 @@ impl Tlb {
+ 
+     /// Drops the page holding `va` from every array, whatever its top byte (TBI).
+     pub(crate) fn flush_va(&mut self, va: u64) {
++        #[cfg(feature = "diag")]
++        self.p97_flush_va(va);
+         self.stats.flushes += 1;
+         // The page's VAs fill 1024 consecutive transfer cache slots, which
+         // hold none of its entries unless instruction fetches translated it
+@@ -1145,6 +1440,8 @@ impl<'a> Mmu<'a> {
+             && let Ok(page) = self.mem.host(w.pa & !0xfff, 0x1000, access)
+         {
+             let array = 3 * el as usize + u as usize;
++            #[cfg(feature = "diag")]
++            t.p97_primary(array, va);
+             let watched = self.mem.watched(w.pa);
+             if u == Use::Write && watched {
+                 t.fill_watched(self.mem, array, va, page, &w);
+diff --git a/core/src/tally.rs b/core/src/tally.rs
+index 16a02593..50420209 100644
+--- a/core/src/tally.rs
++++ b/core/src/tally.rs
+@@ -9,7 +9,10 @@
+ //! IRQ), and round-robin's timer reprogramming ([`TIMER_SET`]).
+ 
+ /// Words in each table.
+-pub const N: usize = 80;
++pub const N: usize = 120;
++/// PERF loop 97 (temporary): the per-ASID stash model's counts (`mmu::P97`), published from each TLB, to [`P97_END`].
++pub const P97: usize = 80;
++pub const P97_END: usize = 120;
+ 
+ /// A region's loop back-edge taken (a `br` to the head's `loop`).
+ pub const BACK_EDGE: u32 = 0;
+diff --git a/core/src/vm.rs b/core/src/vm.rs
+index 815b35dc..d9ee3807 100644
+--- a/core/src/vm.rs
++++ b/core/src/vm.rs
+@@ -1334,6 +1334,13 @@ impl Vm {
+                 Ordering::Relaxed,
+             );
+         }
++        #[cfg(feature = "diag")]
++        for k in 0..crate::tally::P97_END - crate::tally::P97 {
++            c.diag[crate::tally::P97 + k].store(
++                self.vcpus.iter().map(|v| v.tlb.p97_n(k)).sum(),
++                Ordering::Relaxed,
++            );
++        }
+     }
+ 
+     /// Drains every backend's completions; true if that posted new requests
+@@ -1493,7 +1500,11 @@ impl Vm {
+                     if k != c {
+                         match i >> 5 & 7 {
+                             0 => other.tlb.flush_all(),
+-                            2 => other.tlb.flush_ng(),
++                            2 => {
++                                #[cfg(feature = "diag")]
++                                crate::mmu::P97_HINT.with(|h| h.set((2, v >> 48, 0)));
++                                other.tlb.flush_ng()
++                            }
+                             _ => other.tlb.flush_va(v << 12),
+                         }
+                     }
+diff --git a/core/src/vm/parallel.rs b/core/src/vm/parallel.rs
+index 1b53aaf3..0b46541e 100644
+--- a/core/src/vm/parallel.rs
++++ b/core/src/vm/parallel.rs
+@@ -717,7 +717,11 @@ impl Vm {
+                 } else {
+                     asid & 0xff
+                 };
+-                self.broadcast(c, own, Op::Tlb(op2, xt << 12, asid));
++                // PERF loop 97 (diagnostic): ASIDE1's operation carries its ASID (`flush_ng` ignores the VA).
++                let va = xt << 12;
++                #[cfg(feature = "diag")]
++                let va = if op2 == 2 { xt >> 48 } else { va };
++                self.broadcast(c, own, Op::Tlb(op2, va, asid));
+             }
+             Exit::Hvc(_) => {
+                 v.cpu.pc = v.cpu.pc.wrapping_add(4);
+@@ -954,7 +958,11 @@ impl Vm {
+                 for &(kind, va) in &q.tlb {
+                     match kind {
+                         0 => v.tlb.flush_all(),
+-                        2 => v.tlb.flush_ng(),
++                        2 => {
++                            #[cfg(feature = "diag")]
++                            crate::mmu::P97_HINT.with(|h| h.set((2, va, 0)));
++                            v.tlb.flush_ng()
++                        }
+                         _ => v.tlb.flush_va(va),
+                     }
+                 }
+@@ -1204,5 +1212,9 @@ impl Vm {
+         for (a, &x) in k.diag.iter().zip(&v.diag[..crate::tally::JIT_SLOTS]) {
+             a.store(x, Ordering::Relaxed);
+         }
++        #[cfg(feature = "diag")]
++        for i in 0..crate::tally::P97_END - crate::tally::P97 {
++            k.diag[crate::tally::P97 + i].store(v.tlb.p97_n(i), Ordering::Relaxed);
++        }
+     }
+ }
+diff --git a/web/counters.ts b/web/counters.ts
+index b5a8fd0e..efa85cda 100644
+--- a/web/counters.ts
++++ b/web/counters.ts
+@@ -185,6 +185,7 @@ export function stats(n: (i: number) => number) {
+       lockSkipped: n(Counter.JIT_LOCK_SKIPPED),
+       pruneNs: n(Counter.JIT_PRUNE_NS),
+       mapRescues: n(Counter.JIT_MAP_RESCUES),
++      diag: Array.from({ length: 120 }, (_, k) => n(Counter.LEN + k)),
+     },
+     par: {
+       dsbWaits: n(Counter.PAR_DSB_WAITS),
+diff --git a/web/vm.ts b/web/vm.ts
+index 4f82e15b..2467e420 100644
+--- a/web/vm.ts
++++ b/web/vm.ts
+@@ -698,7 +698,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
+   const counters = blocks[0];
+   /** Counter `i` summed over the vCPUs' blocks (round-robin counts everything in block 0). */
+   const counter = (i: number) =>
+-    blocks.reduce((sum, b) => sum + Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN), i)), 0);
++    blocks.reduce((sum, b) => sum + Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN + 120), i)), 0);
+   const fbPa = Number(ex.vm_framebuffer(vm));
+   /** The round-robin exit's record (`run`), a view made again once the memory grew (its buffer is a new one). */
+   let exitAt: number | undefined;
+@@ -1002,7 +1002,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
+     deviceIo: () => io,
+     /** The same for each vCPU's own block (parallel mode; round-robin counts everything in vCPU 0's). */
+     cpuStats: () =>
+-      blocks.map((b) => stats((i) => Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN), i)))),
++      blocks.map((b) => stats((i) => Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN + 120), i)))),
+     /** The JIT's helper calls by instruction class, most frequent first (ABI 18; empty without a JIT). */
+     helperReport: () => helperReport(ex, memory, ex.vm_cpu(vm, 0)),
+     /**

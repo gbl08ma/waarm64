@@ -1,0 +1,18 @@
+{
+ "/tmp/claude-501/-home-gabriel-guest-Development-waarm64/50564867-3bc9-4523-a51a-9002c93654eb/scratchpad/pages-diag2/diag-1/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 97.35,
+   "flushes": 0,
+   "modules": 2618,
+   "mib": 121,
+   "overdue": 0,
+   "parks": 8825,
+   "locks": 17170588,
+   "interpGsteps": 3.42,
+   "share": 0.965,
+   "phases": {}
+  },
+  "flushes": []
+ }
+}

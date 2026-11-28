@@ -1,0 +1,26 @@
+{
+ "/tmp/claude-501/-home-gabriel-guest-Development-waarm64/50564867-3bc9-4523-a51a-9002c93654eb/scratchpad/pages-diag2/diag-1/pages-all.timeline.json": {
+  "seconds": 198,
+  "mips": 484,
+  "busyMips": 453,
+  "busyShare": 0.27,
+  "stallsAtLeastMs": {
+   "20": 1,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 21,
+  "stalledMsPerSecondPerVcpu": 0.03,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ }
+}

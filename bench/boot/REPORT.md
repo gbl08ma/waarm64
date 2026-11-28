@@ -9727,3 +9727,65 @@ spread (580-618 ms, both arms bimodal); footprint the same distribution. Memory:
 a third time (`tests/browser.test.ts` "the page says what's wrong": a running machine's `page.close` after the core's
 Retry never returned); that test now bounds its closes at 20 s and goes on in a new context, and passed 5 of 5 alone
 and in the next `ci.sh`.
+
+## PERF loop 97: per-ASID stashes of nG TLB entries, counted (2026-11-28)
+
+Queue row 29 ([#316](https://github.com/gbl08ma/waarm64/issues/316)): an ASID switch drops the previous ASID's nG
+entries instead of keeping them for when it is current again. **Closed as a finding: a stash would serve at most
+1.2% of a Firefox pages session's busy time before its own costs and under 0.4% of every other workload; nothing
+built.** Tree 43696a9b (ABI 74). Data: `bench/boot/results/perf97/` (README).
+
+**How it differs from what was measured before.** The 2026-11-03 model ("The TLB at 16,384 entries; per-ASID stashes
+and victim buffers measured out") counted Alpine's boot and userspace run at 4,096 entries, before the global
+entries survived an overflowing nG list, the sibling fill and the collapsed queue's nG flush (PERF loop 73), and on
+no multi-process browser workload. PERF loop 72's closed rows (the transfer cache's per-ASID generation, the TLB's
+size, `NG_SLOTS`) were about other structures: none kept entries across a switch. This loop counts on today's tree,
+on the pages session too, with two models.
+
+**What ran** (one run each: counts). A diagnostic core (`diag.patch` on 43696a9b; nothing of it is in the tree)
+models two stashes beside the real TLB, which it doesn't change. At an ASID switch (`interp::sys`'s flush of the nG
+entries) it records the live nG entries for the old ASID; a walk's later nG fill of a page and array the current
+ASID has recorded, with the same tag and addend, is a refill the stash would have saved. TLBI by VA drops the page
+from every stash, ASIDE1 its ASID's, everything all of them, an nG flush of no known ASID (a collapsed queue) all
+of them. *Strict*: the stash is exactly what was live at the last switch away (what a design restoring at the switch
+back would hold); *generous*: also everything stashed before and not refilled since, uncapped. The gates' guests in
+the dev VM's Node (`preempt-counts.json`), `node` and `smp` in its Chromium 155 (`counts/`), one pages session on the
+Mac (`pages-diag/`; M4, Chrome for Testing 158.0.8127.88; 97.4 G steps, 453 busy MIPS; a first session with the
+generous model alone gave the same within 4%).
+
+| | `boot` | `user` | `smp_user_jit_4`'s guest | `node` | `smp` | pages (Mac) |
+|---|---|---|---|---|---|---|
+| ASID switches (a million steps) | 3,674 (1.4) | 9,566 (0.9) | 7,774 (0.25) | 3,405 (0.4) | 12,712 (0.6) | 107,352 (1.1) |
+| nG refills (walks); share of all walks' fills | 193 K; 49% | 676 K; 87% | 2.76 M; 87% | 673 K; 86% | 7.00 M; 95% | 37.7 M; 93% |
+| strict: served, data / instruction | 17.8 K / 32.4 K (26%) | 55.1 K / 62.4 K (17%) | 25.9 K / 35.4 K (2.2%) | 16.8 K / 29.9 K (6.9%) | 595 K / 625 K (17%) | 7.36 M / 7.17 M (38.5%) |
+| strict: entries restored a switch | 21.8 | 20.6 | 12.0 | 21.7 | 298 | 313 |
+| generous: served | 56.2 K (29%) | 135 K (20%) | 65.9 K (2.4%) | 51.6 K (7.7%) | 2.25 M (32%) | 20.8 M (55%) |
+| generous: entries to restore a switch; ASIDs with a stash, most | 36; 11 | 86; 11 | 28; 39 | 34; 7 | 1,465; 16 | 4,429; 62 |
+| **bound, strict** (generous) | **0.15-0.17%** (0.17-0.18) | **0.16-0.18%** (0.19-0.20) | **0.02%** (0.02) | **0.05%** (0.05-0.06) | **0.33-0.36%** (0.56-0.61) | **1.16-1.26%** (1.68-1.84) |
+
+No stashed entry was ever refilled with another translation (0 stale), and a restore would land on a global entry's
+slot 4 times in the session (682 K times on another nG entry's). **The bound** (`bound.py`, `bound.txt`): each served
+data refill at PERF loop 72's 260-290 ns (a walk and the helper that runs the access's group), each instruction
+refill at a walk's 68 ns, of busy time (the Node runs' wall, ×4 for 4 vCPUs; Chromium's medians; the session's steps
+at its busy MIPS), nothing for the stash's own costs. Those are: copying ~620 entries a switch on the session (67 M
+entry copies, ~0.1% at 3 ns each), every TLBI by VA (1.2 M a session) looking in every stash, memory (~24 KiB an
+ASID at 1,024 entries of tag, addend and slot, ×16-62 ASIDs, a vCPU), and in parallel SMP the TLBI IS skip
+(vm/parallel.rs `broadcast`: an issuer doesn't wait for a vCPU running another ASID, which applies the operation at
+its next chunk boundary) means a restore must wait for the vCPU's queue to drain, or the issuer for every vCPU
+stashing the ASID. Against the floors: the gates, `node`, `smp` and `smp_user_jit_4` are under the paired command's
+±0.5% as gross bounds; the session's 1.16-1.26% is at its ~1% floor before the costs, and PERF loop 73's sibling fill
+took more data misses out of the same session (10.6 M, bounded at 1.3-1.4% the same way) without a resolvable
+change. The generous model's larger share needs ~4,400 entries restored a switch (475 M copies a session), which
+eats what it adds. **Closed**: not built (docs/cpu.md "ASIDs").
+
+**Also counted: TLBI ASIDE1 of another ASID.** The TLB holds only the current ASID's nG entries, and `flush_ng`
+drops them at any ASIDE1, whatever its ASID: in the session 14,123 of 17,787 ASIDE1s (mostly other vCPUs' broadcast
+`flush_tlb_mm`, drained here) named another ASID and dropped 5.31 M live entries for nothing, 1.97 M of which were
+refilled before the next switch (`smp_user_jit_4`'s guest 21,423 of 25,992, 249 K refilled; the one-vCPU runs ~2 K).
+Skipping the flush when the operation's ASID (masked as `TCR_EL1.AS` says) isn't the current one would be right and
+cheap, and is worth at most 0.06-0.28% of the session and 0.03-0.14% of `smp_user_jit_4`: under both floors, not
+built, recorded with the finding.
+
+Memory: none. Compiled code unchanged (nothing built: no static counts; `tests/steps.txt` unmoved). The runs: three
+in Node (~30 s), one `node`/`smp` pass in Chromium (2 pairs, ~8 min), two pages sessions (225 s each). No CI: the
+loop changes only docs, a comment, REPORTs and results.

@@ -129,12 +129,12 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried and lost: polled code without `acc`").
 
-## State (2026-11-28, after loop 96)
+## State (2026-11-28, after loop 97)
 
 **The track resumed 2026-11-28 (paused after loop 86).** Loops 88-90: round-robin's chunk ends (row 22), the three
 sweeps closed by their counts (row 23), the review of loop 88 fixed (bench/boot/REPORT.md "PERF loop 88" to "PERF loop
 90"). Loop 91 did row 24 (bench/gpu/REPORT.md "PERF loop 91"): virgl's joins, the import read ahead, the checksum, the
-poll. Loop 92 closed row 25 by its counts, nothing built (bench/boot/REPORT.md "PERF loop 92"). The queue was refilled after loop 92 (rows 26-34). Loop 93 fixed the review of loop 91 (row 26; bench/gpu/REPORT.md "PERF loop 93": four low findings, all held). Loop 94 did row 27 (bench/boot/REPORT.md "PERF loop 94"): the settling emissions emit only the members whose entry states changed, modules byte for byte the same, `emitNs` −11% on `node` (its commit passed `ci.sh` and `ci-jit.sh`). Loop 95 closed row 28 by its counts, nothing built (bench/boot/REPORT.md "PERF loop 95"; #315 closed). Loop 96 fixed the review of loop 94's emission (bench/boot/REPORT.md "PERF loop 96"): real kernel regions through the debug checks natively, the unfit-edge fallback in release, the prologue's `bad`, `redo`'s doc; modules byte for byte the same.
+poll. Loop 92 closed row 25 by its counts, nothing built (bench/boot/REPORT.md "PERF loop 92"). The queue was refilled after loop 92 (rows 26-34). Loop 93 fixed the review of loop 91 (row 26; bench/gpu/REPORT.md "PERF loop 93": four low findings, all held). Loop 94 did row 27 (bench/boot/REPORT.md "PERF loop 94"): the settling emissions emit only the members whose entry states changed, modules byte for byte the same, `emitNs` −11% on `node` (its commit passed `ci.sh` and `ci-jit.sh`). Loop 95 closed row 28 by its counts, nothing built (bench/boot/REPORT.md "PERF loop 95"; #315 closed). Loop 96 fixed the review of loop 94's emission (bench/boot/REPORT.md "PERF loop 96"): real kernel regions through the debug checks natively, the unfit-edge fallback in release, the prologue's `bad`, `redo`'s doc; modules byte for byte the same. Loop 97 closed row 29 by its counts, nothing built (bench/boot/REPORT.md "PERF loop 97"; #316 closed).
 
 **The rule since 2026-11-24 (the user): spend as little time in benchmarks and CI as the answers allow
 ("Batching", above).** Loop 75's notes still hold: `bench/boot/results/perf75/diag.patch` applies to 3a08fdf3; loop
@@ -177,8 +177,7 @@ Performance`) the dev VM or the Mac can try; each row's figures are its issue's,
 
 | # | Entry | Kind | Notes |
 |---|---|---|---|
-| 29 | **Next**: Keep the previous ASID's nG TLB entries ([#316](https://github.com/gbl08ma/waarm64/issues/316), `core/src/mmu.rs`) | count | ~0.3 M nG refills in Alpine's boot; count the refills' share of time on the gates and the pages session |
-| 30 | Adaptive idle-vCPU poll before sleeping ([#134](https://github.com/gbl08ma/waarm64/issues/134)) | build, measure | the renderers' CPU, not time: ≤ ~4.5% of a core on the pages session, ~1.1 points of an idle 4-vCPU guest; futex hand-offs must not slow (loop 83's `pingpong`) |
+| 30 | **Next**: Adaptive idle-vCPU poll before sleeping ([#134](https://github.com/gbl08ma/waarm64/issues/134)) | build, measure | the renderers' CPU, not time: ≤ ~4.5% of a core on the pages session, ~1.1 points of an idle 4-vCPU guest; futex hand-offs must not slow (loop 83's `pingpong`) |
 | 31 | Snapshots: the load's check pass and start, the save's pause ([#209](https://github.com/gbl08ma/waarm64/issues/209), [#210](https://github.com/gbl08ma/waarm64/issues/210), [#211](https://github.com/gbl08ma/waarm64/issues/211)) | count, build | one probe pass for all three (`bench/snapz/`); each part ≤ ~0.1-0.4 s of a 1.2 s load or a 0.87 s pause |
 | 32 | Remote disk prefetch: eager past the boot menu, and refetches without OPFS ([#28](https://github.com/gbl08ma/waarm64/issues/28), [#29](https://github.com/gbl08ma/waarm64/issues/29)) | measure, build | 1.5 s; 83 vs 65 s; a local server with added latency (bench/remote-disk/) |
 | 33 | Host, small: pointer events as a flat `Int32Array` ([#272](https://github.com/gbl08ma/waarm64/issues/272)), the clipboard's copies and a dropped answer ([#266](https://github.com/gbl08ma/waarm64/issues/266)), the agent's restarts gunzipping anew ([#264](https://github.com/gbl08ma/waarm64/issues/264)) | count | each by its own micro-benchmark; likely findings |
@@ -188,7 +187,7 @@ Not queued: Vulkan's (the VK4 track's, several on NVIDIA), `needs-human` ones (#
 FP16 is advertised), #6 (only if a debugged program's speed matters), the page's and demos' (#144, #157, #163, #191,
 #192, #194: product calls or deploys), #30 (hosted images), and the larger designs (#175, #212, #222, #246, #33).
 
-Swept, measured or counted on the Mac recently, not to redo: the block ends at the system instructions (loop 95: the other MSRs, TLBI, DC, IC, YIELD/SEVL together 0.025-0.037 out-ends a 1000 steps on the gates, `node`, `smp` and the pages session, ≤0.33% of busy time at an exit's 130 ns, ≤0.18% not exiting anyway; CLREX, AT and the other SYS ops never ran), the regions that never settle (loop 94: 20-31% of the
+Swept, measured or counted on the Mac recently, not to redo: per-ASID stashes of nG TLB entries (loop 97: a strict stash, restored at the switch back, serves 38.5% of the pages session's nG refills, ≤1.16-1.26% of busy time before its copying, its TLBI-by-VA lookups and parallel SMP's drain before a restore; ≤0.36% on `smp`, ≤0.2% on the gates and `node`; uncapped 55%, ~4,400 entries a switch to restore; ASIDE1 of another ASID dropping the current one's entries ≤0.28%), the block ends at the system instructions (loop 95: the other MSRs, TLBI, DC, IC, YIELD/SEVL together 0.025-0.037 out-ends a 1000 steps on the gates, `node`, `smp` and the pages session, ≤0.33% of busy time at an exit's 130 ns, ≤0.18% not exiting anyway; CLREX, AT and the other SYS ops never ran), the regions that never settle (loop 94: 20-31% of the
 regions of several blocks, 62-71% of the members emitted; 64-70% would settle in eight emissions, 90-96% in
 sixteen, so fewer or more iterations change the code; the partial emissions cut 20-21% of the instructions emitted
 and `emitNs` 9-11%, the rest of an emission being the region's fixed costs; kept), late-compiled successors, SP's guard and `refresh` (loop

@@ -389,7 +389,19 @@ The table is `core/src/interp/sys.rs`.
   second in Firefox on 4 vCPUs, 2026-11-04); a change of
   `SCTLR_EL1.M` flushes everything. In parallel SMP either then republishes the vCPU's ASID, which TLBI IS
   operations read to skip vCPUs of another ASID ([platform.md](platform.md) "Parallel SMP"). (Keeping global entries cut Alpine's boot misses 3.61M →
-  1.07M.) Per-ASID stashes of nG entries would serve under a sixth of the nG refills (measured out: "The TLB" above).
+  1.07M.) **Per-ASID stashes of nG entries: measured out** (bench/boot/REPORT.md "PERF loop 97", a model in a
+  diagnostic core). A stash of the entries live at a switch away, restored at the switch back (~310 a switch), would
+  serve 38.5% of the nG refills of a Firefox pages session on 4 vCPUs (14.5 M of 37.7 M: 7.4 M data, 7.2 M
+  instruction; 107 K switches, 1.1 a million steps) and 7-26% on the gates, `node` and `smp`; at a data miss's
+  260-290 ns and a walk's 68 ns that is at most 1.2% of the session's busy time (0.36% `smp`, under 0.2% the rest)
+  before its own costs: copying ~620 entries a switch, every TLBI by VA looking in every stash, and in parallel SMP a
+  restore that must wait for the vCPU's queued TLBI IS (they skip waiting for a vCPU of another ASID). PERF loop 73's
+  sibling fill removed more data misses than that (10.6 M) and the session couldn't resolve it. Without a cap the
+  stashes serve 55% (62 ASIDs, ~4,400 entries to restore a switch), whose copying would eat the rest. Also counted
+  there: a TLBI ASIDE1 of another ASID than the current one (14 K of the session's 17.8 K; Linux's
+  `flush_tlb_mm` broadcast) drops the current ASID's nG entries for nothing, 5.3 M of them, 2.0 M refilled (at most
+  0.06-0.28%; `smp_user_jit_4`'s guest 0.25 M refills, ≤0.14%): skipping it when the ASID isn't the current one
+  would be right (the TLB holds no other ASID's entries) and is under the floor too.
   The list overflows in 6.0% of the drops in Firefox's pages session (7,378 of 122,656 with the sibling fill, whose
   entries it lists too; 4.9% before it: ~0.02% of busy time in scans), so 1024 slots stay.
 - **Blocks:** a 2 MiB or 1 GiB leaf is cached as entries for the pages it was used through, and
