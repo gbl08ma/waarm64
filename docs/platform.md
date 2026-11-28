@@ -83,13 +83,17 @@ NOPs, and every step count is what it was before M7.
 
 - `vm_run(vm, budget)` (and parallel mode's `vm_run_cpu`) runs **chunks of at most `CHUNK` = 32,768 steps** (instructions retired
   plus exceptions taken), cut at the next timer deadline in deterministic mode so timers fire on
-  their exact tick. Each chunk goes through `jit::steps` when the JIT is on, else `interp::steps`. Parallel SMP's
+  their exact tick; shorter while the PC sampler runs (`vm_set_chunk`, 256 steps: a chunk's end publishes the PC), in
+  either mode since PERF loop 90 (round-robin's chunks never pass `CHUNK`; parallel SMP's polled code may). Each chunk goes through `jit::steps` when the JIT is on, else `interp::steps`. Parallel SMP's
   compiled code isn't counted: a chunk ends at the first poll past its steps, or sooner when the vCPU's stop word
   drops ("Parallel SMP" below).
 - **Between chunks:** the signal word, device completion rings, the interrupt lines into the GIC,
   and IRQ entry (vector +0x80) when `PSTATE.I` is clear. The steps and the PC are published at every chunk's end,
   the JIT's and the TLBs' counters every 65,536 steps and at the run's end (`JIT_PUBLISH`, as parallel SMP does;
-  at every chunk's end the ~40 words cost ~40 ns a call, ~0.5% of the gates: PERF loop 88).
+  at every chunk's end the ~40 words cost ~40 ns a call, ~0.5% of the gates: PERF loop 88). So inside a run those
+  (the JIT's steps and compile time, the TLBs', the diagnostic build's JIT slots) lag `retired` and `pc` by up to
+  65,535 steps, by design: a reader that mixes them mid-run (the vCPU timeline's compile time against its steps)
+  sees a ratio that catches up at the next publication; at a run's end they agree.
 - **An MSR or ERET that unmasks IRQs ends the chunk** (`Exit::Resync`), so a pending IRQ is taken
   right after it. Under the JIT, deterministic round-robin keeps an unmasking MSR inline while no IRQ can be pending
   and no host signal has arrived ([jit.md](jit.md) "Emission", `jit::Unmask`); realtime round-robin never does, as a timer comes due and devices
@@ -99,8 +103,13 @@ NOPs, and every step count is what it was before M7.
   (`vm::rr_fast`, through `jit::State::fast` as parallel SMP's): the ERET's block goes on, an exception is taken
   and counted as `Vm::exception` would, and the dispatcher goes on from the new PC, as the next chunk would have
   (PERF loop 88: the gates' chunk ends 1.36 M → 0.72 M in the userspace benchmark, 0.60 M → 0.22 M in Alpine's
-  boot; `tests/baremetal/eret.c`). That makes the chunk size invisible to deterministic guests: every suite takes
-  identical steps at any `CHUNK` from 1024 to 131,072. (It was 1024 until M6, when ERET didn't end
+  boot; `tests/baremetal/eret.c`, `eret_smp.c`). What they rest on: nothing raises the vCPU's IRQ inside a chunk
+  but across an exit. Compiled code and the hook see the vCPU, the memory and `Shared` only, never the GIC; the
+  other timers' deadlines cut the chunk; and a timer written inline (`jit::StepClock`) fires nothing before the
+  chunk's end, which the run loop checks after every chunk that wrote one (`Vm::inline_timer_writes_fired_nothing`,
+  PERF loop 90: a broken rule stops the run rather than moving an IRQ). That makes the chunk size invisible to
+  deterministic guests: every suite takes identical steps at any `CHUNK` from 1024 to 131,072 (the sampler's
+  shorter chunks only fire a due xHCI event at an earlier chunk's end: `xhci_tick`). (It was 1024 until M6, when ERET didn't end
   the chunk; the fix let `CHUNK` grow 32×, which cut Alpine's JIT boot by 14%: hot JIT loops return
   to the run loop far less often.)
 - Exits to the host: [abi.md](abi.md) "Exit kinds".

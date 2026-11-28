@@ -111,6 +111,16 @@ for (const f of readdirSync(BAREMETAL).filter((f) => f.endsWith('.bin') && !wind
   }, { max: 150e6, input: input && { data: input.data } }); // at its idle, as core/tests/baremetal.rs
 }
 
+// Three counter ticks a step (`VmConfig.ticks_per_insn`): deadlines cut the chunks rounded up (`div_ceil`), the step
+// clock is off (counter reads and timer writes take their exits), and the in-place completions of round-robin's
+// chunks (`vm::rr_fast`, `jit::Unmask`) stay on near every deadline (PERF loop 90).
+for (const f of ['eret.bin', 'eret_smp.bin', 'timerjit.bin', 'unmask.bin']) {
+  guest(`bare-metal ${f}, 3 ticks a step`, () => ({ ...bareMetal(f), ticksPerInsn: 3 }), (r) => {
+    poweredOff(r);
+    assert.equal(r.x[1], 0n, r.console);
+  }, { max: 150e6 });
+}
+
 // A `// round-robin` test checks what holds in round-robin only (core/tests/baremetal.rs `round_robin`): not run in
 // parallel SMP, and run here in realtime round-robin too, under the JIT (where its timer's line moves only at the run
 // loop's top: unmask.c, PERF loop 9).

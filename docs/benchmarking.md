@@ -571,8 +571,8 @@ and energy (`bench/mac/procstat.c`, built there by `bench/run-mac.sh` and `bench
   at an exit, so a sample names where the current chunk started (the instruction after the last exit: counter
   reads, IRQ unmasks, syscall entries rank high). On the page (`?displaystats`): `window.__waarm64Profile(on)`
   samples every vCPU's block, the histogram lands in `window.__profile`, and `window.__status` holds the last
-  status (the counters); while it runs the vCPUs publish their PC every 256 steps (`vm_set_chunk`, parallel
-  mode only), so a sample is where the vCPU is, not the exit that started its chunk (the exit sites' share fell to a
+  status (the counters); while it runs the vCPUs publish their PC every 256 steps (`vm_set_chunk`; round-robin too since
+  PERF loop 90), so a sample is where the vCPU is, not the exit that started its chunk (the exit sites' share fell to a
   fifth on sway's load). `PROFILE=1` in `bench/gpu/sway-load.ts` and `bench/gpu/gtk4-load.ts` uses it
   and symbolizes in the guest (`/proc/kallsyms`; guest-session.ts `sampler`, `symbolize`). The sampler's worker
   busy-polls and takes a host core: on the dev VM a GTK demo ran at half its speed while sampled (the 256-step

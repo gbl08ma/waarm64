@@ -1339,7 +1339,9 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   (deterministic chunks end at the same places). The differential test runs the inline arm against the interpreter
   through `jit_unmask` (and `jit_parallel`, ABI 64), and counts the helper calls each condition sends there (a
   round-robin block's signal byte, a parallel one's IRQ and pending bytes);
-  `unmask.c` checks the latency in realtime round-robin.
+  `unmask.c` checks the latency in realtime round-robin. `tests/baremetal/eret.c` and `eret_smp.c` (two vCPUs, with
+  instruction aborts and watchpoint hits besides SVCs and alignment faults; also at three ticks a step) hash every IRQ's
+  place for the interpreter-against-JIT runs, and a native test calls `rr_fast` with each signal bit set (PERF loop 90).
 - **Counter reads from the step clock** (counted code in deterministic round-robin, PERF loop 47, `emit::step_counter`):
   a tick a step, so `MRS CNTVCT_EL0`/`CNTPCT_EL0` reads the steps retired before it plus the ticks WFI skipped. The
   run loop stores the counter as of the chunk's end (`jit::State::ticks`, `Vm::steps` + the chunk's *n* + `skipped`)
@@ -1375,7 +1377,12 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   it, at it and 1 and 50 after it, through CVAL and TVAL, enabled before or after the compare value, hashes the
   counter at each IRQ and the registers' readings, and masks a fired timer inline before reading ISR_EL1 and
   ICC_IAR1 (planted: `wrote`'s refresh dropped fails it at once; the condition dropped, or `cval + 1 >= end`, moves
-  the hash and the steps; TVAL's *k* dropped or its write zero-extended moves the hash or hangs it).
+  the hash and the steps; TVAL's *k* dropped or its write zero-extended moves the hash or hangs it). The rule is
+  also checked where it binds: after a chunk that wrote a timer inline, the run loop
+  (`Vm::inline_timer_writes_fired_nothing`, PERF loop 90) stops the run with a panic if one of the vCPU's timer lines
+  that was low at the chunk's top would be high a step before its end: an early fire would have its IRQ taken past
+  an ERET or unmask finished in place (`Unmask::ok`, `rr_fast`), which only a guest's hash would show (planted: the
+  condition dropped trips it in timerjit.c and unmask.c).
   SIMD&FP instructions check `CPACR_EL1.FPEN` once per block.
 - **NEON → SIMD128** (`emit/simd.rs`): handler by handler after the interpreter's: three-same,
   shifts, moves and immediates, widening/narrowing, reductions, compares against zero, UZP/TRN/ZIP

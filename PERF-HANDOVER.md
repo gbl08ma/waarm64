@@ -129,12 +129,14 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried and lost: polled code without `acc`").
 
-## State (2026-11-28, after loop 89)
+## State (2026-11-28, after loop 90)
 
 **The track resumed 2026-11-28 (paused after loop 86).** Loop 88 did row 22 (bench/boot/REPORT.md "PERF loop 88"):
 round-robin publishes the JIT's and TLBs' counters every 64K steps and finishes ERETs, SVCs and aborts in place
 (`vm::rr_fast`). Loop 89 did row 23 (bench/boot/REPORT.md "PERF loop 89"): the three sweeps closed by their counts,
-nothing changed; the next row is 24.
+nothing changed. Loop 90 fixed the out-of-context review of loop 88 (bench/boot/REPORT.md "PERF loop 90"):
+round-robin honours `vm_set_chunk`, the inline timer rule is checked after each chunk that wrote a timer, and
+`eret_smp.c`, the three-ticks runs and a native `rr_fast` test cover the in-place paths. The next row is 24.
 
 **The rule since 2026-11-24 (the user): spend as little time in benchmarks and CI as the answers allow
 ("Batching", above).** Loop 75's notes still hold: `bench/boot/results/perf75/diag.patch` applies to 3a08fdf3; loop
@@ -150,8 +152,8 @@ Loop 86 fixed the out-of-context review of loop 84 (bench/io/REPORT.md "PERF loo
 
 What every loop kept, dropped and found is in its REPORT entry (bench/boot/REPORT.md "PERF loop 36" to "PERF loop
 66" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
-36, 42, 47, 50, 55, 58, 71, 73, 74, 76, 77, 78, 79, 80, 82 and 84) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43, 48, 56, 60, 72,
-75, 77, 78, 80, 81, 82, 84 and 86 (50's: comments only), 73's in its own commit while paused. Built but off by default (measured slower): I8MM, FCMA,
+36, 42, 47, 50, 55, 58, 71, 73, 74, 76, 77, 78, 79, 80, 82, 84 and 88) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43, 48, 56, 60, 72,
+75, 77, 78, 80, 81, 82, 84, 86 and 90 (50's: comments only), 73's in its own commit while paused. Built but off by default (measured slower): I8MM, FCMA,
 FP16, FHM, BF16. The ABI is 74.
 
 ## Still open (the queue: the first is next; by expected gain, highest first)

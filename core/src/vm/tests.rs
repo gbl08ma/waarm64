@@ -1928,3 +1928,104 @@ fn a_wait_for_the_lock_counts_on_the_vcpu_that_waited() {
     assert!(waits(&a, 0) >= 1, "vCPU 0 waited");
     assert_eq!(waits(&a, 1), 0, "vCPU 1 never asked");
 }
+
+#[test]
+fn round_robin_publishes_its_pc_at_the_chunk_the_sampler_sets() {
+    // The PC sampler (`vm_set_chunk`, web/app/worker-profile.ts) shortens the chunks in round-robin as
+    // in parallel SMP: the steps and the PC are published at every chunk's end, so a sampler sees them
+    // between `CHUNK`'s ends. A spin with no timer and no exit ends its chunks only by their steps.
+    let mut t = T::new(&[B_SELF], VmConfig::default());
+    t.vm.shared.chunk.store(256, Ordering::Relaxed);
+    let (sh, started, odd) = (
+        t.vm.shared.clone(),
+        Arc::new(AtomicBool::new(false)),
+        Arc::new(AtomicU64::new(0)),
+    );
+    let done = Arc::new(AtomicBool::new(false));
+    let sampler = {
+        let (started, odd, done) = (started.clone(), odd.clone(), done.clone());
+        std::thread::spawn(move || {
+            started.store(true, Ordering::Release);
+            while !done.load(Ordering::Acquire) {
+                let r = sh.cpus[0].counters.retired.load(Ordering::Relaxed);
+                if r % CHUNK != 0 {
+                    odd.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        })
+    };
+    while !started.load(Ordering::Acquire) {
+        std::thread::yield_now();
+    }
+    // Each run ends at a multiple of `CHUNK` (its own publication is one): only the chunks' ends inside
+    // it can show another. Until the sampler saw one, at most a few seconds' runs.
+    for _ in 0..200 {
+        assert_eq!(t.vm.run(64 * CHUNK), exit::BUDGET);
+        if odd.load(Ordering::Relaxed) > 0 {
+            break;
+        }
+    }
+    done.store(true, Ordering::Release);
+    sampler.join().unwrap();
+    assert!(
+        odd.load(Ordering::Relaxed) > 0,
+        "the sampler saw only CHUNK's ends"
+    );
+    assert_eq!(t.vm.steps % CHUNK, 0);
+}
+
+#[test]
+fn round_robins_fast_completion_declines_once_a_host_signal_arrives() {
+    // `rr_fast` finishes in place what the dispatcher returns: an ERET's (or an unmask's) resync and
+    // the exceptions the run loop would only take. Not once a host signal is pending (a completion,
+    // console input, a stop: the run loop's top takes them first), nor an MMIO access's bus fault
+    // (the run loop's `io`), nor a helper's exit (its block would go on): then the CPU is untouched.
+    let eret = 0xd69f_03e0;
+    let mut t = T::new(&[NOP], VmConfig::default());
+    let ctx: *const () = Arc::as_ptr(&t.vm.shared).cast();
+    t.cpu().pstate = 0; // EL0t
+    t.cpu().pc = RAM_BASE + 4;
+    let fault = |kind| Fault {
+        addr: 0x0b00_0000,
+        access: Access::Read,
+        kind,
+    };
+    let fast = |t: &mut T, insn, e| {
+        let v = &mut *t.vm.vcpus[0];
+        // SAFETY: `ctx` is this VM's `Shared`, and the vCPU isn't running.
+        unsafe { rr_fast(ctx, 0, v, insn, e) }
+    };
+    let cases = [
+        (jit::DISPATCHER, Exit::Resync),
+        (eret, Exit::Resync),
+        (jit::DISPATCHER, Exit::Svc(7)),
+        (jit::DISPATCHER, Exit::Fetch(fault(FaultKind::Bus))),
+        (jit::DISPATCHER, Exit::Fault(fault(FaultKind::Align))),
+    ];
+    let svcs = |t: &T| t.vm.shared.cpus[0].counters.exceptions[0x15].load(Ordering::Relaxed);
+    for sig in [SIGNAL_STOP, SIGNAL_RX, SIGNAL_DEVICE] {
+        t.vm.shared.signal.store(sig, Ordering::Release);
+        for (insn, e) in cases {
+            let before = t.cpu().clone();
+            assert!(!fast(&mut t, insn, e), "{e:?} with signal {sig}");
+            assert_eq!(*t.cpu(), before);
+        }
+    }
+    t.vm.shared.signal.store(0, Ordering::Release);
+    let before = t.cpu().clone();
+    for (insn, e) in [
+        (jit::DISPATCHER, Exit::Fault(fault(FaultKind::Bus))),
+        (0xd400_00e1, Exit::Svc(7)), // svc #7: a helper's
+        (NOP, Exit::Resync),
+    ] {
+        assert!(!fast(&mut t, insn, e), "{e:?} from {insn:#x}");
+        assert_eq!(*t.cpu(), before);
+    }
+    assert!(fast(&mut t, eret, Exit::Resync));
+    assert_eq!(*t.cpu(), before, "a resync has nothing left to do");
+    let mut want = before.clone();
+    take_exception(&mut want, Exit::Svc(7));
+    assert!(fast(&mut t, jit::DISPATCHER, Exit::Svc(7)));
+    assert_eq!(*t.cpu(), want);
+    assert_eq!(svcs(&t), 1, "counted as `Vm::exception` counts it");
+}

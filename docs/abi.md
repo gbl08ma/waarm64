@@ -69,7 +69,8 @@ Design notes for an ABI change go in this file before the code.
   `vm_set_chunk(vm, steps)` (ABI 34, any thread): the steps between two publications of a vCPU's PC in its counters,
   32768 by default (0 restores it); the guest PC sampler (web/profiler.ts) shortens it while it runs, so a sample is
   at most that many instructions old instead of naming the exit that ended a long chunk; under the JIT it may be
-  longer (ABI 71, a test's). Round-robin is unaffected. `vm_cpu_stop(vm, i)` (ABI 71): vCPU *i*'s stop word ("PERF:
+  longer (ABI 71, a test's: parallel SMP's polled code only). Round-robin takes it too, never past 32768 (its step
+  counts don't depend on the chunk: platform.md "The run loop"; PERF loop 90). `vm_cpu_stop(vm, i)` (ABI 71): vCPU *i*'s stop word ("PERF:
   the stop word", below).
 - `vm_cpu(vm, i) -> *mut Cpu`, vCPU *i* (null past the last; registers at fixed offsets: X0–X30, SP, PC at 256, …, `features` at
   1056; `Cpu` is 1168 bytes, 16-byte aligned), `vm_console`, `vm_signal`, `vm_counters(vm, i)`,

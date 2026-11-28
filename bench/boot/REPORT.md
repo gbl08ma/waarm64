@@ -9439,3 +9439,64 @@ cache's 262,144 slots at bind costs 2.2-3.0 ms once and ~8 MiB a table (Node 26:
 MiB on four vCPUs, to save < 1 ms of a 9 s workload (< 0.01%). Not built.
 
 No CI (results and docs only).
+
+## PERF loop 90: the out-of-context review of round-robin's run loop, fixed (2026-11-28)
+
+The static review of loop 88 (round-robin's run loop and its hand-offs with the JIT: `Vm::run`, `rr_fast`,
+`jit::at_dispatcher`, `Unmask`, `StepClock`) found no correctness defect, three low findings and four untested paths.
+Each was checked against the code. ABI 74 unchanged, `tests/steps.txt` unchanged, the counted code byte for byte
+the same (the core's changes are in `Vm::run`'s Rust only).
+
+**1. Round-robin ignored `vm_set_chunk`: held, fixed.** `Vm::run` cut its chunks at `CHUNK` whatever
+`Shared::chunk` said, so the PC sampler on a round-robin machine (`bench/boot/suite.ts`'s `?chunk=` runs, the
+profiler outside the page, which always runs parallel SMP) saw only chunk ends: since loop 88 almost all of them the
+32K budget or a deadline. The comment that kept it out ("its chunks place interrupts, so its step counts would
+move") was stale: the in-place completions made the chunk size invisible to deterministic guests (docs/platform.md),
+the quantum stays `QUANTUM`, and the default (0) is `CHUNK`. Now `n = min(chunk, CHUNK, left, deadline, quantum)`,
+one relaxed load a chunk. The only guest-visible difference while a sampler runs is a due xHCI event fired at an
+earlier chunk's end (documented). Test: `vm::tests::round_robin_publishes_its_pc_at_the_chunk_the_sampler_sets`, a
+sampler thread reading `retired` while a 1-vCPU spin runs with chunk 256: it failed on today's tree ("the sampler saw
+only CHUNK's ends", after 200 runs) and passes with the fix.
+
+**2. The in-place completions rest on an unchecked invariant: held as unguarded, guarded.** No violation today, as
+the reviewer found. The reviewer's `debug_assert!` after the chunk wouldn't run (the JIT runs only in the release
+wasm), and checking `gic.irq(c)` there would miss the case named (the GIC sees an inline timer write only at
+`timer_lines`). The parts: nothing in a chunk can reach the GIC (compiled code and the hook get the vCPU, the memory
+and `Shared`, by type), and the other timers' deadlines cut the chunk, so the one inline path is `emit::timer_msr`'s
+rule. After every chunk that wrote a timer inline (`StepClock::wrote`: deterministic round-robin only, a few per
+guest timer tick), `Vm::inline_timer_writes_fired_nothing` now panics if one of the vCPU's timer lines that was low at
+the chunk's top would be high a step before its end. It is out of line (`#[inline(never)]`, 594 bytes): `Vm::run`
+5,751 → 5,792 bytes with finding 1's load. Planted: `timer_msr`'s `cval >= end` dropped, and timerjit.c and
+unmask.c stop with the guard's panic under the JIT (without the guard they fail on their hashes; Linux guests compare
+only steps).
+
+**3. The JIT's and TLBs' counters lag `retired` and `pc` within a run: held, by design.** Up to 65,535 steps, as
+in parallel SMP, settled at a run's end. Documented where it applies (docs/platform.md, "Between chunks"), not
+changed: no consumer computes a ratio from them mid-run except the vCPU timeline's compile time, which is parallel
+SMP's and already lags there.
+
+**The untested paths, covered:**
+- *SMP, instruction aborts, watchpoints:* `tests/baremetal/eret_smp.c` (`// smp: 2`), each vCPU with its own timer,
+  hash and EL0 stack, through SVCs, alignment faults, instruction aborts (a call to an address with nothing there,
+  the handler returning to the caller; not on the oracles) and watchpoint hits (MDSCR_EL1.MDE, EL0 loads), each
+  handler a pseudo-random masked spin before its ERET. Interpreter against JIT in Node (44.6 M steps), natively,
+  and parallel SMP (counts); on the oracles it passes on TCG and hvf (eret.c's and its IRQ-count checks now left out
+  of the hvf build: the M4 runs the rounds in a fraction of a millisecond, a few IRQs, and eret.c failed there with
+  `exit 4` since loop 88). Planted, each caught by `eret_smp` only (eret.c passes): an in-place Fetch taken as a
+  data abort (`exit 86`), a watchpoint taken as an alignment fault (`exit 41`), `ok` from vCPU 0's GIC state for
+  every vCPU (both hashes move).
+- *`ticks_per_insn > 1`:* `eret`, `eret_smp`, `timerjit` and `unmask` also run at three ticks a step, interpreter
+  against JIT (a test-only `ticksPerInsn` boot option, web/vm.ts). Planted: the step clock left on at three ticks
+  moves eret's, eret_smp's and timerjit's hashes there; the one-tick runs pass.
+- *A host signal at `rr_fast`:* `vm::tests::round_robins_fast_completion_declines_once_a_host_signal_arrives` calls
+  the hook with each signal bit set (it declines, the CPU untouched), with an MMIO bus fault, a helper's SVC and a
+  helper's resync (declined), then an ERET's resync and a dispatcher SVC (taken as `take_exception` does, counted).
+  Planted: the signal check dropped fails it.
+
+**Cost.** One relaxed load a chunk and the out-of-line check after a chunk with an inline timer write. The paired A/B
+on the Mac (`results/perf90/ab/`, Chrome for Testing 158.0.8127.88, 12 pairs each): the userspace gate wall −0.03%
+[−0.54%, +0.49%], cycles −0.22% [−0.81%, +0.38%]; Alpine's boot wall +0.22% [−0.12%, +0.55%], cycles +0.15%
+[−0.09%, +0.39%] (`same`); instructions within ±0.07%, the JIT's wasm, modules and interpreted steps identical.
+No difference.
+
+CI: `scripts/ci.sh` (758 s) and `scripts/ci-jit.sh` (282 s) passed at this commit.

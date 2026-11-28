@@ -439,8 +439,9 @@ fn add(a: &AtomicU64, n: u64) {
 pub struct Shared {
     pub console: Rings,
     pub signal: AtomicU32,
-    /// Parallel mode's chunk while profiling (`vm_set_chunk`): steps between two publications of a vCPU's PC; 0 is
-    /// `CHUNK`. Round-robin keeps `CHUNK` (its chunks place interrupts, so its step counts would move).
+    /// The chunk while profiling (`vm_set_chunk`): steps between two publications of a vCPU's PC; 0 is `CHUNK`.
+    /// Round-robin takes it up to `CHUNK` (deterministic step counts don't depend on the chunk: docs/platform.md
+    /// "The run loop"), parallel SMP's polled code up to `POLL_MAX`.
     pub chunk: AtomicU64,
     /// One per vCPU.
     pub cpus: Vec<CpuShared>,
@@ -1121,7 +1122,12 @@ impl Vm {
                 crate::tally::add(&self.shared.cpus[0].counters.diag, crate::tally::IRQS, 1);
                 continue;
             }
-            let n = CHUNK.min(left).min(self.until_deadline()).min(self.quantum);
+            // Shorter while the PC sampler runs (`Shared::chunk`), as in parallel SMP; never longer.
+            let chunk = match self.shared.chunk.load(Ordering::Relaxed) {
+                0 => CHUNK,
+                k => k.min(CHUNK),
+            };
+            let n = chunk.min(left).min(self.until_deadline()).min(self.quantum);
             self.vcpus[c].tlb.catch_up(&self.mem, c);
             // No IRQ for it now, and none comes within the chunk but at an exit: an
             // unmasking MSR's `Exit::Resync` would find none (`jit::Unmask`). Not
@@ -1171,6 +1177,7 @@ impl Vm {
             }
             self.retire(k);
             if wrote {
+                self.inline_timer_writes_fired_nothing(c);
                 self.timer_lines(c);
             }
             #[cfg(feature = "diag")]
@@ -1366,6 +1373,25 @@ impl Vm {
         let gic = &mut self.plat.get_mut().gic;
         gic.set_level(c, IRQ_VTIMER, vt);
         gic.set_level(c, IRQ_PTIMER, pt);
+    }
+
+    /// The rule the chunk's inline timer writes keep (`jit::StepClock`, `emit::timer_msr`): their new
+    /// state fires nothing before the chunk's end, so none of vCPU `c`'s timer lines that was low at the
+    /// chunk's top (the GIC's level, before [`Vm::timer_lines`]) is high a step before its end. The
+    /// unwritten timers fire no sooner (their deadlines cut the chunk), and nothing else in a chunk
+    /// reaches the GIC (it sees the vCPU, the memory and `Shared` only). What the in-place completions
+    /// (`Unmask::ok`, `rr_fast`) rest on: a write that fired early would have its IRQ taken past an
+    /// ERET or unmask finished in place. Deterministic round-robin only (the step clock's); a broken
+    /// rule stops the run here rather than moving a guest's interrupts silently.
+    #[inline(never)] // out of the run loop's body: a check, after a chunk that wrote a timer only
+    fn inline_timer_writes_fired_nothing(&mut self, c: usize) {
+        let (vt, pt) = timers(&self.vcpus[c].cpu, self.now().saturating_sub(1));
+        let gic = &self.plat.get_mut().gic;
+        let early = |line, irq| line && !gic.ppi_level(c, irq);
+        assert!(
+            !early(vt, IRQ_VTIMER) && !early(pt, IRQ_PTIMER),
+            "vCPU {c}: a timer written inline fired before its chunk's end (jit::StepClock)"
+        );
     }
 
     /// The earliest compare value of an enabled, unmasked timer of an on vCPU

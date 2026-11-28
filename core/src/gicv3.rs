@@ -300,6 +300,11 @@ impl Gicv3 {
         }
     }
 
+    /// Whether PPI `irq` (below 32) of CPU `c` is driven high ([`Gicv3::set_level`]).
+    pub fn ppi_level(&self, c: usize, irq: usize) -> bool {
+        self.cpus[c].level & 1 << irq != 0
+    }
+
     /// Drives line `irq` of CPU `c` (a PPI; `c` is ignored for SPIs) high or low.
     pub fn set_level(&mut self, c: usize, irq: usize, high: bool) {
         if irq < 32 {

@@ -205,6 +205,8 @@ export type BootOptions = {
   stall?: Stall | Stall[];
   /** `VmConfig.ncpus` (ABI 21): vCPUs (default 1), round-robin on this thread unless `parallel`. */
   ncpus?: number;
+  /** Test only: `VmConfig.ticks_per_insn`, deterministic time's counter ticks a step (the core's default: 1). */
+  ticksPerInsn?: number;
   /**
    * `VmConfig.smp` 1 (ABI 25): a worker per vCPU (web/vcpu-worker.ts),
    * realtime only (it implies `realtime`). Drive it with `runAsync`.
@@ -495,6 +497,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
     vmConfig({
       ramSize: BigInt(o.ramSize),
       deterministic: deterministic ? 1n : 0n,
+      ticksPerInsn: BigInt(o.ticksPerInsn ?? 0),
       devices: BigInt(scratch + S_DEVICES),
       ndevices: BigInt(specs.length),
       fbWidth: BigInt(fb.width),
