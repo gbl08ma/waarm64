@@ -134,8 +134,7 @@ replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried an
 **The track resumed 2026-11-28 (paused after loop 86).** Loops 88-90: round-robin's chunk ends (row 22), the three
 sweeps closed by their counts (row 23), the review of loop 88 fixed (bench/boot/REPORT.md "PERF loop 88" to "PERF loop
 90"). Loop 91 did row 24 (bench/gpu/REPORT.md "PERF loop 91"): virgl's joins, the import read ahead, the checksum, the
-poll. Loop 92 closed row 25 by its counts, nothing built (bench/boot/REPORT.md "PERF loop 92"). **The queue is empty:
-the supervisor refills it.** A review of loop 91's host code is out; its fix loop isn't queued here yet.
+poll. Loop 92 closed row 25 by its counts, nothing built (bench/boot/REPORT.md "PERF loop 92"). The queue was refilled after loop 92 (rows 26-34); row 26 fixes the review of loop 91.
 
 **The rule since 2026-11-24 (the user): spend as little time in benchmarks and CI as the answers allow
 ("Batching", above).** Loop 75's notes still hold: `bench/boot/results/perf75/diag.patch` applies to 3a08fdf3; loop
@@ -173,7 +172,24 @@ every row:
 - Rows 3-4 changed which blocks a region gets (on regions of 64 blocks: loop 64; batches of 50K steps: loop 65; `REGION_AFTER` 1000: loop 66): run them one at a time, each on the last one's winner; the compile threshold was re-checked after them (loop 69:
   1000/2000 stays).
 
-(Empty after loop 92: the supervisor refills it.)
+Refilled again on 2026-11-28 (after loop 92) from the open Performance issues (`node tools/issue.ts list --type
+Performance`) the dev VM or the Mac can try; each row's figures are its issue's, to re-count on today's tree first.
+
+| # | Entry | Kind | Notes |
+|---|---|---|---|
+| 26 | **Next**: fix the out-of-context review of loop 91's host paths (`origin/review/host-events`, `review/host-events.md`: four low findings) | fix | each with its confirming test failing first; delete the branch on origin |
+| 27 | JIT: cut emissions of regions whose entry states never settle ([#15](https://github.com/gbl08ma/waarm64/issues/15), `block::module`) | count, build | compile time: emission 163 ms of the boot gate on the Mac, 1.44 s of a pages session; the unsettled regions' repeated emissions 53-62% of members emitted (counted on 16-block regions: re-count); the code those regions get must not get worse |
+| 28 | JIT blocks still end at the other system instructions: MSRs, SYS, CLREX, DC ([#315](https://github.com/gbl08ma/waarm64/issues/315), `core/src/jit/block.rs` `end`) | count, build | a profile of block ends by instruction first; relax only what ends blocks often enough |
+| 29 | Keep the previous ASID's nG TLB entries ([#316](https://github.com/gbl08ma/waarm64/issues/316), `core/src/mmu.rs`) | count | ~0.3 M nG refills in Alpine's boot; count the refills' share of time on the gates and the pages session |
+| 30 | Adaptive idle-vCPU poll before sleeping ([#134](https://github.com/gbl08ma/waarm64/issues/134)) | build, measure | the renderers' CPU, not time: ≤ ~4.5% of a core on the pages session, ~1.1 points of an idle 4-vCPU guest; futex hand-offs must not slow (loop 83's `pingpong`) |
+| 31 | Snapshots: the load's check pass and start, the save's pause ([#209](https://github.com/gbl08ma/waarm64/issues/209), [#210](https://github.com/gbl08ma/waarm64/issues/210), [#211](https://github.com/gbl08ma/waarm64/issues/211)) | count, build | one probe pass for all three (`bench/snapz/`); each part ≤ ~0.1-0.4 s of a 1.2 s load or a 0.87 s pause |
+| 32 | Remote disk prefetch: eager past the boot menu, and refetches without OPFS ([#28](https://github.com/gbl08ma/waarm64/issues/28), [#29](https://github.com/gbl08ma/waarm64/issues/29)) | measure, build | 1.5 s; 83 vs 65 s; a local server with added latency (bench/remote-disk/) |
+| 33 | Host, small: pointer events as a flat `Int32Array` ([#272](https://github.com/gbl08ma/waarm64/issues/272)), the clipboard's copies and a dropped answer ([#266](https://github.com/gbl08ma/waarm64/issues/266)), the agent's restarts gunzipping anew ([#264](https://github.com/gbl08ma/waarm64/issues/264)) | count | each by its own micro-benchmark; likely findings |
+| 34 | Graphics on the Mac's GPU: hardware-decoded video frames' fences ([#46](https://github.com/gbl08ma/waarm64/issues/46)), virtio-gpu's flush pacing at 60/s ([#56](https://github.com/gbl08ma/waarm64/issues/56)) | measure, build | Mac only (the VM has no GPU); `bench/gpu/sway-mac.sh` |
+
+Not queued: Vulkan's (the VK4 track's, several on NVIDIA), `needs-human` ones (#5, #73-#75, #132, #185), #13 (only if
+FP16 is advertised), #6 (only if a debugged program's speed matters), the page's and demos' (#144, #157, #163, #191,
+#192, #194: product calls or deploys), #30 (hosted images), and the larger designs (#175, #212, #222, #246, #33).
 
 Swept, measured or counted on the Mac recently, not to redo: late-compiled successors, SP's guard and `refresh` (loop
 92: jump-cache tails 3.3 a 1000 steps on the pages session, a reserved slot ≤0.6-1.9% and polled-only behind an ABI
