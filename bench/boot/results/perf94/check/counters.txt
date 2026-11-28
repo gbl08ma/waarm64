@@ -1,0 +1,72 @@
+workload boot
+n {'base': 2, 'new': 2, 'check': 2}
+                      base           new         check
+blocks                5131        +0.00%        +0.00%
+modules                292        +0.00%        +0.00%
+bytes             11771623        +0.00%        +0.00%
+regionBlocks         24536        +0.00%        +0.00%
+tierUps                420        +0.00%        +0.00%
+decSteps         143097220        +0.00%        +0.00%
+locks               418936        +0.00%        +0.00%
+flushes                  0             0             0
+emitNs           173512832        -4.72%       +35.03%
+planNs            63887104        +0.47%        +0.69%
+compileNs         72523776        -0.80%        -2.02%
+dispatches         4699674        +0.00%        +0.00%
+footMiB               2024          1867          1953
+instructions             0             0             0
+cycles                   0             0             0
+workload node
+n {'base': 2, 'new': 2, 'check': 2}
+                      base           new         check
+blocks               20307        +0.00%        +0.00%
+modules               1417        +0.00%        +0.00%
+bytes             49593944        +0.00%        +0.00%
+regionBlocks         96258        +0.00%        +0.00%
+tierUps               1674        +0.00%        +0.00%
+decSteps         484981500        +0.00%        +0.00%
+locks              1580491        +0.00%        +0.00%
+flushes                  0             0             0
+emitNs           736459264        -6.17%       +36.78%
+planNs           418447616        +0.90%        +3.76%
+compileNs        349804672        +4.06%       +19.11%
+dispatches        18863359        +0.00%        +0.00%
+footMiB               2073          2205          2207
+instructions             0             0             0
+cycles                   0             0             0
+workload smp
+n {'base': 2, 'new': 2, 'check': 2}
+                      base           new         check
+blocks               42263        -1.17%        -2.17%
+modules               2856        -0.23%        -1.23%
+bytes             87767314        -0.35%        -1.25%
+regionBlocks        177672        -0.37%        -1.11%
+tierUps               2628        -1.83%        -1.85%
+decSteps        1201285814        -1.09%        +0.74%
+locks              4870409        -1.60%        -1.65%
+flushes                  0             0             0
+emitNs          1427144704        -6.31%       +30.33%
+planNs          1266445568        -1.33%        -3.79%
+compileNs        628133248        +0.74%        -2.71%
+dispatches        57314016        -0.06%        +1.27%
+footMiB               3477          3472          3446
+instructions             0             0             0
+cycles                   0             0             0
+workload user
+n {'base': 2, 'new': 2, 'check': 2}
+                      base           new         check
+blocks                6882        +0.00%        +0.00%
+modules                492        +0.00%        +0.00%
+bytes             15794559        +0.00%        +0.00%
+regionBlocks         32090        +0.00%        +0.00%
+tierUps                538        +0.00%        +0.00%
+decSteps         183280523        +0.00%        +0.00%
+locks               541051        +0.00%        +0.00%
+flushes                  0             0             0
+emitNs           239160576        -6.50%       +35.28%
+planNs            88603904        -1.91%        +1.94%
+compileNs        118696320        -2.52%       +12.87%
+dispatches         6898775        +0.00%        +0.00%
+footMiB               1676          1845          1678
+instructions             0             0             0
+cycles                   0             0             0

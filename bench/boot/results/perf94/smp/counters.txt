@@ -1,0 +1,18 @@
+workload smp
+n {'base': 8, 'new': 8}
+                      base           new
+blocks               41477        -0.07%
+modules               2780        +1.22%
+bytes             86689671        -0.24%
+regionBlocks        175408        -0.07%
+tierUps               2606        +0.08%
+decSteps        1166268862        -0.16%
+locks              4251302        +0.33%
+flushes                  0             0
+emitNs          1231068800        -8.98%
+planNs          1058385536        +2.42%
+compileNs        356695808        +1.16%
+dispatches        54704024        -0.77%
+footMiB               2334          2348
+instructions  571194289971        +0.18%
+cycles        197584788228        +0.87%

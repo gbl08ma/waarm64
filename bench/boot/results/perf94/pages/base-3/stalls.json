@@ -1,0 +1,26 @@
+{
+ "/home/gabriel.guest/Development/waarm64/bench/boot/results/perf94/pages/base-3/pages-all.timeline.json": {
+  "seconds": 81,
+  "mips": 476,
+  "busyMips": 454,
+  "busyShare": 0.26,
+  "stallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 0,
+  "stalledMsPerSecondPerVcpu": 0,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ }
+}

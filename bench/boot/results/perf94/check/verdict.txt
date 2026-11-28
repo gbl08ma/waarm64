@@ -1,0 +1,42 @@
+boot: 2 pairs against base
+  arm          pairs wall                                 cpu                                 
+  new              2 -0.44% [-40.16%, +65.65%] open       +0.33% [-67.20%, +206.91%] open     
+  check            2 +1.27% [-27.85%, +42.15%] open       +0.59% [-46.00%, +87.38%] open      
+  ended: the cap of 2 pairs
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  base                 4237            -         2024        173.5         72.5        11.23          292    143097220
+  new                  4218            -         1867        165.3         71.9        11.23          292    143097220
+  check                4290            -         1953        234.3         71.1        11.23          292    143097220
+user: 2 pairs against base
+  arm          pairs wall                                 cpu                                 
+  new              2 -1.32% [-73.10%, +262.01%] open      -1.50% [-79.25%, +367.73%] open     
+  check            2 +4.75% [-98.86%, +9520.52%] open     +4.53% [-99.48%, +20838.31%] open   
+  ended: the cap of 2 pairs
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  base                11109            -         1676        239.2        118.7        15.06          492    183280523
+  new                 10962            -         1845        223.6        115.7        15.06          492    183280523
+  check               11655            -         1678        323.5        134.0        15.06          492    183280523
+node: 2 pairs against base
+  arm          pairs wall                                 cpu                                 
+  new              2 +2.13% [-80.82%, +443.94%] open      +1.79% [-71.23%, +260.08%] open     
+  check            2 +8.02% [-98.00%, +5742.61%] open     +7.82% [-98.66%, +8575.34%] open    
+  ended: the cap of 2 pairs
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  base                11890            -         2073        736.5        349.8        47.30         1417    484981500
+  new                 12148            -         2205        691.0        364.0        47.30         1417    484981500
+  check               12871            -         2207       1007.3        416.6        47.30         1417    484981500
+smp: 2 pairs against base
+  arm          pairs wall                                 cpu                                 
+  new              2 +1.73% [-42.57%, +80.19%] open       +2.04% [-53.09%, +121.98%] open     
+  check            2 +1.77% [-79.08%, +395.19%] open      +0.28% [-35.08%, +54.92%] open      
+  ended: the cap of 2 pairs
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  base                13462            -         3477       1427.1        628.1        83.70         2856   1201285814
+  new                 13693            -         3472       1337.1        632.8        83.41         2849   1188147861
+  check               13700            -         3446       1860.0        611.1        82.65         2821   1210162613
+  arm          compiled %   interp %    overdue      parks    modules  worker ms   ready ms  ready p50  ready p99  ready top top of any   stall ms     of any stall ms/s   out ms/s
+  base              94.62       5.37          0       9975       2556       1722       1.03          1          8         24         32          9         12        8.8         94
+  new               94.67       5.33          0       9949       2550       1771       1.06          1          8         16         16          8         10        8.4         96
+  check             94.62       5.38          0       9824       2521       1629       1.03          1          8         24         32         12         12       12.9         91
+arms: base 9790604 bytes; new 9810875 bytes; check 9811932 bytes
+rule: a pair a fresh browser (warm-up same, 1 round), pairs 2-2, band ±0.5%, stop on cycles and wall (boot), cycles and wall (user), cycles and wall (node), wall (smp) (no cycles or instructions on this host), each interval's tail 1.00e-2 (0.01 over all its looks, an interval: several arms and measures each take that chance); Chromium 155.0.8059.84

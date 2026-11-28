@@ -1,0 +1,3 @@
+bench/jit/dump-modules.ts, base (78d0bf39) against new, deterministic boots in Node:
+buildroot 43 modules: identical 42, differing only in the CRC32 table's address (d4 e5 43 -> d4 e6 43, an i32.load offset) 1 (m00030), other 0
+alpine 300 modules: identical 298, differing only in the CRC32 table's address 2 (m00230, m00248), other 0

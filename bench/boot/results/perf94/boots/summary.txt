@@ -1,0 +1,43 @@
+smp_alpine_jit_n1_script         base 2491-2515  new 2473-2494  -0.4% overlap
+smp_alpine_jit_n1_total          base 4969-5005  new 4948-4973  -0.2% overlap
+smp_alpine_jit_n2_script         base 2141-2159  new 2124-2134  -0.8% no overlap
+smp_alpine_jit_n2_total          base 4630-4653  new 4616-4628  -0.3% no overlap
+smp_alpine_jit_n4_script         base 2094-2114  new 2090-2097  -0.3% overlap
+smp_alpine_jit_n4_total          base 4612-4641  new 4601-4621  -0.2% overlap
+smp_alpine_jit_n1_total_cpu_ms   base 5133-5173  new 5114-5139  -0.4% overlap
+smp_alpine_jit_n1_total_cpu_ns_step base 2-2  new 2-2  -0.4% overlap
+smp_alpine_jit_n1_total_ginstr   base 65-65  new 65-65  -0.6% no overlap
+smp_alpine_jit_n1_total_gcycles  base 20-20  new 20-20  -0.2% no overlap
+smp_alpine_jit_n1_total_instr_step base 27-27  new 27-27  -0.6% no overlap
+smp_alpine_jit_n1_total_cycles_step base 8-8  new 8-8  -0.1% overlap
+smp_alpine_jit_n1_total_pshare   base 1-1  new 1-1  -0.1% no overlap
+smp_alpine_jit_n1_total_joules   base 24-25  new 24-25  -0.9% overlap
+smp_alpine_jit_n2_total_cpu_ms   base 5831-5845  new 5788-5829  -0.2% no overlap
+smp_alpine_jit_n2_total_cpu_ns_step base 2-2  new 2-2  -0.2% no overlap
+smp_alpine_jit_n2_total_ginstr   base 70-70  new 70-70  -0.5% no overlap
+smp_alpine_jit_n2_total_gcycles  base 22-22  new 22-22  -0.3% overlap
+smp_alpine_jit_n2_total_instr_step base 29-29  new 28-28  -0.6% no overlap
+smp_alpine_jit_n2_total_cycles_step base 9-9  new 9-9  -0.4% overlap
+smp_alpine_jit_n2_total_pshare   base 1-1  new 1-1  +0.1% overlap
+smp_alpine_jit_n2_total_joules   base 26-27  new 27-27  -0.5% overlap
+smp_alpine_jit_n4_total_cpu_ms   base 6852-6923  new 6851-6895  +0.2% overlap
+smp_alpine_jit_n4_total_cpu_ns_step base 3-3  new 3-3  +0.6% overlap
+smp_alpine_jit_n4_total_ginstr   base 76-77  new 76-76  -0.4% overlap
+smp_alpine_jit_n4_total_gcycles  base 26-26  new 26-26  -0.2% overlap
+smp_alpine_jit_n4_total_instr_step base 30-30  new 30-30  -0.6% no overlap
+smp_alpine_jit_n4_total_cycles_step base 10-10  new 10-10  +0.4% overlap
+smp_alpine_jit_n4_total_pshare   base 1-1  new 1-1  -0.3% overlap
+smp_alpine_jit_n4_total_joules   base 27-28  new 28-28  -0.4% overlap
+smp_user_jit_n4_compress         base 1099-1207  new 1072-1182  +1.5% overlap
+smp_user_jit_n4_lua              base 2444-2643  new 2398-2434  -2.7% no overlap
+smp_user_jit_n4_churn            base 639-648  new 634-640  -0.6% overlap
+smp_user_jit_n4_sqlite           base 1739-1822  new 1632-1770  -2.2% overlap
+smp_user_jit_n4_total            base 10489-10599  new 10309-10448  -2.4% no overlap
+smp_user_jit_n4_total_cpu_ms     base 32036-32348  new 31817-32058  -1.0% overlap
+smp_user_jit_n4_total_cpu_ns_step base 1-1  new 1-1  -1.0% no overlap
+smp_user_jit_n4_total_ginstr     base 465-470  new 458-466  -2.2% overlap
+smp_user_jit_n4_total_gcycles    base 122-123  new 121-122  -1.1% overlap
+smp_user_jit_n4_total_instr_step base 15-15  new 14-15  -2.2% overlap
+smp_user_jit_n4_total_cycles_step base 4-4  new 4-4  -1.2% no overlap
+smp_user_jit_n4_total_pshare     base 1-1  new 1-1  -0.1% overlap
+smp_user_jit_n4_total_joules     base 138-140  new 137-137  -1.4% no overlap

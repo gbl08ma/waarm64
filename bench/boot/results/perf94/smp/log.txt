@@ -1,0 +1,18 @@
+smp pair 1: base 9320, new 9448 ms (1440 s left)
+smp pair 2: base 9198, new 9404 ms (1381 s left)
+smp pair 3: base 9391, new 9127 ms (1322 s left)
+smp pair 4: new 9422, base 9226 ms (1263 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  new              4 +0.71% [-9.51%, +12.08%] open        +1.02% [+0.23%, +1.81%] HIGHER       +0.21% [-0.82%, +1.25%] open         +1.08% [-0.29%, +2.45%] open        
+smp pair 5: new 9381, base 9156 ms (1204 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  new              5 +1.06% [-5.20%, +7.72%] open         +1.11% [+0.36%, +1.87%] HIGHER       +0.21% [-0.36%, +0.80%] open         +1.20% [+0.08%, +2.34%] HIGHER      
+smp pair 6: base 9306, new 9247 ms (1146 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  new              6 +0.77% [-3.77%, +5.53%] open         +0.89% [-0.38%, +2.18%] open         +0.09% [-0.70%, +0.88%] open         +0.93% [-0.74%, +2.62%] open        
+smp pair 7: new 9272, base 9491 ms (1087 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  new              7 +0.33% [-3.69%, +4.51%] open         +0.64% [-0.90%, +2.20%] open         -0.07% [-1.01%, +0.89%] open         +0.68% [-1.03%, +2.42%] open        
+smp pair 8: base 9195, new 9219 ms (1028 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  new              8 +0.32% [-2.91%, +3.66%] open         +0.84% [-0.68%, +2.38%] open         +0.08% [-0.91%, +1.07%] open         +0.91% [-0.79%, +2.63%] open        

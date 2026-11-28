@@ -783,6 +783,10 @@ struct Env<'a> {
     nzcv: Option<[u32; emit::NZCV_HELPERS]>,
     /// `Config::polled`: no `left`, [`emit::poll`] where a cycle can close.
     polled: bool,
+    /// The region's [`Region::looped`] and [`Region::entries`], found once
+    /// for its emissions.
+    looped: bool,
+    ents: &'a [usize],
 }
 
 impl Env<'_> {
@@ -954,7 +958,7 @@ pub fn module(
     };
     let (base, phys) = mem.base();
     let pair_locks = mem.pair_locks() as usize as u32;
-    for r in regions {
+    for (r, ents) in regions.iter().zip(&entries) {
         let head = &r.blocks[0];
         let cx = if head.key & KEY_MMU != 0 {
             let read = emit::tlb_array(head.key & KEY_EL1, 0);
@@ -1006,6 +1010,8 @@ pub fn module(
             plans: r.blocks.iter().map(|b| emit::plan(&b.words, &cx)).collect(),
             nzcv,
             polled: cfg.polled,
+            looped: r.looped(),
+            ents,
         };
         // Twice: the first emission finds the registers to read plainly
         // (`Func::plain`) and what each member's edges carry into it, which
@@ -1021,12 +1027,16 @@ pub fn module(
         // An emission is a function of its arguments (`plain`, the entry
         // states): one with the arguments of the last is that one, kept
         // (`last`) rather than emitted again. A region whose states settled
-        // ends with the emission that showed it, and a block whose first
-        // emission found no register plain, nor its flags dead, with that one.
+        // in a whole emission ends with it, and a block whose first emission
+        // found no register plain, nor its flags dead, with that one.
+        //
+        // A member's part of an emission is a function of its own: the
+        // settling emissions emit only the members whose arguments changed
+        // (`redo`), the rest's edges taken from the one before (PERF loop 94).
         let n = r.blocks.len();
         let (none, mem) = (vec![emit::Regs::default(); n], vec![In::Mem; n]);
-        let first = emit_region(&env, r, 0, &none, &mem);
-        let plain = if r.looped() {
+        let first = emit_region(&env, r, 0, &none, &mem, None);
+        let plain = if env.looped {
             0
         } else {
             first.c.read & !first.c.reused
@@ -1052,24 +1062,52 @@ pub fn module(
                 // Checked wherever debug assertions are on (the tests): the
                 // emission kept is the one these arguments make.
                 debug_assert!(
-                    x.same(&emit_region(&env, r, plain, entry, flags)),
+                    x.same(&emit_region(&env, r, plain, entry, flags, None)),
                     "a kept emission isn't its arguments' ({:#x})",
                     r.blocks[0].key
                 );
                 return x;
             }
-            emit_region(&env, r, plain, entry, flags)
+            emit_region(&env, r, plain, entry, flags, None)
         };
         if n > 1 {
+            // The emissions until the states settle are analyses: each emits
+            // only the members whose arguments changed since the one before
+            // ([`redo`]), unless that is every member (or `plain` changed, as
+            // after the first emission): then a whole one. An analysis's code
+            // is never the function's: the last emission is a whole one.
             let mut settled = false;
+            let (pp, mut pe, mut pf, p) = last.take().expect("the first emission");
+            let mut prev = Some(p);
+            // Plain registers change what every member holds.
+            let mut all = pp != plain;
             for _ in 0..4 {
-                let x = emit(&mut last, plain, &entry, &flags);
+                let p = prev.take().expect("an emission");
+                let todo = redo(&pe, &pf, &entry, &flags);
+                let x = if !all && !todo.contains(&true) {
+                    // The arguments of the one before: that one.
+                    p
+                } else {
+                    // Every member changed: a whole emission, which may be kept.
+                    let part = (!all && todo.contains(&false)).then_some((&p, &todo[..]));
+                    emit_region(&env, r, plain, &entry, &flags, part)
+                };
+                // Checked wherever debug assertions are on (the tests): an
+                // analysis finds what the whole emission finds.
+                debug_assert!(
+                    x.whole || x.found(&emit_region(&env, r, plain, &entry, &flags, None)),
+                    "an analysis isn't its arguments' emission ({:#x})",
+                    r.blocks[0].key
+                );
                 let next = settle(&x);
                 if next == (entry.clone(), flags.clone()) {
                     settled = true;
-                    last = Some((plain, entry.clone(), flags.clone(), x));
+                    if x.whole {
+                        last = Some((plain, entry.clone(), flags.clone(), x));
+                    }
                     break;
                 }
+                (pe, pf, prev, all) = (entry, flags, Some(x), false);
                 (entry, flags) = next;
             }
             if !settled {
@@ -1088,6 +1126,7 @@ pub fn module(
                 plain,
                 &entry,
                 &(0..n).map(dead).collect::<Vec<_>>(),
+                None,
             );
             assert!(!x.bad);
         }
@@ -1188,6 +1227,21 @@ struct Emission {
     flags: Vec<In>,
     dead: Vec<bool>,
     bad: bool,
+    /// What each edge to a member carried, in its members' order.
+    edges: Vec<Edge>,
+    /// Whether every member was emitted: false for an analysis
+    /// ([`emit_region`]'s `redo`), whose code is never the function's.
+    whole: bool,
+}
+
+/// An edge from member `from` to member `to`: the register state and lazy
+/// flags it carried (before conforming to the target's).
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Edge {
+    from: usize,
+    to: usize,
+    regs: emit::Regs,
+    lazy: Option<(emit::Kind, bool)>,
 }
 
 impl Emission {
@@ -1199,6 +1253,13 @@ impl Emission {
             && (self.inl, &self.into, &self.flags) == (o.inl, &o.into, &o.flags)
             && (&self.dead, self.bad) == (&o.dead, o.bad)
     }
+
+    /// Whether `o` found what this emission found: the states and edges
+    /// (what an analysis must find as a whole emission would).
+    fn found(&self, o: &Emission) -> bool {
+        (&self.into, &self.flags, &self.dead, self.bad) == (&o.into, &o.flags, &o.dead, o.bad)
+            && self.edges == o.edges
+    }
 }
 
 /// An emission with the arguments it was emitted with (`plain`, the entry
@@ -1207,8 +1268,18 @@ type Last = (u64, Vec<emit::Regs>, Vec<In>, Emission);
 
 /// One emission of region `r` with the registers in `plain` read without a
 /// local, each member starting in its `entry` register state and `fin` flag
-/// state.
-fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]) -> Emission {
+/// state. With `redo`, an analysis ([`Emission::whole`] false): only the
+/// members it marks are emitted, the others' edges taken from `prev`, whose
+/// arguments differ from these only at the members `redo` marks (what a
+/// member's edges carry is a function of its own entry states: [`redo`]).
+fn emit_region(
+    e: &Env,
+    r: &Region,
+    plain: u64,
+    entry: &[emit::Regs],
+    fin: &[In],
+    redo: Option<(&Emission, &[bool])>,
+) -> Emission {
     let n = r.blocks.len();
     let head = r.blocks[0].va;
     let mut c = emit::Func::default();
@@ -1228,17 +1299,20 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
     let mut dead = vec![false; n];
     let mut bad = false;
     let mut inl = 0;
+    let mut edges = vec![];
+    // The next of `prev`'s edges (they are in their members' order).
+    let mut at = 0;
     c.local_get(0).i64_load(emit::PC).local_set(1);
     if let (Some(word), Some(hot)) = (r.tier, e.hot) {
         // It runs before the entries' prologue below, as at the head.
         assert!(
-            r.entries().is_empty(),
+            e.ents.is_empty(),
             "a hot word on a region with entries ({:#x})",
             r.blocks[0].key
         );
         emit::tier_up(&mut c, word, r.blocks[0].key, e.bt, hot);
     }
-    let looped = r.looped();
+    let looped = e.looped;
     // Polled code keeps `acc` itself: it has no `left`.
     if (n > 1 || looped) && !e.polled {
         c.local_get(emit::ACC).local_get(emit::LEFT).op(0x6a); // i32.add
@@ -1256,7 +1330,7 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
     // Entries besides the head: the entry number from the depth's high bits
     // (cleared), the entry PC moved back to the head's, and on to the member
     // with the registers it starts with. Its flags are in memory.
-    let ents = r.entries();
+    let ents = e.ents;
     if !ents.is_empty() {
         const E: u32 = 8; // i32 scratch
         let here = c.regs;
@@ -1290,6 +1364,29 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
     for (i, b) in r.blocks.iter().enumerate() {
         if i > 0 {
             c.end(); // member i's label
+        }
+        if let Some((prev, redo)) = redo {
+            while prev.edges.get(at).is_some_and(|x| x.from < i) {
+                at += 1;
+            }
+            if !redo[i] {
+                // What this member's edges carried in `prev`, as they were.
+                while let Some(&x) = prev.edges.get(at).filter(|x| x.from == i) {
+                    let j = x.to;
+                    into[j] = if reached[j] {
+                        into[j].merge(x.regs, 0)
+                    } else {
+                        x.regs
+                    };
+                    reached[j] = true;
+                    flags[j] = flags[j].merge(x.lazy.map_or(In::Mem, |(k, sf)| In::Lazy(k, sf)));
+                    bad |= matches!(fin[j], In::Lazy(k, sf) if x.lazy != Some((k, sf)));
+                    edges.push(x);
+                    at += 1;
+                }
+                dead[i] = prev.dead[i];
+                continue;
+            }
         }
         c.base = b.va.wrapping_sub(head) as i64;
         c.note(
@@ -1442,6 +1539,12 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
                 c.commit_flags();
             }
             bad |= matches!(fin[j], In::Lazy(..)) && store(j, lazy);
+            edges.push(Edge {
+                from: i,
+                to: j,
+                regs: here,
+                lazy,
+            });
             c.conform(entry[j]);
             if !c.sum {
                 c.local_get(emit::ACC).i32_const(len as i32).op(0x6a); // i32.add
@@ -1605,7 +1708,23 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
         flags,
         dead,
         bad,
+        edges,
+        whole: redo.is_none(),
     }
+}
+
+/// The members an emission with entry states `entry`, `fin` must emit again
+/// after one with `pe`, `pf` (and the same `plain`): those whose own entry
+/// states differ. The others' edges carry what they carried before: what an
+/// edge carries is its member's state from its entry on (`emit_region` sets
+/// each member's registers and flags at its start); the target's states
+/// shape only the code on the edge (what it stores, loads, conforms to), and
+/// whether it contradicts the target's lazy flags, found again from the
+/// lazy flags it carried.
+fn redo(pe: &[emit::Regs], pf: &[In], entry: &[emit::Regs], fin: &[In]) -> Vec<bool> {
+    (0..entry.len())
+        .map(|i| entry[i] != pe[i] || fin[i] != pf[i])
+        .collect()
 }
 
 /// The chaining tail of block `b` to its successor at `off`: a direct tail
@@ -2878,6 +2997,36 @@ mod tests {
         let body = e.bytes.windows(2).position(|w| w == [0x03, 0x40]).unwrap(); // the loop
         assert_eq!(pc(&e.bytes[body..edge]), 0);
         assert!(pc(&e.bytes[edge..]) >= 2); // the head's exit, b.lt's select
+    }
+
+    /// Lazy flags reach a member through two that don't touch them, one
+    /// emission an edge, while no register is ever held: the settling
+    /// emissions emit again a member whose flag state alone changed (`redo`),
+    /// so the loop's last member reads the compare across three edges.
+    #[test]
+    fn lazy_flags_cross_members_that_keep_them() {
+        // 0x100: cmp xzr, xzr; b 0x10c
+        // 0x10c: nop; b 0x118
+        // 0x118: nop; b 0x124
+        // 0x124: b.eq 0x100 (then ret)
+        let words = [
+            0xeb1f03ff, 0x14000002, 0xd4200000, 0xd503201f, 0x14000002, 0xd4200000, 0xd503201f,
+            0x14000002, 0xd4200000, 0x54fffee0, 0xd65f03c0,
+        ];
+        let (_r, m) = mem_with(0x100, &words);
+        let r = region(&m, 0x100, 0x100, &|_| true);
+        assert_eq!((r.blocks.len(), r.back_edges()), (4, 1));
+        let e = module(
+            &[r],
+            &test_mem(),
+            |_| None,
+            &Config::DEFAULT,
+            false,
+            crate::cpu::FEATURES,
+            None,
+        );
+        assert_eq!((e.counts.cond_direct, e.counts.cond_memory), (1, 0));
+        assert!(!has(&e.bytes, &[0x28, 2, 0x88, 2])); // NZCV never loaded
     }
 
     /// A kept emission is compared by its flag states too: a block that

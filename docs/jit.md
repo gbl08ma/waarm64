@@ -1164,9 +1164,21 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   function of its arguments, so one whose arguments are the last emission's is that one, kept. The emission that
   showed the states settled is the function's, and so is a single block's first when its second would have the same
   arguments (no register plain, flags not dead). PERF loop 71: 8-10% fewer members emitted, `emitNs` 5-8% lower, the
-  modules byte for byte the same. Regions that never settle are 20-30% of the regions of several blocks but 53-62% of
-  the members emitted (six emissions each, larger regions). None came back to an earlier state within the four
-  iterations (bench/boot/REPORT.md "PERF loop 71"; [#15](https://github.com/gbl08ma/waarm64/issues/15)).
+  modules byte for byte the same. The emissions until the states settle are **analyses** (PERF loop 94): what a
+  member's edges carry is a function of its own entry states (registers and flags; the targets' states shape only the
+  code on the edge, and whether its lazy flags contradict the target's is found again from what it carried), so each
+  emits only the members whose entry states changed since the one before (`block::redo`) and takes the others'
+  edges from it (`Emission::edges`); one where every member changed, or `plain` did (after the first emission), is a
+  whole emission and may be kept. An analysis's code is never the function's, so a region that settled in one ends
+  with a whole emission. Checked wherever debug assertions are on (`Emission::found`: the states and edges a whole
+  emission finds), and `block::tests::lazy_flags_cross_members_that_keep_them` pins a member whose flag state alone
+  changes. The region's `looped` and `entries` are found once for its emissions (`Env`). On today's 64-block regions
+  20-31% never settle in four emissions and take 62-71% of the members emitted; 64-70% of them would settle in eight,
+  90-96% in sixteen, so the cut is in what each emission emits, not in their number: 20-21% fewer guest instructions
+  emitted, `emitNs` 9-11% lower on the Mac (the rest of an emission is the region's fixed costs; `node` −0.82%, the
+  boot gate −0.38%), the modules byte for byte the same (bench/boot/REPORT.md "PERF loop 94"). Fewer iterations or
+  `Regs::loose` earlier would change the code those regions get; a Gauss-Seidel order (a member starting from what
+  this emission's edges carried) would reach a different, settled state: neither tried.
   A kept emission is checked wherever debug assertions are on: `module` emits it again and asserts the two the same
   (`Emission::same`), so every native test that compiles a region checks the rule, and
   `block::tests::a_kept_emission_has_its_flag_states` and `an_unsettled_region_enters_no_member_dirty_in_a_shadow_alone`

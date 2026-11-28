@@ -1,0 +1,3 @@
+boot: words in the functions 123234; emitted today 526801 (4.27 each), with the change 414631 (-21.3%): whole 269568, partial emitted 145063 and skipped 165542, last emissions added 53372
+node: words in the functions 461770; emitted today 2083363 (4.51 each), with the change 1657994 (-20.4%): whole 1071025, partial emitted 586969 and skipped 581951, last emissions added 156582
+user: words in the functions 165395; emitted today 711397 (4.30 each), with the change 562949 (-20.9%): whole 370465, partial emitted 192484 and skipped 216371, last emissions added 67923

@@ -9550,3 +9550,87 @@ real rate). **The bound:** 2.46 M × ~80 ns = 0.2 s, 0.09% of busy time: under t
 
 Memory: none (nothing kept). Compiled code unchanged (no kept code: the x64 counts above are the bound's). No CI:
 the loop changes only docs, REPORTs and results.
+
+## PERF loop 94: the settling emissions emit only the members whose entry states changed (2026-11-28)
+
+Queue row 27 ([#15](https://github.com/gbl08ma/waarm64/issues/15)): regions whose entry states never settle take six
+emissions each. **Kept:** the emissions until the states settle are analyses that emit only the members whose entry
+states changed since the one before and take the others' edges from it (core/src/jit/block.rs: `redo`,
+`Emission::edges`, `emit_region`'s `redo`); a region's `looped` and `entries` are found once for its emissions. The
+modules are byte for byte the same; no ABI or step change (ABI 74, `tests/steps.txt` unchanged). Base 78d0bf39. Data:
+`bench/boot/results/perf94/` (README). M4 Mac mini, macOS, Chrome for Testing 158.0.8127.88; the dev VM's Chromium
+155.0.8059.84 for the counts.
+
+**The re-count** (a diagnostic core, `diag.py`, on the dev VM; loop 71's were on 16-block regions):
+
+| | regions of several blocks | never settled | their share of the members emitted | settle within 8 / 16 emissions |
+|---|---|---|---|---|
+| `boot` | 2726 | 562 (20.6%) | 61.9% | 390 / 541 |
+| `user` | 3618 | 771 (21.3%) | 62.9% | 540 / 740 |
+| `node` | 8772 | 2706 (30.8%) | 71.1% | 1742 / 2445 |
+
+64-70% of the unsettled regions would settle in eight emissions and 90-96% in sixteen: a slow fixed point (a state
+moves one edge an emission), not a cycle. So their number of emissions can't be cut without changing their code
+(fewer, or `Regs::loose` earlier, gives other entry states; more would settle most of them, a different and longer
+code path), and the work to cut is what each emission emits: between two settling emissions, most members' entry
+states are the same. Re-emitting only the changed ones would emit 17-21% fewer members in all (22-28% fewer in the
+unsettled regions). That bounded the gain at ~1/5 of emission, ~30 ms of the boot gate and ~130 ms of `node` on the
+Mac, if emission were proportional to members.
+
+**The rule.** What a member's edges carry (the register state and lazy flags before they conform to the target's)
+is a function of `plain` and the member's own entry states: `emit_region` sets each member's registers and flags at
+its start, and the target's states shape only the code on the edge. So a settling emission whose `plain` is the one
+before's emits the members whose entry register or flag state changed (`redo`), skips the others' code, and merges
+their recorded edges in their order; whether an edge contradicts its target's lazy flags (`bad`) is found again from
+what it carried. One where every member changed, or `plain` did (the first after the first emission, outside loops),
+is whole and may be kept, as before; one with every member unchanged is the one before. An analysis's code is never
+the function's, so a region that settled in one ends with a whole emission (the base kept the settling one). An
+earlier rule that also re-emitted a member whose successors' flag states changed was dropped: no test or workload
+could tell it apart, the edge's recorded state being taken before its stores.
+
+**Counted again on the change** (`diag2.py`, guest instructions emitted): 21.3% fewer on `boot`, 20.9% on `user`,
+20.4% on `node` (e.g. `node`: 2.08 M → 1.66 M; of the partial emissions' 1.17 M, half skipped; the whole last
+emissions added back 0.16 M). Time fell less: a partial emission keeps a region's fixed costs (the function's
+setup, the prologue, the entries, the labels and the merges), and `module` outside `emit_region` (the plans, the
+module's assembly) is unchanged. In Node's deterministic Alpine boot (`--cpu-prof`, base and new alternated twice)
+`module` took 206.9-226.1 ms against 196.0-209.7 ms.
+
+**Correctness.** Wherever debug assertions are on, each partial emission is checked against a whole one
+(`Emission::found`: the states, the dead flags, `bad` and every edge). A core with that check an `assert!` in release
+ran `boot`, `user`, `node` and `smp` in the dev VM's Chromium (two pairs each) with no failure. `bench/jit/dump-modules.ts`:
+Buildroot's 43 modules and Alpine's 300 identical between base and new but three that differ only in the CRC32
+table's address in the core's memory (an `i32.load` offset, 128 bytes later in the new core's data), so no x64 or
+arm64 static count moves. New test: `lazy_flags_cross_members_that_keep_them` (a loop of four members holding no
+register, a compare's lazy flags reaching the last across three edges: a member whose flag state alone changes).
+Planted: `redo` ignoring a member's flag state fails that test (its check, and the assertion); ignoring its register
+state fails eight tests; ignoring a change of `plain` two; the replayed edges not recorded for the next analysis
+six.
+
+**The Mac** (the paired command against the base; counters from it):
+
+| | pairs | wall | cycles | instructions | `emitNs` |
+|---|---|---|---|---|---|
+| `node` | 6 | **−0.82% [−1.53, −0.11] `LOWER`** | −0.58% `LOWER` | −0.70% `LOWER` | 671 → 598 ms (−10.8%) |
+| `smp` | 8 (cap) | +0.32% [−2.91, +3.66] `open` | +0.84% `open` | +0.08% `open` | 1231 → 1121 ms (−9.0%) |
+| `user` | 12 (cap) | −0.46% [−1.43, +0.52] `open` | −0.34% `open` | −0.34% `LOWER` | 212 → 192 ms (−9.6%) |
+| `boot` | 11 | **−0.38% [−0.76, −0.00] `LOWER`** | −0.20% `same` | −0.60% `LOWER` | 157 → 141 ms (−10.4%) |
+
+JIT wasm, modules and interpreted steps are equal on `node` (on `smp` within its run-to-run spread); `planNs` and
+`compileNs` unchanged. The footprint on `node` was 1488 against 1219 MiB, the bimodal footprint loop 71 saw in
+both arms alike; on `smp` 2334 against 2348 MiB.
+
+- The parallel boots (3 rounds alternated, `boots/summary.txt`): `smp_alpine_jit` totals −0.2% (n1), −0.3% (n2, the
+  rounds just apart: 4630-4653 against 4616-4628 ms), −0.2% (n4); `smp_user_jit_4` −2.4% (10489-10599 against
+  10309-10448 ms), its phases spread as loop 71 saw. Peak RSS the same (1543-1548 against 1555-1672 MiB, 2029-2041
+  against 2034-2035).
+- Firefox's pages session (`PAGES=wiki,mdn`, 4 sessions each, the first arm alternating): **emission 1371-1383 →
+  1228-1253 ms (−9.6%, no overlap)**, the cache lock's waits 511-568 → 466-499 ms; `pagesS` 30.2-31.1 against
+  29.9-30.9 s, busy MIPS 446-454 against 452-457, the renderer's CPU 127.3-129.6 against 125.3-127.4 s
+  (overlapping); modules, the compiled share (95.0%) and interpreted steps alike. One vCPU stall of 22 ms in one new
+  session (none in the fourth round's), none in the base's.
+
+**Why it is kept.** The output is the same and every measure of the work agrees (`emitNs` −9 to −11% on the Mac, the
+pages session's emission −9.6%), `node` is `LOWER` past the floor and the boot gate `LOWER`, the userspace gate
+`open` on the side of a gain. Memory: an emission holds its edges (a few
+dozen 32-byte records) while its region settles, dropped at the function's end. CI: `scripts/ci.sh` (746 s) and
+`scripts/ci-jit.sh` (282 s) passed.
