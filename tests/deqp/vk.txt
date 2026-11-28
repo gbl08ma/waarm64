@@ -7731,8 +7731,8 @@ dEQP-VK.memory.mapping.suballocation.random.99_map2
 dEQP-VK.memory.mapping.suballocation.random.9_map2
 # VK4 T10: the passing cases of samples of image_to_image (size-compatible copies between formats, compressed and
 # uncompressed), resolve_image, depth_stencil_msaa_copy, buffer_to_depthstencil, depthstencil_to_buffer, blit_image,
-# depth_stencil_resolve and multisample_resolve, at the end; out, the 37 of them that fail on the M4
-# (https://github.com/gbl08ma/waarm64/issues/119).
+# depth_stencil_resolve and multisample_resolve, at the end; out, the 37 of them that failed on the M4: the 11
+# e5b9g9r9 copies still do (https://github.com/gbl08ma/waarm64/issues/326), the rest in since VK4 T12 and T50.
 dEQP-VK.api.copy_and_blit.copy_commands2.blit_image.all_formats.color.1d.b8g8r8a8_unorm.b8g8r8a8_unorm.optimal_general_linear
 dEQP-VK.api.copy_and_blit.copy_commands2.blit_image.all_formats.color.1d.r16g16b16a16_uint.r16g16b16a16_uint.optimal_general_nearest
 dEQP-VK.api.copy_and_blit.copy_commands2.blit_image.all_formats.color.1d.r32g32_uint.r32g32_uint.optimal_general_nearest
@@ -84175,7 +84175,7 @@ dEQP-VK.glsl.texture_functions.textureprojoffset_pcoffset.repeat.usampler3d_vert
 # a local array indexed by gl_DrawIndex: Apple's Metal compiler misreads a thread array of u32s; scratch is vec4s now),
 # passing on SwiftShader and the M4, in mustpass order, at the end. Out: robustness.image_robustness's
 # push.*rgba32ui*storage_image.fmt_qual.img.samples_1.3d.vert, which fails on the M4 as its cube cases do (the printer of
-# before too: https://github.com/gbl08ma/waarm64/issues/119).
+# before too: https://github.com/gbl08ma/waarm64/issues/323).
 dEQP-VK.draw.dynamic_rendering.complete_secondary_cmd_buff.shader_draw_parameters.draw_index.draw
 dEQP-VK.draw.dynamic_rendering.complete_secondary_cmd_buff.shader_draw_parameters.draw_index.draw_indexed
 dEQP-VK.draw.dynamic_rendering.complete_secondary_cmd_buff.shader_draw_parameters.draw_index.draw_indexed_instanced
