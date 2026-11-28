@@ -334,7 +334,7 @@ impl Vm {
         if self.parallel() {
             self.refresh_all();
         } else {
-            self.publish();
+            self.publish(true);
         }
         Ok(())
     }

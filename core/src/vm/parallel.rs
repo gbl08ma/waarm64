@@ -128,10 +128,6 @@ unsafe fn fast_exit(ctx: *const (), c: usize, v: &mut Vcpu, insn: u32, e: Exit) 
     vm.fast(c, v, insn, e)
 }
 
-/// Steps between two publications of a running vCPU's JIT and TLB counters
-/// (`publish_cpu`): ~0.1 ms of guest code at the JIT's speed.
-const JIT_PUBLISH: u64 = 1 << 16;
-
 /// The longest chunk `vm_set_chunk` gives polled code (a test's: its setters
 /// then show as latency; the polls compare it with an i32 `acc`).
 const POLL_MAX: u64 = 1 << 30;

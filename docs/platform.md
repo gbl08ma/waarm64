@@ -87,11 +87,19 @@ NOPs, and every step count is what it was before M7.
   compiled code isn't counted: a chunk ends at the first poll past its steps, or sooner when the vCPU's stop word
   drops ("Parallel SMP" below).
 - **Between chunks:** the signal word, device completion rings, the interrupt lines into the GIC,
-  and IRQ entry (vector +0x80) when `PSTATE.I` is clear.
+  and IRQ entry (vector +0x80) when `PSTATE.I` is clear. The steps and the PC are published at every chunk's end,
+  the JIT's and the TLBs' counters every 65,536 steps and at the run's end (`JIT_PUBLISH`, as parallel SMP does;
+  at every chunk's end the ~40 words cost ~40 ns a call, ~0.5% of the gates: PERF loop 88).
 - **An MSR or ERET that unmasks IRQs ends the chunk** (`Exit::Resync`), so a pending IRQ is taken
   right after it. Under the JIT, deterministic round-robin keeps an unmasking MSR inline while no IRQ can be pending
   and no host signal has arrived ([jit.md](jit.md) "Emission", `jit::Unmask`); realtime round-robin never does, as a timer comes due and devices
-  signal mid-chunk (the exit is what takes their IRQ at once; `tests/baremetal/unmask.c`). That makes the chunk size invisible to deterministic guests: every suite takes
+  signal mid-chunk (the exit is what takes their IRQ at once; `tests/baremetal/unmask.c`). In the same chunks
+  (`Unmask::ok`, no host signal pending) an ERET's `Exit::Resync` and the synchronous exceptions the dispatcher
+  returns (SVC, aborts but an MMIO access's) are finished in place too, by round-robin's fast completions
+  (`vm::rr_fast`, through `jit::State::fast` as parallel SMP's): the ERET's block goes on, an exception is taken
+  and counted as `Vm::exception` would, and the dispatcher goes on from the new PC, as the next chunk would have
+  (PERF loop 88: the gates' chunk ends 1.36 M → 0.72 M in the userspace benchmark, 0.60 M → 0.22 M in Alpine's
+  boot; `tests/baremetal/eret.c`). That makes the chunk size invisible to deterministic guests: every suite takes
   identical steps at any `CHUNK` from 1024 to 131,072. (It was 1024 until M6, when ERET didn't end
   the chunk; the fix let `CHUNK` grow 32×, which cut Alpine's JIT boot by 14%: hot JIT loops return
   to the run loop far less often.)

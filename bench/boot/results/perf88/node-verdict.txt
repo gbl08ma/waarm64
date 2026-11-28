@@ -1,0 +1,9 @@
+node: 10 pairs against base
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  new             10 +0.20% [-0.04%, +0.45%] same         +0.20% [-0.08%, +0.47%] same         -0.20% [-0.29%, -0.10%] LOWER        +0.20% [-0.12%, +0.53%] open        
+  ended: every stop measure decided
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  base                 9288       0.9814         1226        662.4        212.0        47.26         1417    484686748
+  new                  9299       0.9812         1478        665.2        212.6        47.30         1417    484981500
+arms: base 9784751 bytes; new 9787623 bytes
+rule: a pair a fresh browser (warm-up same, 1 round), pairs 4-12, band ±0.5%, stop on cycles and wall, each interval's tail 2.00e-3 (0.01 over all its looks, an interval: several arms and measures each take that chance); Chromium 158.0.8127.88

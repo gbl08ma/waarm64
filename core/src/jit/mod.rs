@@ -68,10 +68,12 @@ pub struct State {
     pub jc: *mut Jc,
     pub hot: *mut u32,
     pub cache: Option<Box<Jit>>,
-    /// Parallel SMP's fast completions (`vm::parallel`, set by its run loop
-    /// before each chunk; `None` elsewhere): an exit a helper call raised that
-    /// the run loop would do nothing more with is finished in place, and the
-    /// block goes on.
+    /// Fast completions, set by the run loop before each chunk: parallel SMP's
+    /// (`vm::parallel`) and deterministic round-robin's (`vm::rr_fast`, PERF loop
+    /// 88); `None` elsewhere. An exit a helper call raised that the run loop
+    /// would do nothing more with is finished in place, and the block goes on;
+    /// round-robin's also finishes some that the dispatcher would return
+    /// ([`DISPATCHER`]), which then dispatches on.
     pub fast: Option<Fast>,
     /// The counter as compiled code reads it (`emit::mrs`): set by parallel
     /// SMP's realtime run loop before each chunk, zero (`last` 0) elsewhere.
@@ -150,7 +152,8 @@ pub struct Counter {
 
 /// [`State::fast`]: `f(ctx, cpu, vcpu, insn, exit)` finishes `exit`, which
 /// the helper raised for `insn` (its PC is the interpreter's: on the
-/// instruction unless the exit retired it), and returns true, or returns false
+/// instruction unless the exit retired it; `insn` [`DISPATCHER`]: the
+/// dispatcher returned it), and returns true, or returns false
 /// and changes nothing, but a device access's, which may have retired, its
 /// outcome left in [`State::io`] (the emitter's failure arms reload the
 /// registers it writes: `emit::fallback_arm`).
@@ -2577,8 +2580,12 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
             s.inline_steps += ran - (vr.jit.helper_steps - helped);
             jit.table.clock += k;
             done += k;
-            if e.is_some() {
-                return (done, e);
+            if let Some(e) = e {
+                if !polled && at_dispatcher(vr, e) {
+                    done += 1;
+                    continue;
+                }
+                return (done, Some(e));
             }
         } else {
             let m = match r {
@@ -2611,8 +2618,12 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
             let (k, e) = r.unwrap_or_else(|| interp::steps(cpu, mem, Some(tlb), m.min(left)));
             t.clock += k;
             done += k;
-            if e.is_some() {
-                return (done, e);
+            if let Some(e) = e {
+                if !polled && at_dispatcher(vr, e) {
+                    done += 1;
+                    continue;
+                }
+                return (done, Some(e));
             }
         }
     }
@@ -2854,6 +2865,29 @@ pub unsafe extern "C" fn jit_exec_span(
         }
     }
     n
+}
+
+/// [`Fast::f`]'s `insn` for an exit that [`steps`]' dispatcher returns (`at_dispatcher`): no
+/// helper raised it, so no block goes on after it. An unallocated encoding: no helper's exit
+/// that a hook finishes comes from it.
+pub const DISPATCHER: u32 = u32::MAX;
+
+/// Whether [`State::fast`] finishes in place an exit that [`steps`]' dispatcher would return
+/// (deterministic round-robin's hook, PERF loop 88: an `Exit::Resync` and the synchronous
+/// exceptions the run loop would only take, `Vm::exception`), after which it dispatches on
+/// from the PC as the run loop's next chunk would. Not called by polled code.
+#[inline]
+fn at_dispatcher(v: &mut Vcpu, e: Exit) -> bool {
+    let local = match e {
+        Exit::Resync | Exit::Svc(_) | Exit::Fetch(_) => true,
+        Exit::Fault(f) => f.kind != crate::mem::FaultKind::Bus,
+        _ => false,
+    };
+    // SAFETY: the run loop that set `fast` is running this vCPU, and no block is running.
+    local
+        && v.jit
+            .fast
+            .is_some_and(|f| unsafe { (f.f)(f.ctx, f.cpu, v, DISPATCHER, e) })
 }
 
 /// A helper's exit through [`State::fast`], if it has one and that finishes it.

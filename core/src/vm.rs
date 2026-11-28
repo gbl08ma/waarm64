@@ -632,6 +632,8 @@ pub struct Vm {
     steps: u64,
     /// Ticks WFI jumped over.
     skipped: u64,
+    /// Round-robin: `steps` at the last publication of the JIT's and TLB's counters (`publish`).
+    jit_at: u64,
     clock: Clock,
     /// Parallel mode: the latest counter value any vCPU read (it never goes back).
     last: AtomicU64,
@@ -923,6 +925,7 @@ impl Vm {
             },
             steps: 0,
             skipped: 0,
+            jit_at: 0,
             clock: Clock::new(),
             last: AtomicU64::new(0),
             dsb_limit_ns: parallel::DSB_LIMIT_NS,
@@ -1147,7 +1150,15 @@ impl Vm {
                 0
             };
             self.vcpus[c].jit.ticks = jit::StepClock { end, wrote: 0 };
+            // Where an unmasking MSR may stay inline, an ERET's `Exit::Resync` and the synchronous
+            // exceptions the run loop would only take are finished in place (`rr_fast`).
+            self.vcpus[c].jit.fast = (ok != 0).then_some(jit::Fast {
+                f: rr_fast,
+                ctx: Arc::as_ptr(&self.shared).cast(),
+                cpu: c,
+            });
             let (k, e) = self.chunk(c, n);
+            self.vcpus[c].jit.fast = None;
             self.vcpus[c].jit.unmask = jit::Unmask::default();
             let wrote = self.vcpus[c].jit.ticks.wrote != 0;
             self.vcpus[c].jit.ticks = jit::StepClock::default();
@@ -1168,14 +1179,14 @@ impl Vm {
             {
                 self.tally_timer(c, i, end);
             }
-            self.publish();
+            self.publish(false);
             if let Some(e) = e
                 && let Some(kind) = self.handle(e)
             {
                 break kind;
             }
         };
-        self.publish();
+        self.publish(true);
         if let Some(w) = self.mem.watch() {
             for (c, v) in self.vcpus.iter_mut().enumerate() {
                 v.tlb.leave(&self.mem, c);
@@ -1288,11 +1299,17 @@ impl Vm {
         r
     }
 
-    /// Copies the run loop's own counts into the shared counters (once per chunk).
-    fn publish(&self) {
+    /// Copies the run loop's own counts into the shared counters: the steps and the PC at
+    /// every chunk's end, the JIT's and the TLBs' counters every [`JIT_PUBLISH`] steps
+    /// or with `all` (the run's end), as parallel SMP's `publish_cpu` does (PERF loop 88).
+    fn publish(&mut self, all: bool) {
         let c = &self.shared.cpus[0].counters;
         c.retired.store(self.steps, Ordering::Relaxed);
         c.pc.store(self.vcpus[self.cur].cpu.pc, Ordering::Relaxed);
+        if !all && self.steps.wrapping_sub(self.jit_at) < JIT_PUBLISH {
+            return;
+        }
+        self.jit_at = self.steps;
         let t = self.vcpus.iter().map(|v| &v.tlb.stats);
         let (misses, walks, flushes) = t.fold((0, 0, 0), |(m, w, f), s| {
             (m + s.misses, w + s.walks, f + s.flushes)
@@ -1777,6 +1794,59 @@ fn complete(p: &mut Platform, mem: &Mem, shared: &Shared, ns: u64) -> Option<u64
         }
     }
     first
+}
+
+/// Steps between two publications of a running vCPU's JIT and TLB counters
+/// (round-robin's `Vm::publish`, parallel SMP's `publish_cpu`): ~0.1 ms of guest
+/// code at the JIT's speed.
+const JIT_PUBLISH: u64 = 1 << 16;
+
+/// [`jit::Fast::f`] for deterministic round-robin (PERF loop 88), set for a chunk only where
+/// an unmasking MSR may stay inline (`jit::Unmask::ok`: no IRQ for the vCPU, none comes
+/// within the chunk but at an exit, the xHCI quiet, not realtime), and only while no host
+/// signal is pending (the byte `Unmask::irq` points at): finishes an `Exit::Resync` (an
+/// ERET's from a helper, which the block goes on from; any from the dispatcher, which
+/// dispatches on) and a synchronous exception the dispatcher returns (an SVC, an abort but
+/// an MMIO access's), as the run loop's `handle` would and its next chunk's top would find
+/// nothing to do: no IRQ to take (the ERET's unmask finds none, an exception masks them),
+/// no signal, no deadline (deadlines bound the chunk). Steps don't move.
+///
+/// # Safety
+/// `ctx` is the `Shared` of the `Vm` whose run loop set the hook.
+unsafe fn rr_fast(ctx: *const (), _: usize, v: &mut Vcpu, insn: u32, e: Exit) -> bool {
+    // SAFETY: guaranteed by the caller.
+    let sh = unsafe { &*ctx.cast::<Shared>() };
+    if sh.signal.load(Ordering::Acquire) & 0xff != 0 {
+        return false;
+    }
+    match e {
+        Exit::Resync
+            if insn == jit::DISPATCHER
+                || crate::decode::decode(insn) == crate::decode::Op::ERET =>
+        {
+            #[cfg(feature = "diag")]
+            {
+                v.diag[crate::tally::RESYNC_HERE as usize] += 1;
+            }
+            true
+        }
+        Exit::Fault(Fault {
+            kind: FaultKind::Bus,
+            ..
+        }) => false,
+        // From the dispatcher only: a helper's would leave its block going on.
+        Exit::Svc(_) | Exit::Fetch(_) | Exit::Fault(_) if insn == jit::DISPATCHER => {
+            take_exception(&mut v.cpu, e);
+            let ec = (v.cpu.esr_el1 >> 26) as usize & 63;
+            bump(&sh.cpus[0].counters.exceptions[ec]);
+            #[cfg(feature = "diag")]
+            {
+                v.diag[crate::tally::EXCEPTION_HERE as usize] += 1;
+            }
+            true
+        }
+        _ => false,
+    }
 }
 
 /// Copies the JIT's counts into a counters block.

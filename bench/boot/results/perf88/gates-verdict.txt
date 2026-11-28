@@ -1,0 +1,20 @@
+user: 12 pairs against base
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  thr             12 -0.18% [-0.90%, +0.54%] open         -0.22% [-0.84%, +0.41%] open         -0.35% [-0.46%, -0.24%] LOWER        -0.18% [-0.96%, +0.60%] open        
+  new             12 -0.41% [-0.80%, -0.01%] LOWER        -0.38% [-0.68%, -0.09%] LOWER        -0.73% [-0.81%, -0.65%] LOWER        -0.39% [-0.75%, -0.04%] LOWER       
+  ended: the cap of 12 pairs
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  base                 9140       0.9876         1197        210.0         68.9        15.06          493    182991034
+  thr                  9101       0.9883         1097        209.9         68.7        15.06          493    182991034
+  new                  9107       0.9881         1098        210.3         69.2        15.06          492    183280523
+boot: 12 pairs against base
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  thr             12 -0.12% [-0.46%, +0.23%] same         -0.05% [-0.28%, +0.18%] same         -0.38% [-0.39%, -0.37%] LOWER        -0.04% [-0.25%, +0.17%] same        
+  new              6 -0.78% [-1.40%, -0.16%] LOWER        -0.43% [-0.81%, -0.06%] LOWER        -1.04% [-1.06%, -1.02%] LOWER        -0.50% [-0.86%, -0.13%] LOWER       
+  ended: every stop measure decided
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  base                 3330       0.9819         1119        156.9         45.7        11.23          293    142995624
+  thr                  3324       0.9818         1046        157.0         46.0        11.23          293    142995624
+  new                  3301       0.9822         1249        156.9         45.9        11.23          292    143097220
+arms: base 9784751 bytes; thr 9785975 bytes; new 9787623 bytes
+rule: a pair a fresh browser (warm-up same, 1 round), pairs 4-12, band ±0.5%, stop on cycles and wall (user), cycles and wall (boot), each interval's tail 2.00e-3 (0.01 over all its looks, an interval: several arms and measures each take that chance); Chromium 158.0.8127.88

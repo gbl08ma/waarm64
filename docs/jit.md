@@ -1320,7 +1320,13 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   chunk has fast completions, and there the block also loads two atomic bytes, the vCPU's IRQ line (`CpuPar::irq`) and
   its queue's `pending`, as `fast` would decide (without the drain, another vCPU's TLBI IS waits in its DSB for this
   one's next drain point); not the published ASID, which a DAIF write doesn't change (a TTBR, TCR or SCTLR write that
-  does republishes it at once: platform.md "Parallel SMP"). Else, and for ERET, the helper's `Exit::Resync` lets the run loop take it. Steps don't move
+  does republishes it at once: platform.md "Parallel SMP"). Else the helper's `Exit::Resync` lets the run loop take
+  it. An ERET's `Exit::Resync` from its helper is finished in place under the same conditions by the run loop's fast
+  completions (`State::fast`: parallel SMP's `Vm::fast`, deterministic round-robin's `vm::rr_fast` since PERF loop 88,
+  set only for a chunk with `ok`, and checking the signal byte), and round-robin's also finishes what the dispatcher
+  would return from `jit::steps`, an `Exit::Resync` and an SVC or an abort (not an MMIO access's: `jit::DISPATCHER`
+  as the instruction), which then dispatches on from the new PC; a helper's abort is never finished there (its block
+  would go on past the access). Steps don't move
   (deterministic chunks end at the same places). The differential test runs the inline arm against the interpreter
   through `jit_unmask` (and `jit_parallel`, ABI 64), and counts the helper calls each condition sends there (a
   round-robin block's signal byte, a parallel one's IRQ and pending bytes);

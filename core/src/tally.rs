@@ -42,6 +42,11 @@ pub const HOST_CALL: u32 = 11;
 pub const HOST_RET: u32 = 12;
 /// Polled code (parallel SMP): a poll of the stop word (`jit::emit::poll`) run, whether or not it stopped.
 pub const POLL: u32 = 13;
+/// Round-robin (PERF loop 88, `vm::rr_fast`): an `Exit::Resync` finished in place, from an ERET's helper or the
+/// dispatcher, instead of ending the chunk.
+pub const RESYNC_HERE: u32 = 14;
+/// The same for a synchronous exception (an SVC, an abort) the dispatcher returned.
+pub const EXCEPTION_HERE: u32 = 15;
 /// Slots below this are compiled code's (copied from the vCPU's table at each publication).
 pub const JIT_SLOTS: usize = 16;
 

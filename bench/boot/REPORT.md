@@ -9312,3 +9312,74 @@ CI: `scripts/ci.sh` (708 s; its first runs failed on two files past the page's 3
 tests/page-restore.test.ts's window, both fixed above), `scripts/ci-debian.sh` (258 s), `scripts/ci-machines.sh`
 (335 s), `scripts/ci-graphics.sh` (318 s) and `scripts/ci-deqp.sh` (655 s) passed, each alone.
 
+
+## PERF loop 88: round-robin's chunk ends, the publication and ERET and exceptions in place (2026-11-28)
+
+The queue's row 22: deterministic round-robin's run loop published every counter at every chunk's end (`Vm::publish`)
+and ended the chunk at every unmasking ERET, SVC and abort, the gates' own cost (the page runs parallel SMP, whose
+publication is throttled and whose ERETs finish in place already). Raw: `results/perf88/` (the diagnostic counts
+`counts-base.json` and `counts-new.json`, the publication's cost `publish-*.json`, the Mac A/Bs `gates-ab.json`,
+`node-ab.json` and their verdicts).
+
+**Counts** (the diagnostic core, `bench/boot/preempt-counts.ts boot user`, Node on the dev VM, deterministic, 1 vCPU;
+loop 49's had been taken before 64-block regions):
+
+| chunk ends | boot (2.65 G steps) | userspace (10.43 G) |
+|---|---|---|
+| all | 604,712 | 1,362,450 |
+| the chunk's steps (budget, deadlines) | 68,514 | 314,276 |
+| `Exit::Resync` (an unmasking ERET; DAIF writes stay inline) | 249,095 | 445,346 |
+| SVC / other exceptions (aborts) | 112,106 / 47,666 | 136,718 / 89,571 |
+| platform (the GIC's IAR and EOIR, two an IRQ) | 89,689 | 339,132 |
+| device (MMIO) | 29,894 | 29,861 |
+
+**What one publication costs:** a diagnostic core calling `publish` ten more times at each chunk's end took the
+userspace gate from 10.70 · 10.85 s to 11.33 · 11.30 s: ~41 ns a call (~40 relaxed stores and the JIT's `Stats` copy),
+so ~55 ms of the gate at 1.36 M calls, ~0.5%; a bound at the floor. The rest of a chunk end (the run loop's top:
+the signals, the xHCI's tick, the timer lines, the pick, the IRQ check, the chunk's set-up; `jit::steps`' exit and
+re-entry) is what finishing an exit in place saves: ~670 K of the userspace gate's ends and ~410 K of the boot's.
+
+**What was built:**
+- *The publication throttled*, as parallel SMP's `publish_cpu`: the steps and the PC at every chunk's end, the JIT's
+  and the TLBs' counters every `JIT_PUBLISH` (65,536) steps and at the run's end (and after a restore).
+- *ERET and exceptions in place* (`vm::rr_fast`, a round-robin `jit::Fast` hook, set for a chunk only where
+  `Unmask::ok` is, and checking the signal byte): an ERET's `Exit::Resync` from its helper retires and its block goes
+  on to its indirect exit, as parallel SMP's `fast` does; and what `jit::steps`' dispatcher would return, an
+  `Exit::Resync` or an SVC, an instruction abort or a data abort (not an MMIO access's, `FaultKind::Bus`), is
+  finished there (`jit::at_dispatcher`, the hook called with `jit::DISPATCHER` as the instruction: the exception
+  taken and counted by EC as `Vm::exception` does) and the dispatcher goes on from the new PC within the same chunk.
+  A helper's abort is never finished in place: its block would go on past the access. Not in polled code. Compiled
+  code is unchanged (no emitter change), so the static counts are the base's.
+
+After: chunk ends 604,712 → 216,680 (boot) and 1,362,450 → 723,697 (userspace); in place 246,531 Resyncs and 159,768
+exceptions (boot), 441,663 and 226,285 (userspace). Steps don't move: Alpine 2,650,367,147 and the userspace
+benchmark 10,431,311,691, as in tests/steps.txt; IRQs taken identical (42,060 and 166,780).
+
+**The gates** (the Mac host, M4, Chrome for Testing 158.0.8127.88 headless; `bench/ab-mac.sh`, `WORKLOADS=user,boot`,
+three arms: `base` c9f69b80, `thr` the throttle alone, `new` both):
+
+| | `thr` against base | `new` against base |
+|---|---|---|
+| `user` (12 pairs, the cap) | wall −0.18% [−0.90%, +0.54%] open; instructions −0.35% LOWER | **wall −0.41% [−0.80%, −0.01%] LOWER**; cycles −0.38% [−0.68%, −0.09%] LOWER |
+| `boot` | 12 pairs: wall −0.12% [−0.46%, +0.23%] **same** | 6 pairs: **wall −0.78% [−1.40%, −0.16%] LOWER**; cycles −0.43% LOWER |
+
+Medians (ms): user 9,140 / 9,101 / 9,107, boot 3,330 / 3,324 / 3,301. `node` (the browser ranking, 10 pairs): wall
++0.20% [−0.04%, +0.45%] **same** (9,288 → 9,299 ms). Compile side, base → new: `emitNs` 210.0 → 210.3 ms (user),
+156.9 → 156.9 (boot), 662.4 → 665.2 (node); `compileNs` 68.9 → 69.2, 45.7 → 45.9, 212.0 → 212.6; JIT wasm 15.06,
+11.23 and 47.26 → 47.30 MiB; modules 493 → 492, 293 → 292, 1417 → 1417. Interpreted steps +0.2% (183.0 → 183.3 M
+in user): a chunk going on after an exit has fewer steps left, and a block longer than them runs interpreted. Memory:
+one u64 in the `Vm`; the renderer's RSS column moves ±100-250 MiB either way between arms (noise). **Kept**, both:
+the throttle alone is under the floor (as its 0.5% bound said), the pair moves the gates 0.4-0.8% and not a user's
+machine (parallel SMP had both already), as the row expected.
+
+Tests: `tests/baremetal/eret.c` (new): EL0 loops of SVCs, compiled, then of SVCs and unaligned loads with
+SCTLR_EL1.A (interpreted), the virtual timer re-armed at every IRQ a pseudo-random time ahead so it comes due in
+EL0's work and in the handlers' masked spins (then taken right after the ERET); each IRQ's ELR and counter reading
+hashed to the console, which the deterministic runs compare between the interpreter, the JIT and JIT-stress; passes
+on QEMU TCG (oracle.sh). **Planted bugs**, each caught, the source restored and the wasm rebuilt: the hook set
+without `ok` (eret, timerjit and unmask under the JIT), an exception in place not counted as a step (eret, counter,
+exceptions), a helper's abort finished in place (Buildroot's JIT boot: 20 G steps without powering off). The
+signal-byte check moves no step (a host signal's latency only), as for the inline unmask.
+
+CI: `scripts/ci.sh` (752 s) and `scripts/ci-jit.sh` (248 s) passed, each alone. No device exit changed (an MMIO
+access's abort still goes to the run loop), so not `ci-debian.sh` or `ci-usb.sh`.
