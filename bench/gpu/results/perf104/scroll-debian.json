@@ -1,0 +1,72 @@
+{
+ "date": "2026-11-28T17:41:45.183Z",
+ "chromium": "155.0.8059.84",
+ "results": [
+  {
+   "config": "pace60",
+   "round": 0,
+   "runs": 21,
+   "seconds": 7,
+   "flushes": 60,
+   "requests": 120,
+   "held": 60,
+   "fullMs": 951.4207137993404,
+   "frames": 60
+  },
+  {
+   "config": "pace75",
+   "round": 0,
+   "runs": 21,
+   "seconds": 6,
+   "flushes": 75,
+   "requests": 150,
+   "held": 75,
+   "fullMs": 941.7024997075399,
+   "frames": 66.66666666666667
+  },
+  {
+   "config": "nopace",
+   "round": 0,
+   "runs": 19,
+   "seconds": 7,
+   "flushes": 2350.714285714286,
+   "requests": 4701.428571428572,
+   "held": 0,
+   "fullMs": 0,
+   "frames": 124.85714285714286
+  },
+  {
+   "config": "nopace",
+   "round": 1,
+   "runs": 19,
+   "seconds": 7,
+   "flushes": 2406.8571428571427,
+   "requests": 4813.714285714285,
+   "held": 0,
+   "fullMs": 0,
+   "frames": 127.71428571428571
+  },
+  {
+   "config": "pace75",
+   "round": 1,
+   "runs": 22,
+   "seconds": 6,
+   "flushes": 75.16666666666667,
+   "requests": 150.16666666666666,
+   "held": 75.16666666666667,
+   "fullMs": 946.1608331600825,
+   "frames": 66.33333333333333
+  },
+  {
+   "config": "pace60",
+   "round": 1,
+   "runs": 20,
+   "seconds": 7,
+   "flushes": 60,
+   "requests": 120,
+   "held": 60,
+   "fullMs": 951.3464285305569,
+   "frames": 59.714285714285715
+  }
+ ]
+}

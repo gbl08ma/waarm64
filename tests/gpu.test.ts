@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { EDID_MAX, EDID_MIN, edid } from '../web/edid.ts';
-import { Gpu, MAX_RESOURCE, hashRgba, type GpuHooks, type ScanoutSource } from '../web/gpu.ts';
+import { Gpu, MAX_RESOURCE, PACE_HZ, hashRgba, type GpuHooks, type ScanoutSource } from '../web/gpu.ts';
 import type { HostCall } from '../web/virgl-host.ts';
 import { ramLayout } from '../web/ram.ts';
 
@@ -565,9 +565,9 @@ test('gpu: the floor goes when a desktop shows another resource whole or the con
   assert.deepEqual(size(), [640, 480]);
 });
 
-test('gpu: one flush is answered per frame, the first at once; what is queued behind a held one keeps its order', async () => {
+test('gpu: one flush is answered per pace, the first at once; what is queued behind a held one keeps its order', async () => {
   const { gpuBackend } = await import('../web/gpu-backend.ts');
-  const frame = 1000 / 60, slack = 2;
+  const frame = 1000 / PACE_HZ, slack = 2;
   // The pacing is against the clock: a stall of this process past a frame between the synchronous sends below (CI's
   // load) ends the frame early and rightly changes what is held. Such a run proves nothing and is taken again.
   for (let attempt = 1; ; attempt++) {
@@ -617,6 +617,40 @@ test('gpu: one flush is answered per frame, the first at once; what is queued be
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(done.length, 4);
     return;
+  }
+});
+
+test('gpu: a guest that flushes once a 60 Hz refresh by its own clock is never held, whatever its jitter and phase', async () => {
+  // Linux since 6.19 commits on its vblank timer: its flushes come 1/60 s apart, ±0.5 ms (the desktop on the Mac,
+  // bench/gpu/REPORT.md "PERF loop 104"), a little faster than the host's 60 Hz as often as slower. A pace of exactly
+  // 60 held every one of them by the clocks' phase and backed the replies behind up to a full queue. The clock is
+  // the test's, so nothing here waits for a timer.
+  const { gpuBackend } = await import('../web/gpu-backend.ts');
+  const ram = new Uint8Array(1 << 16);
+  const ctx = { ram: () => [ram], layout: ramLayout(ram.length), complete() {}, config: () => new Uint8Array(256), changeConfig() {}, untaken: () => 0, features: () => 0n };
+  const real = performance.now;
+  let now = 1000;
+  performance.now = () => now;
+  try {
+    const b = gpuBackend(ctx, { width: 800, height: 600, paceFlushes: true });
+    const send = (w0: number, c: Uint8Array) => {
+      ram.set(c, 0x100);
+      return b.request({ w0, queue: 0, read: [{ off: 0x100, len: c.length, mem: 0 }], write: [{ off: 0x800, len: 512, mem: 0 }] });
+    };
+    send(1, cmd(T.CREATE, 1, B8G8R8X8, 4, 3));
+    const flush = cmd(T.FLUSH, 0, 0, 1, 1, 1, 0);
+    const transfer = cmd(T.TRANSFER, 0, 0, 1, 1, 0n, 1, 0);
+    let held = 0;
+    for (let k = 0; k < 600; k++) {
+      // A refresh of 1/60 s with a deterministic jitter in ±0.5 ms; its commit a transfer, then the flush.
+      now = 1000 + (k * 1000) / 60 + 0.5 * Math.sin(k * 2.39996);
+      if (send(2, transfer) === undefined) held++;
+      if (send(3, flush) === undefined) held++;
+    }
+    assert.equal(held, 0, `replies held: ${held} of 1200`);
+    b.reset();
+  } finally {
+    performance.now = real;
   }
 });
 

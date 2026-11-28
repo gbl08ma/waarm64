@@ -164,7 +164,7 @@ shadow buffer and commits once per damage, with no fence on 2D. Three things kee
   (idle 2–4 ms). With it, flush-to-draw under a continuous disk read is 22–33 ms at worst (bench/io/REPORT.md "Loop 5
   judged"), so blk stays on that thread. (A Node reproduction starved timers either way: the evidence is Chromium's.)
 - **The transfer's gather works in 32-bit words** for the common formats (a full 1024×768 transfer 2.9 → 1.6 ms in Node).
-- **Flush replies are paced** (devices.md "Flush replies are paced"): one per 60 Hz frame, the first after an idle
+- **Flush replies are paced** (devices.md "Flush replies are paced"): one per 1/75 s, the first after an idle
   moment at once, with a queue of 16, which is the only back-pressure a 2D guest takes. Console scrolling on Debian
   (672×762; changed canvas frames a second, and `dmesg` runs per 10 s):
 
@@ -177,7 +177,17 @@ shadow buffer and commits once per damage, with no fence on 2D. Three things kee
 
   What remains is the guest's own cost of Linux's virtio-gpu fbdev path (a shadow copy and a commit per damage), which
   a host can't remove; `?display=simple` gives a machine that wants a fast console the old screen. The tests' guests
-  run unpaced with a queue of 64, so their bytes and step counts don't move.
+  run unpaced with a queue of 64, so their bytes and step counts don't move. (The table is at the first pace, 60 a
+  second. At 75 the same storm in today's Debian 13, on the dev VM: 21-22 `dmesg` runs per 10 s against 20-21 at 60
+  and 19 unpaced, at 2,400 flushes a second; bench/gpu/REPORT.md "PERF loop 104".)
+- **The pace is 75 a second, not the display's 60.** Linux since 6.19 gives virtio-gpu a vblank timer, so the desktop
+  guest (Arch, 7.2) commits once a refresh by its own clock: its flushes arrive 1/60 s apart (p10-p90 16.15-17.09 ms
+  on the Mac), as often a little early as late. Against a pace of exactly 1/60 s that is a queue loaded to its limit:
+  every flush was held (by whatever phase the two clocks settled at, 1-16 ms), the replies behind it waited too, and
+  on busy pages the guest's queue was full for up to 112 ms a second. At 1/75 s 0-3 flushes a second are held and the
+  queue is never full, while a guest that floods is still held (to 75 a second). A guest that waits for each flush's
+  reply is held to 75 a second too: none of ours does (Linux fences no 2D flush; our EDK2 flushes on a 16 ms timer:
+  firmware.md "Our patches"), and one that did would need a rate the host can't tell from a flood's.
 
 **Tried and lost** (don't build again):
 - *Lazy transfers* (note the rectangle, copy once per drawn frame): wrong by the protocol. The guest doesn't wait for
@@ -940,6 +950,16 @@ on the M4, the dev VM its Chromium 153; Sintel's trailer at 854×480 and 24 fps 
   (web/venus-import.ts keeps the last picture of each imported plane); worth a look only if a trace of playback shows
   the GPU worker collecting garbage. A hardware frame kept on the GPU would save its read-back (most of the Mac's
   ~1 ms) but not exactly ("Video's design").
+- **A hardware frame's fences** (`video/` under bench/gpu/results/perf104, `bench/gpu/chromium-video.ts`, 2026-11-28;
+  Chrome for Testing 158 on the M4, headed, which offers VideoToolbox; the guest's Chromium 156 playing Sintel's
+  H.264 trailer, 3 phases of 10 s): decoded in hardware a picture is out in 5.5-5.7 ms (software 211), and the fences'
+  mean wait is 0.84-0.90 ms against 0.18-0.20 in software (the GPU worker's backlog, `toGpuMs`, is all of it), at 96
+  fences a second; no frame dropped either way, 24 video frames and 60 animation frames a second. On the Windows VM's
+  NVIDIA (2026-11-25) the same was 2.6-3.3 ms against 0.27 and 2 frames dropped in 20 s. The likely cost is the
+  frame's read-back (`copyTo`, ~1 ms a 1080p picture on the Mac: "A picture's copy"), which is what an upload GPU to
+  GPU would save, and that the browser doesn't allow exactly (a `VideoFrame` reaches WebGL only as converted RGB:
+  "Video's design"). Not built: on the Mac nothing drops, and the only way around the read-back gives up exactness.
+  Worth a new look only if a platform's drops come back with numbers (the Windows VM's, headed).
 - The tools: `bench/video/copy.ts` (a picture's copy, before and after; `copy-mac.sh` on the Mac's hardware decoders),
   `upload.ts` (a picture's uploads; `TOOL=upload copy-mac.sh` on the Mac's GPU),
   `bench/video/v0.ts` (`vainfo`, FFmpeg and Firefox on the page, `CAPTURE=1`), `v1.ts` (the guest's FFmpeg

@@ -56,7 +56,10 @@ const t0 = Date.now();
 for (;;) {
   await s.page.waitForTimeout(3000);
   if (Number(await run('grep -c VSTAT /tmp/chromium.log')) > 2) break;
-  if (Date.now() - t0 > 300_000) throw new Error('the page never logged');
+  if (Date.now() - t0 > 300_000) {
+    log('chromium.log', await run('tail -n 40 /tmp/chromium.log; pgrep -c chromium'));
+    throw new Error('the page never logged');
+  }
 }
 results.startS = (Date.now() - t0) / 1000;
 log('playing', results.startS, 's');

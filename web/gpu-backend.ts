@@ -7,6 +7,7 @@ import {
   EVENT_DISPLAY,
   FLAG_FENCE,
   Gpu,
+  PACE_HZ,
   RESOURCE_FLUSH,
   SUBMIT_3D,
   type GpuHooks,
@@ -24,7 +25,7 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
       v.setUint32(0, v.getUint32(0, true) | EVENT_DISPLAY, true);
     });
   // Replies not sent yet, in order: a fenced command's waits for the host (`ready` once it has run), and with
-  // `paceFlushes` a flush that follows the last within a frame waits for the frame's end, with all behind it.
+  // `paceFlushes` a flush that follows the last within a pace (`PACE_MS`) waits for its end, with all behind it.
   type Held = {
     w0: number;
     len: number;
@@ -126,31 +127,36 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
   };
   let lastFlush = -Infinity;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const FRAME_MS = 1000 / 60;
+  // Faster than the display's 60 Hz: a guest that flushes once a refresh by its own clock arrives a little more
+  // or less than 1/60 s after the last, and a pace of exactly that held every flush by the clocks' phase (the
+  // queue's wait a random walk, the replies behind backing up to a full queue); at 1/75 s it is answered at once,
+  // and a held flush's phase drains in a frame or two. A guest that floods is still held to `PACE_HZ`.
+  const PACE_MS = 1000 / (o.paceHz ?? PACE_HZ);
   const pump = (fromTimer = false) => {
     while (held.length) {
       const h = held[0];
       if (!h.ready) return;
       if (h.flush && o.paceFlushes) {
         const now = performance.now();
-        if (!fromTimer && now - lastFlush < FRAME_MS) {
+        if (!fromTimer && now - lastFlush < PACE_MS) {
           timer ??= setTimeout(
             () => {
               timer = undefined;
               pump(true);
             },
-            Math.max(0, lastFlush + FRAME_MS - now),
+            Math.max(0, lastFlush + PACE_MS - now),
           );
           return;
         }
-        // A frame's end is a frame after the last, not when the timer got to run (timers are late: the rate would sag below 60).
-        lastFlush = fromTimer && now - lastFlush < 2 * FRAME_MS ? lastFlush + FRAME_MS : now;
+        // A pace's end is a pace after the last, not when the timer got to run (timers are late: the rate would sag).
+        lastFlush = fromTimer && now - lastFlush < 2 * PACE_MS ? lastFlush + PACE_MS : now;
         fromTimer = false;
       }
       held.shift();
       carry(h.write, h.reply);
       busy.heldMs += performance.now() - h.at;
       if (h.behind) busy.behindMs += performance.now() - h.at;
+      if (h.flush) busy.flushHeldMs += performance.now() - h.at;
       occupancy();
       busy.events?.push(performance.timeOrigin + performance.now(), 0x10000 + h.type);
       ctx.complete(h.w0, h.len);
@@ -213,7 +219,7 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
         armRings();
         return undefined;
       }
-      if (held.length || wait || (flush && now - lastFlush < FRAME_MS)) {
+      if (held.length || wait || (flush && now - lastFlush < PACE_MS)) {
         // `behind`: neither fenced nor a paced flush, held only for the replies before it.
         const h: Held = {
           w0: r.w0,
@@ -227,6 +233,7 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
           reply,
         };
         held.push(h);
+        if (flush) busy.flushesHeld++;
         occupancy();
         armRings();
         if (wait) {

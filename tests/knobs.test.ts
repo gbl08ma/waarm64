@@ -34,7 +34,8 @@ function oldWorker(query: URLSearchParams) {
   const snd = (query.get('snd') ?? '').split(',');
   return {
     gpu: {
-      paceFlushes: !knobs.includes('nopace'), queueSize: q ? Number(q.slice(1)) : 16, virglNull: knobs.includes('virgl-null'),
+      paceFlushes: !knobs.includes('nopace'), paceHz: knobs.find((k) => /^pace\d+$/.test(k)) ? Number(knobs.find((k) => /^pace\d+$/.test(k))!.slice(4)) : undefined, // paceHz added with the knob (bench/gpu/REPORT.md "PERF loop 104")
+      queueSize: q ? Number(q.slice(1)) : 16, virglNull: knobs.includes('virgl-null'),
       noWatch: knobs.includes('nowatch'), capture: knobs.includes('capture'),
       screen2d: knobs.includes('canvas2d') ? 'canvas2d' : knobs.includes('gl2d') ? 'webgl2' : 'auto',
     },
@@ -53,7 +54,7 @@ function oldWorker(query: URLSearchParams) {
 }
 
 const QUERIES = [
-  '', 'gpu=', 'gpu=,', 'gpu=2d', 'gpu=2d,canvas2d', 'gpu=2d,gl2d', 'gpu=canvas2d', 'gpu=nopace', 'gpu=nopace,q4', 'gpu=q32', 'gpu=virgl', 'gpu=virgl-null',
+  '', 'gpu=', 'gpu=,', 'gpu=2d', 'gpu=2d,canvas2d', 'gpu=2d,gl2d', 'gpu=canvas2d', 'gpu=nopace', 'gpu=nopace,q4', 'gpu=pace60', 'gpu=virgl-null,pace90,q32', 'gpu=q32', 'gpu=virgl', 'gpu=virgl-null',
   'gpu=virgl-null,capture', 'gpu=virgl,debug', 'gpu=virgl,video', 'gpu=virgl,novideo,swvideo,waitattached', 'gpu=vulkan', 'gpu=vulkan,nowatch',
   'gpu=virgl,vulkan,vkbitmap', 'gpu=vkcanvas', 'gpu=vkreadback', 'gpu=vkbreak=bitmap,vkbreak=canvas', 'gpu=vkvendor=nvidia', 'gpu=vkpoll=timeout',
   'gpu=vkpoll=pump', 'gpu=vkpipelines=sync', 'gpu=vkpipedelay=200', 'gpu=vkcache=off', 'gpu=vkimport=rewrite', 'gpu=vkpremake=on', 'gpu=vkqueues=2',
@@ -81,7 +82,7 @@ test('knobs: a few by value', () => {
   assert.equal(g.stats, true);
   assert.equal(g.vkShaderBudget, 64 * 2 ** 20);
   const d = parseDevKnobs(new URLSearchParams('gpu=2d,canvas2d,nopace,q4&snd=stats,timer&jit=nocw&vyield=3&vspin=20&vmiss=8'));
-  assert.deepEqual(d.gpu, { paceFlushes: false, queueSize: 4, virglNull: false, noWatch: false, capture: false, screen2d: 'canvas2d' });
+  assert.deepEqual(d.gpu, { paceFlushes: false, paceHz: undefined, queueSize: 4, virglNull: false, noWatch: false, capture: false, screen2d: 'canvas2d' });
   assert.deepEqual(d.snd, { wake: 'timer', stats: true });
   assert.equal(d.compileWorker, false);
   assert.equal(d.vcpuYieldMs, 3);

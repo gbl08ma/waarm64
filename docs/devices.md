@@ -1482,11 +1482,13 @@ What the guests do with it, and why it is built as it is: [graphics.md](graphics
   reads a backing on its own (a guest draws into buffers the host still shows). `RESOURCE_FLUSH` and `SET_SCANOUT`
   are what damage the screen (`GpuHooks.damage`, `scanout`); a transfer alone shows nothing.
 - **Flush replies are paced on the page** (`GpuOptions.paceFlushes`, `GpuSpec.queueSize` 16; off and 64 for the
-  test guests, whose bytes and step counts must not move): one `RESOURCE_FLUSH` is answered per 16 ms frame, the
+  test guests, whose bytes and step counts must not move): one `RESOURCE_FLUSH` is answered per 1/75 s (`PACE_HZ`; a
+  pace of the display's 1/60 s held every flush of a guest that commits on its own vblank: graphics.md "Console
+  scrolling and the flush pacing"), the
   first after an idle moment at once, and whatever is queued behind a held flush waits with it, in order. It is the
   only back-pressure a 2D guest takes: with replies instant a scrolling console commits thousands of times a
   second, and with the queue full it commits once per frame (graphics.md "Console scrolling and the flush pacing" has the numbers). Commands are never
-  delayed, only their replies. `?gpu=nopace,q<N>` on the page changes both, for measurements.
+  delayed, only their replies. `?gpu=nopace,q<N>` on the page changes both, and `pace<N>` the rate, for measurements.
 - **A guest that composites with llvmpipe shows stale frames** (graphics.md "Guests that composite with llvmpipe"): Mesa's software GL rasterizes
   on its own threads after `glFlush`, wlroots flips without waiting, so the transfer copies a buffer that is
   still being drawn and nothing tells the device when it is done. That is the guest's race (a real display hides it

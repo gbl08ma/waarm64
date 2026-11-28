@@ -660,3 +660,65 @@ wasn't re-run); the checksum wasn't touched.
 
 CI at this loop's commit, on the dev VM: scripts/ci.sh (770 s), ci-graphics.sh (326 s), ci-machines.sh (256 s),
 ci-debian.sh (322 s) and ci-usb.sh (9 s), all passed.
+
+## PERF loop 104: the flush pacing at 75 a second; a hardware frame's fences counted (2026-11-28)
+
+Queue row 34: [#56](https://github.com/gbl08ma/waarm64/issues/56) (the flush pacing's cap of 60 for a guest that waits
+on every flush) and [#46](https://github.com/gbl08ma/waarm64/issues/46) (hardware-decoded frames' fences). The Mac
+host, Chrome for Testing 158 on the M4; JSON in `results/perf104/`.
+
+**The flush pacing, counted.** The Firefox pages session from `pages.waarm64snap` (Arch's desktop, Linux 7.2, on
+`virgl-null`), with new counters: flushes held a second and their mean hold (`busy.flushesHeld`, `flushHeldMs`), and
+the gaps between the flushes' arrivals from the display's events (now recorded by the 2D presenter too; the
+session's `display.pacing`). At the pace of 60 (`pages/count-pace60.json` and the A/B's base arm):
+- **The guest commits on its own vblank** (Linux since 6.19 has a vblank timer on virtio-gpu): the flushes arrive
+  16.64-16.67 ms apart at the median, p10-p90 16.15-17.09 ms, 50-57% of them under 1/60 s.
+- **Every flush was held** (46-60 of 48-60 a second), by whatever phase the two clocks settled at: 1.0-16.1 ms on
+  average per page. A pace of exactly the guest's rate is a queue loaded to its limit; the replies behind a held
+  flush waited too (up to 3,159 ms of replies a second) and on busy pages the guest's queue was full for up to 112 ms
+  a second (the guest's next command waited for an entry).
+- **No guest of ours waits for each flush's reply**, the case #56 named: Linux fences no 2D flush and doesn't wait
+  for one, our EDK2 flushes on a 16 ms timer (docs/firmware.md "Our patches"). The cap's cost was this, a guest that
+  paces itself at the display's rate.
+
+**Built: the pace is 75 a second** (`PACE_HZ`, web/gpu.ts; `GpuOptions.paceHz`, `?gpu=pace<N>` for measurements). A
+guest at 60 then always arrives after the pace, and a flush held by a late commit drains its phase in a frame or two.
+The A/B (`pages/`, `bench/gpu/ab-mac.sh` with `GPU_base=virgl-null,pace60`, `GPU_new=virgl-null`, the same core,
+three rounds alternated):
+
+| | flushes held a second | mean hold, ms | queue full, ms a second | `pagesS` rounds | `startsS` rounds |
+|---|---|---|---|---|---|
+| pace 60 | 46-60 | 1.0-16.1 | 0-112 | 63.8 / 64.8 / 64.2 | 48.1 / 48.8 / 48.6 |
+| pace 75 | 0-3 | 0-7.2 | 0 | 64.8 / 63.9 / 65.8 | 49.2 / 48.3 / 49.8 |
+
+The session's times don't move (the rounds overlap: the guest doesn't wait for these replies, only for a queue
+entry, rarely); the held replies and the full queue are gone. No memory. **A guest that floods** (`scroll-debian.json`,
+Debian 13's Linux 6.12, no vblank, `dmesg` to tty1 for 10 s on the page in the dev VM, `?gpu=2d`, two rounds
+alternated): `dmesg` ran 20-21 times at 60, 21-22 at 75 and 19 unpaced (2,350-2,407 flushes a second); paced, 60 and
+75 flushes a second, the queue full 94-95% of the time, as designed. Test: tests/gpu.test.ts "a guest that flushes once
+a 60 Hz refresh by its own clock is never held" (a test clock, 600 refreshes at ±0.5 ms; planted: `PACE_HZ` 60, 1,195
+of 1,200 replies held, caught); the pacing test's frame is `PACE_HZ`'s.
+
+**#46: a hardware frame's fences on the Mac** (`video/`, `bench/gpu/chromium-video.ts` headed, which is what offers
+VideoToolbox; the guest's Chromium 156 on Sintel's H.264 trailer, 3 phases of 10 s; `target/arch/desktop-new.qcow2`,
+whose Chromium starts: the older `desktop.qcow2`'s lacks `libsimdutf.so.36`):
+
+| | picture out, ms | fences a second | mean wait, ms | longest, ms | dropped | video / animation frames a second |
+|---|---|---|---|---|---|---|
+| hardware | 5.5-5.7 | 96 | 0.84-0.90 | 7.4-9.7 | 0 | 24 / 60 |
+| software (`swvideo`) | 211 | 96 | 0.18-0.20 (one phase 1.01, a 210 ms outlier) | 1.9 | 0 | 24 / 60 |
+| hardware, pace 60 | 5.5-5.8 | 96 | 0.85-0.91 | 8.0-10.5 | 0 | 24 / 60 |
+
+The extra wait is the GPU worker's backlog (`toGpuMs` 0.82-0.88 against 0.16-0.18), as on the Windows VM's NVIDIA
+(2.6-3.3 ms, 2 drops in 20 s), consistent with the frame's read-back (`copyTo`, ~1 ms a 1080p picture: graphics.md "A
+picture's copy"). Bound: ≤ ~1 ms a picture, 2.5% of the GPU worker at 24 pictures a second, and no frame dropped on
+the Mac. The upload GPU to GPU the issue proposed isn't available exactly (a `VideoFrame` reaches WebGL only as
+converted RGB, graphics.md "Video's design"). Not built; #46 closed as this finding. The pace changes nothing in this
+session (its third row).
+
+Dev tools: `bench/gpu/ab-mac.sh`'s `GPU_<arm>` (an arm's `?gpu=`), `bench/gpu/guest-session.ts`'s `display.pacing`,
+`chromium-video.ts` printing the guest Chromium's log when the page never logs. After every Mac run
+`bench/gpu/mac-leftovers.sh`: no leftover processes, no per-run output.
+
+CI at this loop's commit, on the dev VM: scripts/ci.sh (732 s), ci-graphics.sh (319 s) and ci-debian.sh (263 s), all
+passed.

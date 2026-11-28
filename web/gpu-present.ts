@@ -203,6 +203,7 @@ export function canvasPresenter(
   const lat: number[] = [];
   let drawMs = 0;
   if (stats && port) {
+    busy.events = [];
     // The device worker's own event loop (what a key's release, a doorbell or a flush waits behind).
     const lag = lagMeter();
     setInterval(() => {
@@ -213,7 +214,13 @@ export function canvasPresenter(
         median: s[s.length >> 1] ?? 0,
         max: s[s.length - 1] ?? 0,
         lag: lag.take(),
-        busy: { ...busy, commands: { ...busy.commands }, fenceBack: { ...fenceLag }, draw: drawMs },
+        busy: {
+          ...busy,
+          events: busy.events!.splice(0),
+          commands: { ...busy.commands },
+          fenceBack: { ...fenceLag },
+          draw: drawMs,
+        },
       } satisfies DisplayToPage);
       resetBusy();
       Object.assign(fenceLag, { n: 0, ms: 0, maxMs: 0 });

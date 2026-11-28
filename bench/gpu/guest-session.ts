@@ -322,7 +322,28 @@ export async function openSession(o: SessionOptions) {
       // Of a fence's round trip: to the GPU worker (its event loop's backlog) and back to the device worker.
       toGpuMs: rper('fenceMs') / Math.max(1e-9, rper('fences')), toGpuMaxMs: Math.max(0, ...r.map((x) => x.fenceMaxMs ?? 0)),
       backMs: s.reduce((n, x) => n + (x.busy.fenceBack?.ms ?? 0), 0) / Math.max(1, s.reduce((n, x) => n + (x.busy.fenceBack?.n ?? 0), 0)), backMaxMs: Math.max(0, ...s.map((x) => x.busy.fenceBack?.maxMs ?? 0)) };
-    return { seconds: s.length, requests: per('requests'), commands, fences, flushes: per('flushes'), submits: per('submits'), submitKB: per('submitBytes') / 1024, transfers: per('transfers'), Mpx: per('pixels') / 1e6, requestMs: per('request'), draws: s.reduce((n, x) => n + x.n, 0) / Math.max(1, s.length), ...(renderer ? { renderer } : {}) };
+    // The flush pacing (devices.md "Flush replies are paced"): flush replies held a second and their mean hold (ms),
+    // and the gaps between the guest's flushes' arrivals (ms: p10, median, p90; the share under a frame).
+    // `afterRelease`: a flush's arrival after the last held flush's reply went back, when that came after the flush
+    // before (a guest that waits for each reply sends its next flush right after it).
+    const arrivals: number[] = [], after: number[] = [];
+    let released = -Infinity;
+    for (const x of s) {
+      const ev = (x.busy as unknown as { events?: number[] }).events ?? [];
+      for (let i = 0; i + 1 < ev.length; i += 2) {
+        if (ev[i + 1] === 0x10104) released = ev[i];
+        else if (ev[i + 1] === 0x104) {
+          if (arrivals.length && released > arrivals[arrivals.length - 1]) after.push(ev[i] - released);
+          arrivals.push(ev[i]);
+        }
+      }
+    }
+    const gaps = arrivals.slice(1).map((t, i) => t - arrivals[i]).sort((a, b) => a - b);
+    after.sort((a, b) => a - b);
+    const q = (v: number[], f: number) => (v.length ? +v[Math.min(v.length - 1, Math.floor(f * v.length))].toFixed(2) : 0);
+    const pacing = { held: per('flushesHeld'), holdMs: per('flushHeldMs') / Math.max(1e-9, per('flushesHeld')), gapP10: q(gaps, 0.1), gapP50: q(gaps, 0.5), gapP90: q(gaps, 0.9), underFrame: gaps.length ? +(gaps.filter((g) => g < 1000 / 60).length / gaps.length).toFixed(3) : 0,
+      afterRelease: after.length / Math.max(1, gaps.length), afterP10: q(after, 0.1), afterP50: q(after, 0.5), afterP90: q(after, 0.9) };
+    return { seconds: s.length, requests: per('requests'), commands, fences, pacing, flushes: per('flushes'), submits: per('submits'), submitKB: per('submitBytes') / 1024, transfers: per('transfers'), Mpx: per('pixels') / 1e6, requestMs: per('request'), draws: s.reduce((n, x) => n + x.n, 0) / Math.max(1, s.length), ...(renderer ? { renderer } : {}) };
   };
   const vmStats = () => page.evaluate(() => { const s = (window as unknown as { __status?: VmStatus }).__status; return s && { uptime: s.uptime, stats: s.stats }; }) as Promise<VmStatus | undefined>;
   /** The emulator's counters a second between two status reads (all vCPUs): guest exceptions by class (0x15 a syscall, 0x24 a data abort), IRQs, TLB, the JIT. */

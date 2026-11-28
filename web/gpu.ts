@@ -163,9 +163,9 @@ export type GpuOptions = {
    */
   keepConsole?: boolean;
   /**
-   * Complete at most one RESOURCE_FLUSH per display frame (60 a second), as a display completes a flush at its
+   * Complete at most one RESOURCE_FLUSH per pace (`paceHz`, 75 a second), as a display completes a flush at its
    * refresh: the first after an idle moment is answered at once (a key's glyph isn't delayed), one that
-   * follows within the frame waits for the frame's end, and so does everything queued behind it (replies
+   * follows within the pace waits for its end, and so does everything queued behind it (replies
    * stay in order). Why: Linux's driver waits for no reply on a primary plane
    * (no fence, and before 6.19 no vblank either), so a guest with damage to show commits as fast as it can
    * and only a full queue stops it. Answered at once, a scrolling console committed ~5,000 times a second,
@@ -173,6 +173,13 @@ export type GpuOptions = {
    * delayed: a transfer copies when it arrives. The page's machine sets it; the test guests don't.
    */
   paceFlushes?: boolean;
+  /**
+   * With `paceFlushes`, the most flushes answered a second (default `PACE_HZ`, 75): above the display's 60, so a
+   * guest that commits once a refresh by its own vblank (Linux since 6.19) is never held; at 60 every flush of such
+   * a guest was held, by whatever phase the two clocks settled at, and the replies behind backed up to a full queue
+   * (bench/gpu/REPORT.md "PERF loop 104"). `?gpu=pace<N>`, for measurements.
+   */
+  paceHz?: number;
   /** Pixels per inch for the EDID's physical size (default 96). */
   dpi?: number;
   /**
@@ -278,6 +285,8 @@ export const busy = {
   behindMs: 0,
   fullMs: 0,
   heldMax: 0,
+  flushesHeld: 0,
+  flushHeldMs: 0,
 };
 
 /** A control command's type as `busy.commands` keys it (hex), made once for the types a driver sends. */
@@ -290,6 +299,9 @@ function hexKey(type: number) {
   }
   return k;
 }
+
+/** Flush replies answered a second at most, with `paceFlushes` (`GpuOptions.paceHz`). */
+export const PACE_HZ = 75;
 
 /** `busy`'s counts back to zero (the stats' second is over); `events` stay. */
 export function resetBusy() {
@@ -310,6 +322,8 @@ export function resetBusy() {
     behindMs: 0,
     fullMs: 0,
     heldMax: 0,
+    flushesHeld: 0,
+    flushHeldMs: 0,
   });
 }
 

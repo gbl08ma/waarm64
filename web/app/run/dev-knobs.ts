@@ -5,14 +5,15 @@
 /** The machine worker's knobs from the address. */
 export type DevKnobs = {
   /**
-   * The display's tuning (docs/devices.md "virtio-gpu"), from `?gpu=`: flush replies paced to the frame (`nopace`
-   * turns it off) and a queue of 16 (`q<N>`); `virgl-null` virgl on the null renderer (G2: the guest's 3D commands
+   * The display's tuning (docs/devices.md "virtio-gpu"), from `?gpu=`: flush replies paced (`nopace`
+   * turns it off; `pace<N>` N a second, default web/gpu.ts `PACE_HZ`) and a queue of 16 (`q<N>`); `virgl-null` virgl on the null renderer (G2: the guest's 3D commands
    * counted, nothing drawn); `capture` a trace of them on the display port (web/virgl-trace.ts, kept in
    * `window.__virglCapture`); `nowatch` (with Vulkan) no write-watch of the window at each submit; `canvas2d` and
    * `gl2d` a 2D machine's screen (web/gpu-present.ts; by default WebGL2 on a GPU, a 2D context elsewhere).
    */
   gpu: {
     paceFlushes: boolean;
+    paceHz: number | undefined;
     queueSize: number;
     virglNull: boolean;
     noWatch: boolean;
@@ -67,10 +68,12 @@ export type DevKnobs = {
 export function parseDevKnobs(q: URLSearchParams): DevKnobs {
   const gpu = (q.get('gpu') ?? '').split(',');
   const queue = gpu.find((k) => /^q\d+$/.test(k));
+  const pace = gpu.find((k) => /^pace\d+$/.test(k));
   const snd = (q.get('snd') ?? '').split(',');
   return {
     gpu: {
       paceFlushes: !gpu.includes('nopace'),
+      paceHz: pace ? Number(pace.slice(4)) : undefined,
       queueSize: queue ? Number(queue.slice(1)) : 16,
       virglNull: gpu.includes('virgl-null'),
       noWatch: gpu.includes('nowatch'),
