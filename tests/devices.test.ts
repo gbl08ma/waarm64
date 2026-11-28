@@ -482,6 +482,29 @@ test("poll: a poll's completions wake each vCPU once, before the poll resolves (
   assert.equal(Atomics.load(new Int32Array(memory.buffer, wake, 1), 0), 1, 'the vCPU woken once');
 });
 
+test('poll: each request reaches its backend with its queue and segments, its words wrapping the ring (PERF loop 91: plain loops)', async () => {
+  // The layout (docs/abi.md): the request ring (head, tail, 4,096 words) at 280. Two requests from word 4,090 on: one of
+  // two read segments and a write one (queue 2), one of a write segment alone (queue 0).
+  const memory = { buffer: new SharedArrayBuffer(1 << 16) };
+  const u32 = new Uint32Array(memory.buffer);
+  const ring = 280 / 4, WORDS = 4096;
+  const words = [2 << 16 | 7, 2 | 1 << 16, 100, 10, 0, 200, 20, 1, 300, 30, 2, 9, 1 << 16, 400, 40, 0];
+  const start = WORDS - 5; // the second read segment's first word is the ring's first
+  words.forEach((w, k) => (u32[ring + 2 + ((start + k) % WORDS)] = w));
+  u32[ring + 1] = start;
+  Atomics.store(u32, ring, (start + words.length) >>> 0);
+  const seen: unknown[] = [];
+  const backend = { reset() {}, request: (r: unknown) => { seen.push(r); return undefined; } };
+  const proto = Devices.prototype as unknown as Record<string, unknown>;
+  const self = { memory, shared: [0], signal: 40_000, wakes: [], stops: [], backends: [backend], epochs: [0], deterministic: true, detached: new Set(), ramAt: 0, spillViews: [], kickOwed: false, kick: proto.kick, views: proto.views, complete: proto.complete };
+  await (Devices.prototype.poll as (this: unknown) => Promise<void>).call(self);
+  assert.deepEqual(seen, [
+    { w0: 2 << 16 | 7, queue: 2, read: [{ off: 100, len: 10, mem: 0 }, { off: 200, len: 20, mem: 1 }], write: [{ off: 300, len: 30, mem: 2 }] },
+    { w0: 9, queue: 0, read: [], write: [{ off: 400, len: 40, mem: 0 }] },
+  ]);
+  assert.equal(Atomics.load(u32, ring + 1), start + words.length, 'both taken');
+});
+
 test('net: a received frame across merged buffers (MRG_RXBUF): the header, then the frame, over their segments', () => {
   const ram = new Uint8Array(1 << 16);
   const done: number[] = [];

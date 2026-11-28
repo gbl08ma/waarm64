@@ -120,6 +120,9 @@ export async function openStoredForWriting(path: string, identity: string, size:
   return openOverlay(path, identity);
 }
 
+/** The chunks (1 MiB each) an import reads ahead of the one it writes (PERF loop 91). */
+const IMPORT_AHEAD = 2;
+
 /**
  * Copies image `src` (qcow2 or raw: its virtual bytes, compressed clusters inflated) into the empty block store
  * `files`, leaving zero blocks out. `progress` gets the bytes done of the virtual size. Returns the size and the
@@ -143,9 +146,22 @@ export async function importImage(
   const store = overlay(zeroDisk(image.size), files.data, files.map, files.meta, 0, { ordered: false });
   const CHUNK = 1 << 20;
   let blocks = 0;
+  // IMPORT_AHEAD chunks read ahead of the one being written: their compressed clusters inflate in the pool while this
+  // thread reads the file and writes the store (PERF loop 91). Each read's failure is caught at once (its own await
+  // throws it), so one left behind by a failed import isn't an unhandled rejection.
+  const reads: Promise<Uint8Array | undefined>[] = [];
+  let ahead = 0;
+  const readAhead = () => {
+    for (; reads.length < IMPORT_AHEAD && ahead < image.size; ahead += CHUNK) {
+      const p = image.read(ahead, Math.min(CHUNK, image.size - ahead));
+      p.catch(() => undefined);
+      reads.push(p);
+    }
+  };
   for (let off = 0; off < image.size; off += CHUNK) {
     const len = Math.min(CHUNK, image.size - off);
-    const bytes = await image.read(off, len);
+    readAhead();
+    const bytes = await reads.shift();
     if (!bytes) throw new MsgError('disks:stored.imageUnreadable', { offset: off });
     // Runs of blocks with a byte that isn't zero, each one write.
     const words = wordsOf(bytes);

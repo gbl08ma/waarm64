@@ -550,3 +550,77 @@ Mac's copy, now caught) gave the same picture: gpu3d 26.7 / 24.2, gpu2d 25.3 / 2
   choice (3D is the default there), so a device worker with animation frames (made by the page, a redesign of the
   machine worker's start and every device's plumbing) isn't justified by a quarter of keys a frame later on a
   non-default path. Not built; #57 closed.
+
+## PERF loop 91: the host's per-event costs: virgl's joins, an import's reads, frame batches, the checksum, the poll (2026-11-28)
+
+PERF-HANDOVER.md's row 24: five per-event costs from a static survey, each counted under the workload that drives it,
+then built where the count left a gain, judged by its own micro-benchmark. The dev VM (Lima vz, 8 vCPUs, arm64),
+Chromium 155.0.8059.84 headless, Node 26.7.0. Results in `results/perf91/`.
+
+**1. virgl's joins** (`web/virgl-renderer.ts` `readBacking`: a transfer's range across backing entries copied into a
+fresh buffer). **Counted** with the renderer's new `backingReads`, `joins` and `joinBytes` stats (kept: `render-stats`,
+guest-session.ts's `renderer`), on Firefox's scroll and five pages from `target/snapbench/pages.waarm64snap`
+(`ff-count.json`): 15-171 joins a second carrying 9-115 MB/s, **76-100% of the bytes uploaded** (a staging buffer's
+pages are scattered: one join of ~900 KB a frame on the scroll), against the GPU worker's 11-53 ms busy a second.
+**Bound** (`bench/gpu/join.ts`, `join.json`: the same loop over a backing of 4 KiB pages and of 64 KiB runs, 15 rounds
+alternating, 911,000 bytes): in Chromium a fresh buffer's join 103 µs (IQR 100.5-104.8) and 107 (104.5-109), into a
+kept one 32.3 (31.8-32.3) and 13.8 (13.5-14.3); Node alike (132 / 117 against 45 / 27, the fresh arm's IQR wide: GC).
+So the fresh buffer (its allocation, zeroing and collection) is ~70-90 µs of a join's ~105: 1-15 ms of the worker's
+second on these pages. **Built:** the join's buffer is kept for the next one (`joined`, grown to the largest join, at
+most `JOIN_KEPT` 16 MiB; bigger joins stay fresh); the video path's reads (`DECODE_BITSTREAM` holds its desc and data at
+once) take fresh ones (`keep`). The consumers copy at once (`texSubImage*`, `bufferSubData` from the shadow, the CPU
+copies), as they must for the in-place views of guest RAM. Memory: one buffer the size of the largest join, ~1 MB on
+Firefox's pages (a full 1920×1080 frame 7.9 MiB). Tests: tests/virgl.test.ts "transfers across a backing's entries
+upload their own bytes, the joined buffer kept between them" (joins growing past twice the kept size, a smaller one in
+it, a read inside one entry), tests/virgl-video.test.ts "a picture's desc and data whose backings span entries are both
+read whole". Planted and caught: the video path's reads into the kept buffer (the desc overwritten by the data: no
+longer a key frame), the kept buffer grown to twice its size without the join's own length.
+
+**2. An import's reads** (`web/stored.ts` `importImage`). The survey's "serial 1 MiB reads from a server" isn't
+what exists: an import reads a `File` (the page's file picker, or a fetched image made one), through
+`FileReaderSync` in the disk worker; there is no import from a server, so no latency to hide. What is serial is each
+chunk's read (and its compressed clusters' inflation in the pool) before its write. **Counted** (a timing build, two
+imports of Debian's qcow2, 400 MB, 3 GiB virtual, 3,072 chunks, `import.json` `diag_ahead1`): 3.0-3.2 s, of which
+the reads 2.37-2.49 s (their synchronous part 1.0 s, waiting for the pool 1.4 s) and the zero scan and writes 0.60-0.67
+s. **Bound:** the pool's wait overlapped with the writes, ≤ ~0.6 s. **Built:** `IMPORT_AHEAD` chunks in flight
+(`import.json`: each arm a page session of three imports into OPFS, two passes in opposite orders): 1 (before)
+3,158 ms (IQR 3,105-3,191), **2: 2,755 (2,720-2,776), −12.8%**, 4: 2,783 (2,728-2,797), 8: 2,722 (2,714-2,722); the
+rounds of 1 don't overlap the others', and past 2 nothing more (the worker's own reads and writes are the bound). Kept
+at 2: one more MiB chunk (and its compressed bytes) in flight. A read ahead's failure is caught when it's made, so a
+failed import leaves no unhandled rejection. Test: tests/stored.test.ts "an import reads the next chunk before it
+writes this one, in order; a chunk that fails to read stops it with its offset". Planted and caught: one chunk at a
+time (`IMPORT_AHEAD` 1), the chunks taken out of order, the read ahead's catch removed (the fifth chunk's throw
+unhandled).
+
+**3. Frame ports taking batches** (P7 of the old backlog's "The network, per packet"): **already built** on
+2026-11-24 (4abdff36: a helper's or the demo network's message reaches the card as one post, its TCP segments merged
+as an IP port's), the day after the survey that queued it. What it's worth is [#271](https://github.com/gbl08ma/waarm64/issues/271)
+(`bench/net/local.ts`'s download, base against new; a UDP burst), left open: a measure of a kept change, nothing to
+build.
+
+**4. The checksum** (`web/offload.ts` `sum`, two bytes a step). **Counted** by what drives it: every byte through the
+offloads is summed once (a sent segment's or frame's TCP/UDP checksum, a received frame's check for `DATA_VALID`), so
+the device worker sums at the network's rate: 432 Mbit/s down and 291 up in `ci-net.sh`'s run, 1.0-1.35 Gbit/s at the
+helper's 65,520 MTU (bench/net/REPORT.md). **Bound** (`bench/net/csum.ts`, `csum.json`: 64 MiB a measure, frames of
+1,514 and 65,226 bytes at even and odd offsets, 11 rounds alternating): two bytes a step 0.369-0.383 ns a byte in
+Chromium (0.410-0.418 in Node), ~47 ms of the worker's second at 1 Gbit/s. **Built:** `csumSum`, four bytes a load
+through a word view of the buffer (little-endian words' sum byte-swapped back; folded every 8,192 words so it stays a
+small integer): **0.097-0.119 ns a byte in Chromium** (IQRs within ±0.002), 0.096-0.117 in Node, 3.2-3.9× less, ~35 ms of
+the worker's second saved at 1 Gbit/s. One small view a call (a frame already allocates its own buffer); nothing
+kept. Test: tests/offload.test.ts "csumSum: the sum of every range at every alignment of its view is the two-bytes-a-step
+one's" (four view offsets, eight starts, lengths 0-65,539, runs of 0xffff past a fold). Planted and caught: the sum not
+swapped back, the leading bytes' halves taken all high, the trailing bytes' all low.
+
+**5. `Devices.poll`'s closures** (`web/devices.ts`: `word` a poll, `segs` and `Array.from`'s mapping a request).
+**Counted** by what drives it: a request per buffer the guest posts or sends, ~30 K a second on a gigabit download
+into mergeable ~4 KB buffers, ~1-6 K a second of blk. **Bound** (`bench/io/poll.ts`, `poll.json`: the real `poll` over a
+ring of requests a backend takes for later, 7 rounds a run, three runs a tree alternated): with the closures 220-241 ns
+a request of one segment and 314-339 of three; **built** as plain loops into the segment arrays: **19.1-19.9 and
+34.2-35.6 ns**; every round apart. At 30 K requests a second that is ~6-9 ms of the worker's second. Nothing kept.
+Test: tests/devices.test.ts "each request reaches its backend with its queue and segments, its words wrapping the
+ring". Planted and caught: the write segments counted by the read count, a segment's first word read without the
+ring's wrap.
+
+No workload A/B beyond CI: each change is a micro-op judged by its micro-benchmark. CI at this loop's commit, on the dev
+VM: scripts/ci.sh (757 s), ci-net.sh (424 s), ci-graphics.sh (323 s), ci-machines.sh (251 s), ci-debian.sh (317 s),
+ci-usb.sh (10 s) and ci-deqp.sh (639 s), all passed.

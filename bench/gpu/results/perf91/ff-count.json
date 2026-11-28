@@ -1,0 +1,71 @@
+{
+ "what": "Firefox's scroll and five pages from target/snapbench/pages.waarm64snap on the dev VM (headless Chromium 155, SwiftShader), the renderer's stats a second: backing reads, joins (a range across entries, copied into one buffer), their KB, and the uploads and busy time around them",
+ "phases": {
+  "scroll": {
+   "seconds": 11,
+   "busyMs": 32.89772705598311,
+   "submitMs": 32.300454508174546,
+   "presents": 53.63636363636363,
+   "glDraws": 366.6363636363636,
+   "uploadKB": 61843.079545454544,
+   "backingReads": 480.27272727272725,
+   "joins": 69.54545454545455,
+   "joinKB": 61768.786931818184
+  },
+  "page-wiki": {
+   "seconds": 12,
+   "busyMs": 48.64916664361954,
+   "submitMs": 47.94041653474172,
+   "presents": 40.666666666666664,
+   "glDraws": 744.25,
+   "uploadKB": 105799.74080403645,
+   "backingReads": 998.3333333333334,
+   "joins": 128.58333333333334,
+   "joinKB": 80100.80891927083
+  },
+  "page-mdn": {
+   "seconds": 11,
+   "busyMs": 20.163636576045644,
+   "submitMs": 19.665909225290473,
+   "presents": 30.181818181818183,
+   "glDraws": 196,
+   "uploadKB": 29603.206676136364,
+   "backingReads": 292.1818181818182,
+   "joins": 43.54545454545455,
+   "joinKB": 29432.064453125
+  },
+  "page-github": {
+   "seconds": 11,
+   "busyMs": 53.1990909576416,
+   "submitMs": 52.57272735509005,
+   "presents": 46.18181818181818,
+   "glDraws": 312.3636363636364,
+   "uploadKB": 115106.07244318182,
+   "backingReads": 588.0909090909091,
+   "joins": 167.63636363636363,
+   "joinKB": 114677.1484375
+  },
+  "page-bbc": {
+   "seconds": 11,
+   "busyMs": 43.35409173098478,
+   "submitMs": 42.65636389905756,
+   "presents": 52.90909090909091,
+   "glDraws": 444.6363636363636,
+   "uploadKB": 112036.96058238637,
+   "backingReads": 722.3636363636364,
+   "joins": 170.9090909090909,
+   "joinKB": 111491.43963068182
+  },
+  "page-hn": {
+   "seconds": 11,
+   "busyMs": 11.215454405004328,
+   "submitMs": 10.81363634629683,
+   "presents": 51.81818181818182,
+   "glDraws": 26.454545454545453,
+   "uploadKB": 9497.914417613636,
+   "backingReads": 46.09090909090909,
+   "joins": 15.090909090909092,
+   "joinKB": 9492.994318181818
+  }
+ }
+}

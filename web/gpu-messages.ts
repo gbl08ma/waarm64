@@ -78,6 +78,10 @@ export type RenderStats = {
   uploadBytes: number;
   readbacks: number;
   readbackBytes: number;
+  /** Reads of resources' backings, of them those spanning entries (joined into a fresh buffer), and the joined bytes, in the second. */
+  backingReads: number;
+  joins: number;
+  joinBytes: number;
   fences: number;
   fenceMs: number;
   fenceMaxMs: number;

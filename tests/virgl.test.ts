@@ -1102,6 +1102,33 @@ test('virgl renderer: a transfer\'s stride 0 is its level\'s pitch, as vrend rea
   assert.deepEqual(rows, [64, 32]);
 });
 
+test('virgl renderer: transfers across a backing\'s entries upload their own bytes, the joined buffer kept between them (PERF loop 91)', () => {
+  const gl = mockGl();
+  const errors: string[] = [];
+  const ram = new Uint8Array(4096);
+  for (let i = 0; i < ram.length; i++) ram[i] = (i * 7 + 3) & 255;
+  const r = new VirglRenderer(gl, { ram: () => [ram], log: (m) => errors.push(m) });
+  r.createContext(1);
+  // A 16x8 R8 texture backed by 16-byte entries out of order (a staging buffer's scattered pages): row y at 1024 - 64 y.
+  r.createResource({ id: 1, target: 2, format: 64, bind: 8, width: 16, height: 8, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+  const entries = Array.from({ length: 8 }, (_, y) => ({ off: 1024 - 64 * y, len: 16, mem: 0 }));
+  r.attachBacking(1, entries);
+  const got: number[][] = [];
+  (gl as unknown as { texSubImage2D: unknown }).texSubImage2D = (...a: unknown[]) => got.push([...(a[8] as Uint8Array)]);
+  const want = (y0: number, h: number) => entries.slice(y0, y0 + h).flatMap((e) => [...ram.subarray(e.off, e.off + 16)]);
+  // Rows 0-1, then 1-7 (the kept buffer grows past twice its size), then 5-6 (a smaller one in it), each a join.
+  assert.ok(r.transfer(1, 1, 0, { x: 0, y: 0, z: 0, w: 16, h: 2, d: 1 }, 0, 16, 0, true));
+  assert.ok(r.transfer(1, 1, 0, { x: 0, y: 1, z: 0, w: 16, h: 7, d: 1 }, 16, 16, 0, true));
+  assert.ok(r.transfer(1, 1, 0, { x: 0, y: 5, z: 0, w: 16, h: 2, d: 1 }, 80, 16, 0, true));
+  // Inside one entry: a view of guest RAM, no join.
+  assert.ok(r.transfer(1, 1, 0, { x: 0, y: 3, z: 0, w: 16, h: 1, d: 1 }, 48, 16, 0, true));
+  assert.deepEqual(errors, []);
+  assert.deepEqual(got, [want(0, 2), want(1, 7), want(5, 2), want(3, 1)]);
+  assert.equal(r.stats.joins, 3);
+  assert.equal(r.stats.joinBytes, 32 + 112 + 32);
+  assert.equal(r.stats.backingReads, 4);
+});
+
 test('virgl renderer: indices start at the index buffer\'s offset, and the largest index restarts only with restart on (dEQP-GLES2 index arrays)', () => {
   const gl = mockGl();
   gl.keepLog = true;

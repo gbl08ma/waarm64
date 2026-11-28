@@ -368,6 +368,48 @@ test('VideoContext: a picture is never written over a later one in the same plan
   assert.deepEqual({ decoded: t.stats.decoded, dropped: t.stats.dropped }, { decoded: 1, dropped: 1 });
 });
 
+test('VirglRenderer: a picture\'s desc and data whose backings span entries are both read whole (PERF loop 91: a join the reader keeps)', () => {
+  // DECODE_BITSTREAM reads the desc, then the data, then keeps both: each a join of entries out of order, so a join
+  // into the renderer's kept buffer would leave the desc overwritten by the data.
+  const gl = mockGl();
+  const ram = new Uint8Array(8192), errors: string[] = [];
+  const { made, factory } = fakeDecoders();
+  const r = new VirglRenderer(gl, { ram: () => [ram], log: (m) => errors.push(m), video: { decoders: factory, hardware: [] } });
+  r.createContext(1);
+  const res = (id: number, format: number, width: number, height: number, target = 2) => {
+    r.createResource({ id, target, format, bind: target ? 0xa : 0x20000, width, height, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+    r.attach(1, id);
+  };
+  res(10, 64, 6, 4);
+  res(11, 65, 3, 2);
+  res(7, 64, 400, 1, 0);
+  res(8, 64, 400, 1, 0);
+  // The desc's 400 bytes: 200 at 4096, then 200 at 0; the data's 400 (all 4: byte 332 of a desc, a hidden inter
+  // frame): 2 at 3000, then 398 at 2000.
+  r.attachBacking(7, [{ off: 4096, len: 200, mem: 0 }, { off: 0, len: 200, mem: 0 }]);
+  r.attachBacking(8, [{ off: 3000, len: 2, mem: 0 }, { off: 2000, len: 398, mem: 0 }]);
+  const desc = vp9(true);
+  ram.set(desc.subarray(0, 200), 4096);
+  ram.set(desc.subarray(200, 400), 0);
+  ram.fill(4, 3000, 3002);
+  ram.fill(4, 2000, 2398);
+  const words: number[] = [];
+  const cmd = (c: number, ...p: number[]) => words.push(c | p.length << 16, ...p);
+  cmd(53, 1, PROFILE.VP9_PROFILE0, 1, 1, 0, 4, 2);
+  cmd(55, 2, FORMAT_NV12, 4, 2, 10, 11);
+  cmd(57, 1, 2);
+  cmd(59, 1, 2, 7, 8, 400);
+  cmd(61, 1, 2);
+  r.submit(1, new Uint32Array(words));
+  assert.deepEqual(errors, []);
+  assert.equal(made.length, 1);
+  assert.equal(made[0].chunks.length, 1);
+  assert.equal(made[0].chunks[0].key, true, 'the desc as the guest wrote it: a key frame');
+  const data = made[0].chunks[0].data;
+  assert.ok(data.length === 400 && data.every((b) => b === 4), 'the data read whole');
+  assert.equal(r.stats.joins, 2);
+});
+
 test('VirglRenderer: a picture is written into its planes after the decoding context let go of them', () => {
   // Firefox's decoder process at a seek: END_FRAME, then its surfaces' resources detached (the compositor still shows
   // them), and only then does the decoder output the picture (a software one holds it).

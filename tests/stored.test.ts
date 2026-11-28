@@ -56,6 +56,44 @@ test('an import writes its store unordered and flushes both files once, at its e
   assert.ok(same(blockSource(f.data, f.map, size).read(0, size), image), 'the store reads as the image');
 });
 
+test('an import reads the next chunk before it writes this one, in order; a chunk that fails to read stops it with its offset (PERF loop 91)', async () => {
+  const MiB = 1 << 20, size = 5 * MiB + 300;
+  const image = new Uint8Array(size);
+  for (let i = 0; i < size; i += 4096) image.fill((i >> 12) % 251 | 1, i, i + 4096);
+  const events: string[] = [];
+  const logged = (src: Source): Source => ({ size: src.size, read: (off, len) => (events.push(`read ${off / MiB}`), src.read(off, len)) });
+  const f = loggedFiles();
+  const data = f.data;
+  const write = data.write;
+  data.write = (buf, o) => (events.push(`write ${Math.floor(o.at / MiB)}`), write(buf, o));
+  await importImage(logged(bufferSource(image)), { ...f, close() {} });
+  assert.ok(same(blockSource(f.data, f.map, size).read(0, size), image), 'the store reads as the image');
+  const reads = events.filter((e) => e.startsWith('read ')).slice(1); // past the header's
+  assert.deepEqual(reads, ['read 0', 'read 1', 'read 2', 'read 3', 'read 4', 'read 5'], 'each chunk once, in order');
+  for (let k = 0; k < 5; k++)
+    assert.ok(events.indexOf(`read ${k + 1}`) < events.indexOf(`write ${k}`), `chunk ${k + 1} read before chunk ${k} is written`);
+  // A source with no fourth chunk (and a fifth that throws, read ahead): the import stops at the fourth, its offset in
+  // the error, the fifth's failure not left unhandled.
+  const unhandled: unknown[] = [];
+  const onUnhandled = (e: unknown) => unhandled.push(e);
+  process.on('unhandledRejection', onUnhandled);
+  try {
+    const failing: Source = {
+      size,
+      read: (off, len) => {
+        if (off >= 4 * MiB && off < 5 * MiB) throw new Error('the file went away');
+        return off >= 3 * MiB && off < 4 * MiB ? undefined : image.slice(off, off + len);
+      },
+    };
+    const g = loggedFiles();
+    await assert.rejects(importImage(failing, { ...g, close() {} }), (e: unknown) => msgOf(e)?.key === 'disks:stored.imageUnreadable' && msgOf(e)?.params?.offset === 3 * MiB);
+    await new Promise((r) => setTimeout(r, 10));
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+  }
+  assert.deepEqual(unhandled, []);
+});
+
 // A tab closed during an import: the disk's record is made only once the job is done (after its last flush), so a
 // store cut off part way is never a disk; its files, marked as filling, are removed at the page's next start.
 test('in Chromium (OPFS): an import cut off by its page closing leaves no stored disk', async () => {

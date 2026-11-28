@@ -129,14 +129,13 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried and lost: polled code without `acc`").
 
-## State (2026-11-28, after loop 90)
+## State (2026-11-28, after loop 91)
 
-**The track resumed 2026-11-28 (paused after loop 86).** Loop 88 did row 22 (bench/boot/REPORT.md "PERF loop 88"):
-round-robin publishes the JIT's and TLBs' counters every 64K steps and finishes ERETs, SVCs and aborts in place
-(`vm::rr_fast`). Loop 89 did row 23 (bench/boot/REPORT.md "PERF loop 89"): the three sweeps closed by their counts,
-nothing changed. Loop 90 fixed the out-of-context review of loop 88 (bench/boot/REPORT.md "PERF loop 90"):
-round-robin honours `vm_set_chunk`, the inline timer rule is checked after each chunk that wrote a timer, and
-`eret_smp.c`, the three-ticks runs and a native `rr_fast` test cover the in-place paths. The next row is 24.
+**The track resumed 2026-11-28 (paused after loop 86).** Loops 88-90: round-robin's chunk ends (row 22), the three
+sweeps closed by their counts (row 23), the review of loop 88 fixed (bench/boot/REPORT.md "PERF loop 88" to "PERF loop
+90"). Loop 91 did row 24 (bench/gpu/REPORT.md "PERF loop 91"): virgl's joins of a backing's entries into a kept buffer,
+an import one chunk read ahead (−12.8%), the checksum four bytes a load (3.2-3.9×), `Devices.poll` without closures
+(~10×); the frame batches were already built (4abdff36, their measure #271). The next row is 25.
 
 **The rule since 2026-11-24 (the user): spend as little time in benchmarks and CI as the answers allow
 ("Batching", above).** Loop 75's notes still hold: `bench/boot/results/perf75/diag.patch` applies to 3a08fdf3; loop
@@ -176,10 +175,9 @@ every row:
 
 | # | Entry | Kind | Notes |
 |---|---|---|---|
-| 24 | **Next**: Host, per event: virgl uploads across backing entries join into a fresh buffer (web/virgl-renderer.ts:694; count the joins first), an import's serial 1 MiB reads from a server (web/stored.ts:105), frame ports taking batches (P7 of the old backlog's "The network, per packet", which no issue carries), the checksum two bytes at a time (web/offload.ts:54), `Devices.poll`'s closures per request (web/devices.ts:887) | count, build | each by its own micro-benchmark; with other work in the file |
-| 25 | JIT, likely under the floor: late-compiled successors through a reserved table slot (`via_jc`, emit.rs:2220; relinking and rebinding lost: try `results/perf54/` `chain2.mjs` with a constant index first), SP's alignment guard folded into the tag compare (emit.rs:4297; five wasm ops a probe), `refresh` storing every vCPU's IRQ byte (parallel.rs:814) | count | x64 and arm64 static counts (`bench/jit/codestats.ts`) decide the second |
+| 25 | **Next**: JIT, likely under the floor: late-compiled successors through a reserved table slot (`via_jc`, emit.rs:2220; relinking and rebinding lost: try `results/perf54/` `chain2.mjs` with a constant index first), SP's alignment guard folded into the tag compare (emit.rs:4297; five wasm ops a probe), `refresh` storing every vCPU's IRQ byte (parallel.rs:814) | count | x64 and arm64 static counts (`bench/jit/codestats.ts`) decide the second |
 
-Swept, measured or counted on the Mac recently, not to redo: `PRESSURE_KNEE`, `VCPU_YIELD_MS` and the table's
+Swept, measured or counted on the Mac recently, not to redo: the host's per-event costs (loop 91: virgl joins 15-171 a second on Firefox's pages, 76-100% of the upload bytes, now into a kept buffer; an import is of a `File`, never from a server, and reads ahead past 2 chunks gain nothing; the checksum and the poll's parse by their micro-benchmarks, bench/net/csum.ts and bench/io/poll.ts), `PRESSURE_KNEE`, `VCPU_YIELD_MS` and the table's
 growth (loop 89, by counts: a knee of 0-1 is loop 69's declined 2000 on part of each workload, 3+ only touches a
 session past 120 MiB live, 4-5 min into a real one, 98-99.5% compiled there, for ~90-170 MiB; a yield 5-25 µs, ≤ 10 a
 second, the stalls already gone at 100 ms; the table's grows ~0.5 µs each, ≤ 4 ms a Firefox hour, pre-growing ~8 MiB

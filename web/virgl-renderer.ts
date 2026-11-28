@@ -85,6 +85,10 @@ export type RendererStats = {
   readbackBytes: number;
   compileMs: number;
   /** Textures copied because a draw sampled what it drew into (`feedbackCopies`). */ feedbackCopies: number;
+  /** Reads of a resource's backing (`readBacking`), and of them those whose range spans entries, copied into one buffer, and their bytes. */
+  backingReads: number;
+  joins: number;
+  joinBytes: number;
 };
 
 /** Bytes `[lo, hi)` of a buffer's CPU copy were written: its element-array twin (if made) lacks them. */
@@ -95,6 +99,9 @@ function indexWritten(r: { ibuf?: WebGLBuffer; ilo?: number; ihi?: number }, lo:
     r.ihi = Math.max(r.ihi, hi);
   } else [r.ilo, r.ihi] = [lo, hi];
 }
+
+/** The largest join of a backing's entries `readBacking` keeps its buffer for (a 1920×1080 RGBA frame is 7.9 MiB). */
+const JOIN_KEPT = 16 << 20;
 
 const PIPE_BUFFER = 0,
   PIPE_TEXTURE_1D = 1,
@@ -254,6 +261,8 @@ export class VirglRenderer {
   /** The draw states made so far (a draw makes one, and its key, only for a signature it doesn't find kept). */
   drawStates = 0;
   private serial = 0;
+  /** `readBacking`'s joins, kept for the next one (at most `JOIN_KEPT` bytes). */
+  private joined = new Uint8Array(0);
   readonly stats: RendererStats = {
     submits: 0,
     commands: 0,
@@ -266,6 +275,9 @@ export class VirglRenderer {
     readbackBytes: 0,
     compileMs: 0,
     feedbackCopies: 0,
+    backingReads: 0,
+    joins: 0,
+    joinBytes: 0,
   };
   /** The contexts' video codecs and buffers, and the pictures decoded (web/virgl-video.ts). */
   readonly videoStats: VideoStats = videoStats();
@@ -808,10 +820,16 @@ export class VirglRenderer {
 
   // --- guest memory ----------------------------------------------------------------------------------------------
 
-  /** `len` bytes at `offset` in the resource's backing: a view of guest RAM if they're contiguous, else a copy. */
-  private readBacking(r: Res, offset: number, len: number): Uint8Array | null {
+  /**
+   * `len` bytes at `offset` in the resource's backing: a view of guest RAM if they're contiguous, else a copy (a join).
+   * A join goes into `joined`, kept for the next (a staging buffer's pages are scattered: Firefox's scroll joins ~900 KB
+   * 70 times a second, PERF loop 91), unless `keep` (the caller keeps the bytes) or it's over `JOIN_KEPT`: so the
+   * bytes are the caller's until its next call only, as a view of guest RAM is (an upload copies them at once).
+   */
+  private readBacking(r: Res, offset: number, len: number, keep = false): Uint8Array | null {
     if (!r.backing) return null;
     const ram = this.ram();
+    this.stats.backingReads++;
     let skip = offset;
     for (let k = 0; k < r.backing.length; k++) {
       const b = r.backing[k];
@@ -820,7 +838,15 @@ export class VirglRenderer {
         continue;
       }
       if (skip + len <= b.len) return bytes(ram, b).subarray(skip, skip + len);
-      const out = new Uint8Array(len);
+      this.stats.joins++;
+      this.stats.joinBytes += len;
+      let out: Uint8Array;
+      if (keep || len > JOIN_KEPT) out = new Uint8Array(len);
+      else {
+        if (this.joined.length < len)
+          this.joined = new Uint8Array(Math.min(JOIN_KEPT, Math.max(len, 2 * this.joined.length)));
+        out = this.joined.subarray(0, len);
+      }
       let at = 0;
       for (let j = k; j < r.backing.length && at < len; j++) {
         const e = r.backing[j];
@@ -1482,7 +1508,7 @@ export class VirglRenderer {
       {
         read: (res, len) => {
           const r = this.lookup(c, res);
-          return r ? this.readBacking(r, 0, len) : null;
+          return r ? this.readBacking(r, 0, len, true) : null;
         },
         size: (res) => {
           const r = this.lookup(c, res);

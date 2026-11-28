@@ -28,7 +28,7 @@ import { sndBackend } from './snd.ts';
 import type { SndMixer } from './snd-proto.ts';
 import { micSource, ringSink, type SndWake } from './snd-realtime.ts';
 import { checksumSink, patternSource } from './snd-test.ts';
-import { bytes, ramLayout, type RamLayout } from './ram.ts';
+import { bytes, ramLayout, type RamLayout, type Segment } from './ram.ts';
 import {
   CONFIG,
   CONFIG_GEN,
@@ -933,13 +933,26 @@ export class Devices {
       const ring = base + REQ / 4;
       let tail = u32[ring + 1];
       const head = Atomics.load(u32, ring);
-      const word = () => u32[ring + 2 + (tail++ % RING_WORDS)];
       let skipped = false;
       while (tail !== head) {
-        const w0 = word();
-        const n = word();
-        const segs = (k: number) => Array.from({ length: k }, () => ({ off: word(), len: word(), mem: word() }));
-        const r = { w0, queue: (w0 >>> 16) & 0xff, read: segs(n & 0xffff), write: segs(n >>> 16) };
+        // Plain loops, no closures: a request's parse was ~220-290 ns with them, ~15-27 ns without (PERF loop 91).
+        const w0 = u32[ring + 2 + (tail++ % RING_WORDS)];
+        const n = u32[ring + 2 + (tail++ % RING_WORDS)];
+        const read: Segment[] = [],
+          write: Segment[] = [];
+        for (let k = n & 0xffff; k > 0; k--, tail += 3)
+          read.push({
+            off: u32[ring + 2 + (tail % RING_WORDS)],
+            len: u32[ring + 2 + ((tail + 1) % RING_WORDS)],
+            mem: u32[ring + 2 + ((tail + 2) % RING_WORDS)],
+          });
+        for (let k = n >>> 16; k > 0; k--, tail += 3)
+          write.push({
+            off: u32[ring + 2 + (tail % RING_WORDS)],
+            len: u32[ring + 2 + ((tail + 1) % RING_WORDS)],
+            mem: u32[ring + 2 + ((tail + 2) % RING_WORDS)],
+          });
+        const r = { w0, queue: (w0 >>> 16) & 0xff, read, write };
         tail >>>= 0;
         Atomics.store(u32, ring + 1, tail);
         if (w0 >>> 24 !== epoch) {

@@ -238,7 +238,12 @@ the 2D presenter's on WebGL2 or a 2D context), 35-37 ms on the simple framebuffe
   other buffer data goes as `TRANSFER3D` in the stream (the guest writes the buffer's own pages and the stream names
   the range). Every submit starts with the queued `TRANSFER3D`s and an `END_TRANSFERS` padded to 1,009 dwords (4 KB of
   each submit is padding). So glcomp and sway send no virtio `TRANSFER_TO_HOST_3D`/`FROM_HOST_3D` at all, and the
-  renderer resolves a backing per command, not per transfer.
+  renderer resolves a backing per command, not per transfer. A transfer's range inside one backing entry (adjacent
+  entries merged at `ATTACH_BACKING`) is uploaded from guest RAM in place; one across entries is **joined** into one
+  buffer first (`readBacking`), and that's nearly every upload: a staging buffer's pages are scattered, so Firefox's
+  scroll and pages join 15-171 times a second, 9-115 MB/s, 76-100% of what they upload (PERF loop 91; the renderer's
+  `joins` and `joinBytes`, `?displaystats`). The join's buffer is kept for the next one (up to 16 MiB; the video path,
+  which keeps two reads at once, takes fresh ones): 103-107 µs a ~900 KB join fresh, 14-32 µs kept, in Chromium.
 - **sway on GLES**: 2 submits a frame; its buffers are 3D resources flipped with `SET_SCANOUT` and `RESOURCE_FLUSH`;
   its cursor is drawn with GL into a 3D resource (devices.md "A 3D cursor"); dumb buffers (fbcon, a console's cursor,
   pixman) stay 2D. A scrolling foot uploads its whole window every frame (3.7 MB at 1376×762).

@@ -90,7 +90,9 @@ page. The ring and record layouts are in [abi.md](abi.md) "Device backends".
   worker has completed everything posted, so completions land at a fixed step and boots keep one
   exact step count natively, in Node and in Chromium (backend latency only lengthens the wait).
   Asynchronous backends (qcow2 decompression) may answer with a promise; `Devices.poll` completes
-  requests in order and the doorbell is acked only after all of them.
+  requests in order and the doorbell is acked only after all of them. Its parse of a request is plain loops into
+  the request's segment arrays, no closures (with them, `Array.from`'s mapping: ~220-320 ns a request; now 19-35 ns,
+  bench/io/poll.ts, PERF loop 91).
 - **Realtime mode:** `DEVICE` exits don't wait (except config events, below); the vCPU idles on
   the signal word.
 - **Where the thread can't block** (Node, a page's main thread) the same `Devices` class runs
@@ -1279,7 +1281,9 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   so deterministic mode stays exact. No `CTRL_VQ`, one queue pair.
 - **Offloads** (`web/offload.ts`; byte tests in `tests/offload.test.ts`): what the guest's stack would
   run as guest code runs in the device worker, and adapters still see ordinary frames. `CSUM`: a
-  `NEEDS_CSUM` frame gets its checksum finished (from `csum_start` to the end, at `csum_offset`).
+  `NEEDS_CSUM` frame gets its checksum finished (from `csum_start` to the end, at `csum_offset`). Every byte through
+  the offloads is summed once (`csumSum`: four bytes a load through a word view, 0.10-0.12 ns a byte against the
+  0.37-0.42 of two bytes a step, PERF loop 91), ~12 ms of the worker's second at 1 Gbit/s.
   `HOST_TSO4`, `HOST_TSO6` (with `HOST_ECN`) and `HOST_USO`: a packet of up to 64 KB is cut into
   `gso_size` payloads, each with the headers, its IPv4 total length (or IPv6 payload length), an IPv4
   ID counting up from the packet's (its header checksum redone), the TCP sequence number moved on

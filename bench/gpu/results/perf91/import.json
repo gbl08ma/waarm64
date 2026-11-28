@@ -1,0 +1,124 @@
+{
+ "what": "importStored of Debian's qcow2 (400 MB file, 3 GiB virtual) from a File, headless Chromium 155 on the dev VM, OPFS on a fresh profile; arms are IMPORT_AHEAD; each arm a page session of 3 imports, passes in opposite orders; ms",
+ "arms": {
+  "1": {
+   "passes": [
+    [
+     3191,
+     3205,
+     3124
+    ],
+    [
+     3057,
+     3231,
+     3105
+    ]
+   ],
+   "all": [
+    3057,
+    3105,
+    3124,
+    3191,
+    3205,
+    3231
+   ],
+   "median": 3157.5,
+   "q1": 3105,
+   "q3": 3191
+  },
+  "2": {
+   "passes": [
+    [
+     2696,
+     2734,
+     2786
+    ],
+    [
+     2720,
+     2776,
+     2849
+    ]
+   ],
+   "all": [
+    2696,
+    2720,
+    2734,
+    2776,
+    2786,
+    2849
+   ],
+   "median": 2755.0,
+   "q1": 2720,
+   "q3": 2776
+  },
+  "4": {
+   "passes": [
+    [
+     2728,
+     2718,
+     2769
+    ],
+    [
+     2828,
+     2797,
+     2988
+    ]
+   ],
+   "all": [
+    2718,
+    2728,
+    2769,
+    2797,
+    2828,
+    2988
+   ],
+   "median": 2783.0,
+   "q1": 2728,
+   "q3": 2797
+  },
+  "8": {
+   "passes": [
+    [
+     2683,
+     2978,
+     2722
+    ],
+    [
+     2714,
+     2721,
+     2926
+    ]
+   ],
+   "all": [
+    2683,
+    2714,
+    2721,
+    2722,
+    2926,
+    2978
+   ],
+   "median": 2721.5,
+   "q1": 2714,
+   "q3": 2722
+  }
+ },
+ "diag_ahead1": {
+  "readMs": [
+   2490.5,
+   2367.3
+  ],
+  "readSyncMs": [
+   1020.5,
+   996.7
+  ],
+  "scanAndWriteMs": [
+   668.9,
+   597.0
+  ],
+  "storeWriteMs": [
+   344.9,
+   246.2
+  ],
+  "chunks": 3072
+ }
+}

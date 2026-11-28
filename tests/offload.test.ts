@@ -2,7 +2,7 @@
 // cut into segments, received checksums vouched for. Checksums are checked with web/net.ts's own `checksum`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checksumValid, MAX_FRAME, NET_HDR, receive, transmit } from '../web/offload.ts';
+import { checksumValid, csumSum, MAX_FRAME, NET_HDR, receive, transmit } from '../web/offload.ts';
 import { checksum } from '../web/net.ts';
 import { ramLayout } from '../web/ram.ts';
 
@@ -308,4 +308,32 @@ test('virtio-net on a port backend: a batch\'s segments reach the guest as one p
       port2.close();
     }
   }
+});
+
+test('csumSum: the sum of every range at every alignment of its view is the two-bytes-a-step one\'s (PERF loop 91)', () => {
+  const pairs = (b: Uint8Array, start: number, end: number, s: number) => {
+    let k = start;
+    for (; k + 1 < end; k += 2) s += (b[k] << 8) | b[k + 1];
+    if (k < end) s += b[k] << 8;
+    return s;
+  };
+  const fold = (s: number) => {
+    while (s > 0xffff) s = (s & 0xffff) + Math.floor(s / 0x10000);
+    return s;
+  };
+  const buf = new Uint8Array(70_000 + 8);
+  let seed = 1;
+  for (let i = 0; i < buf.length; i++) buf[i] = (seed = (seed * 1103515245 + 12345) >>> 0) >>> 24;
+  buf.fill(0xff, 1000, 1000 + 66_000); // past 8,192 words of 0xffff: the folds between blocks
+  let wrong = 0;
+  for (let view = 0; view < 4; view++) {
+    const b = buf.subarray(view);
+    for (let start = 0; start < 8; start++)
+      for (const len of [0, 1, 2, 3, 31, 32, 33, 34, 35, 36, 37, 63, 1514, 1515, 65_535, 65_536 + 3])
+        for (const s0 of [0, 7, 0x1_0000])
+          if (fold(csumSum(b, start, start + len, s0)) !== fold(pairs(b, start, start + len, s0))) wrong++;
+    for (const start of [995, 997, 998, 999])
+      if (fold(csumSum(b, start, start + 66_010)) !== fold(pairs(b, start, start + 66_010, 0))) wrong++;
+  }
+  assert.equal(wrong, 0);
 });

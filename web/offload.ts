@@ -50,13 +50,41 @@ const put16 = (b: Uint8Array, at: number, v: number) => {
   b[at + 1] = v & 255;
 };
 
-/** The ones'-complement sum of `b[start, end)` added to `s`, not folded. */
-function sum(b: Uint8Array, start: number, end: number, s = 0) {
+/**
+ * The ones'-complement sum of `b[start, end)` added to `s`, not folded: the bytes' 16-bit big-endian words from
+ * `start` (an odd last byte the high half of a word). Four bytes a load where they're aligned, through a word view of
+ * the buffer in the host's little-endian order (two bytes a step cost 0.37-0.42 ns a byte, this 0.10-0.12:
+ * bench/net/csum.ts, PERF loop 91). The sum of little-endian words is the byte-swapped sum of big-endian ones (RFC
+ * 1071 §2(B)), so it's swapped back, unless the words start an odd byte past `start`: those pair the bytes the
+ * other way, as the sum wants them.
+ */
+export function csumSum(b: Uint8Array, start: number, end: number, s = 0) {
   let k = start;
-  for (; k + 1 < end; k += 2) s += (b[k] << 8) | b[k + 1];
-  if (k < end) s += b[k] << 8;
+  if (end - k < 32) {
+    for (; k + 1 < end; k += 2) s += (b[k] << 8) | b[k + 1];
+    if (k < end) s += b[k] << 8;
+    return s;
+  }
+  // The bytes before the first aligned one, each in its half of its word.
+  for (; (b.byteOffset + k) & 3; k++) s += (k - start) & 1 ? b[k] : b[k] << 8;
+  const n = (end - k) >> 2;
+  const w = new Uint32Array(b.buffer, b.byteOffset + k, n);
+  let x = 0;
+  for (let i = 0; i < n;) {
+    // At most 8,192 words between folds: the sum stays a small integer (each word adds up to 2 × 0xffff).
+    const stop = Math.min(n, i + 8192);
+    let t = 0;
+    for (; i < stop; i++) {
+      const v = w[i];
+      t += (v & 0xffff) + (v >>> 16);
+    }
+    x = fold(x + t);
+  }
+  s += (k - start) & 1 ? x : ((x & 0xff) << 8) | (x >> 8);
+  for (k += n * 4; k < end; k++) s += (k - start) & 1 ? b[k] : b[k] << 8;
   return s;
 }
+const sum = csumSum;
 
 const fold = (s: number) => {
   while (s > 0xffff) s = (s & 0xffff) + Math.floor(s / 0x10000);
