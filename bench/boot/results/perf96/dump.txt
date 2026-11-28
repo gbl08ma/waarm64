@@ -1,0 +1,5 @@
+bench/jit/dump-modules.ts, base (9752bb9a) against new (PERF loop 96's core/src/jit/{block,emit}.rs), deterministic boots in Node:
+buildroot 43 modules: identical 43, other 0
+alpine 300 modules: identical 300, other 0
+Core function sizes (tools/wasm-sizes.ts): block::module 26797 -> 27441 B, emit_region 19598 -> 19400 B,
+Func::conform 231 B outlined (inlined in base). Cores not committed (bench/results/local/perf96/).

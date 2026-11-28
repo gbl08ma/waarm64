@@ -1174,14 +1174,27 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   showed the states settled is the function's, and so is a single block's first when its second would have the same
   arguments (no register plain, flags not dead). PERF loop 71: 8-10% fewer members emitted, `emitNs` 5-8% lower, the
   modules byte for byte the same. The emissions until the states settle are **analyses** (PERF loop 94): what a
-  member's edges carry is a function of its own entry states (registers and flags; the targets' states shape only the
-  code on the edge, and whether its lazy flags contradict the target's is found again from what it carried), so each
+  member's edges carry is a function of its own entry states (registers and flags; the targets' states shape the
+  code on the edge, whether its lazy flags contradict the target's, found again from what it carried, and whether the
+  member stores NZCV before its branch, which changes no edge only because `Func::commit_flags` keeps the flags lazy,
+  touches no register and can't make the member's flags dead: `block::redo`), so each
   emits only the members whose entry states changed since the one before (`block::redo`) and takes the others'
   edges from it (`Emission::edges`); one where every member changed, or `plain` did (after the first emission), is a
   whole emission and may be kept. An analysis's code is never the function's, so a region that settled in one ends
   with a whole emission. Checked wherever debug assertions are on (`Emission::found`: the states and edges a whole
   emission finds), and `block::tests::lazy_flags_cross_members_that_keep_them` pins a member whose flag state alone
-  changes. The region's `looped` and `entries` are found once for its emissions (`Env`). On today's 64-block regions
+  changes, `a_commit_before_the_branch_changes_no_edge` one whose successor's alone does,
+  `a_region_with_entries_settles_in_analyses` the analyses of a region with entries (whose prologue each emits again)
+  and `a_region_settled_at_once_keeps_its_first_emission` the pass whose arguments are the last one's. **Real code**
+  reaches these checks natively in `block::tests::regions_of_a_real_kernel_emit_as_their_arguments_do` (PERF loop 96):
+  the loops and forward regions at every block start of 40 pages of each Buildroot kernel's text
+  (`target/images/linux/Image` and `Image-defconfig`; skipped without them), ~8,400 regions each, ~20,000 analyses
+  (most with entries), ~17 s; it asserts that no region reaches either fallback. Natively nothing else emits a guest's
+  code (the JIT's native tests run it through the block interpreter), so before it real regions met the checks only
+  in the release wasm, where they don't exist. Planted in loop 96, each caught: an analysis's skipped member's edge
+  replacing its target's merged state instead of merging (caught only by the new tests), its dead flags taken as live,
+  `redo` ignoring the flag states, the pre-branch commit retiring the lazy flags, the pass with the last one's
+  arguments taken when `plain` changed (only the new tests), the prologue's flags in memory left out. The region's `looped` and `entries` are found once for its emissions (`Env`). On today's 64-block regions
   20-31% never settle in four emissions and take 62-71% of the members emitted; 64-70% of them would settle in eight,
   90-96% in sixteen, so the cut is in what each emission emits, not in their number: 20-21% fewer guest instructions
   emitted, `emitNs` 9-11% lower on the Mac (the rest of an emission is the region's fixed costs; `node` −0.82%, the
@@ -1194,7 +1207,11 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   pin the flag states' part of the comparison and the unsettled path. The fallback for lazy flag states that an
   edge contradicts (`Emission::bad`: emitted again with flags in memory) has no test because nothing reaches it: an
   entry is lazy only when every edge carried that setter in the emission before, so none stops being lazy; 0 in
-  22,892 regions of a Firefox pages session, 5,375 of them unsettled (bench/boot/REPORT.md "PERF loop 72").
+  22,892 regions of a Firefox pages session, 5,375 of them unsettled (bench/boot/REPORT.md "PERF loop 72"). The
+  entries' prologue feeds it too (an entry member whose flags were lazy would be entered from outside with NZCV in
+  memory), which `settle` makes unreachable by seeing the prologue's merge in every emission:
+  `an_entry_member_reads_its_flags_from_memory` pins it (planted, the merge left out: the region falls back; the
+  merge and the check left out: the member reads flag locals nothing set).
   Locals map: i64 scratch 2..=5, i32 6..=9, the flag locals 10..=16, X registers from 17 (in
   order of first use), V registers 49..=79 then 96, SHA's i32s 80..=95, FT's f64s 97..=99 and
   113..=117 (the double FMA's exact product and sums), PMULL's i64s 100..=112, FZOK 118, VT 119–122,
@@ -1222,9 +1239,12 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   predecessors: the head's includes the function's entry (nothing held, the `Cpu`'s values), so a loop-carried
   scalar is clean in its shadow at the head (the back-edge stores it, two stores and no lane op) and never dirty
   there, which would zero the upper bits of a register the first iteration leaves before writing. Conforming builds
-  or loads what the target holds; a target dirty in a shadow alone must be so on the edge (`conform` asserts it), and
+  or loads what the target holds; a target dirty in a shadow alone must be so on the edge, and
   a region whose entry states don't settle in four emissions makes those clean (`Regs::loose`), a form any edge
-  conforms to. No register is held in both shadows without its v128 (`Regs::sound`). A failure chain's segment stores each register from the form it had at its site (recorded with the
+  conforms to. An edge that doesn't (`Func::unfit`, set by `conform`) would lose the register's upper bits: the
+  region's emission is checked for one in release too, and emitted again with its entries made clean (in the tests
+  an assertion: nothing reaches it; `an_unfit_edge_emits_the_region_again_with_its_entries_clean` provokes it with
+  `Regs::tight`). It costs nothing measurable and changes no module (PERF loop 96). No register is held in both shadows without its v128 (`Regs::sound`). A failure chain's segment stores each register from the form it had at its site (recorded with the
   segment), and a site joins the chain only while those forms still hold; one that writes such a register with more
   bits than its shadow (a reload from the `Cpu` would lose them) starts a new chain, a group's leader counting the
   span's SIMD&FP loads and their widths (not reached by the tests: only a device access `Vm::fast` retires and still

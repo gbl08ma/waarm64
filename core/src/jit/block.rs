@@ -1085,10 +1085,21 @@ pub fn module(
                 let todo = redo(&pe, &pf, &entry, &flags);
                 let x = if !all && !todo.contains(&true) {
                     // The arguments of the one before: that one.
+                    #[cfg(test)]
+                    tally(|t| t.unchanged += 1);
                     p
                 } else {
                     // Every member changed: a whole emission, which may be kept.
                     let part = (!all && todo.contains(&false)).then_some((&p, &todo[..]));
+                    #[cfg(test)]
+                    if part.is_some() {
+                        let skipped = todo.iter().filter(|&&t| !t).count() as u32;
+                        let ents = !env.ents.is_empty() as u32;
+                        tally(|t| {
+                            (t.partial, t.skipped) = (t.partial + 1, t.skipped + skipped);
+                            t.partial_entries += ents;
+                        });
+                    }
                     emit_region(&env, r, plain, &entry, &flags, part)
                 };
                 // Checked wherever debug assertions are on (the tests): an
@@ -1109,25 +1120,44 @@ pub fn module(
                 (pe, pf, prev, all) = (entry, flags, Some(x), false);
                 (entry, flags) = next;
             }
+            #[cfg(test)]
+            tally(|t| (t.regions, t.unsettled) = (t.regions + 1, t.unsettled + !settled as u32));
             if !settled {
                 // Edges may not have what an entry holds dirty in a shadow
                 // alone: made clean, a form every edge conforms to.
                 entry = entry.iter().map(|s| s.loose()).collect();
+                #[cfg(test)]
+                if provoked() {
+                    entry = entry.iter().map(|s| s.tight()).collect();
+                }
             }
         }
         let mut x = emit(&mut last, plain, &entry, &flags);
         if x.bad {
             // The lazy states didn't settle: flags in memory on every edge.
+            #[cfg(test)]
+            tally(|t| t.bad += 1);
             let dead = |j: usize| if dead[j] { In::Dead } else { In::Mem };
-            x = emit_region(
-                &env,
-                r,
-                plain,
-                &entry,
-                &(0..n).map(dead).collect::<Vec<_>>(),
-                None,
-            );
+            flags = (0..n).map(dead).collect();
+            x = emit_region(&env, r, plain, &entry, &flags, None);
             assert!(!x.bad);
+        }
+        if x.c.unfit {
+            // An edge into a member that starts with a register dirty in a
+            // shadow alone didn't hold it so ([`emit::Func::conform`]): its
+            // upper bits would be lost. Never in the tests (they fail on it),
+            // where the states are those the edges carry; in release the
+            // entries made clean, a form every edge conforms to.
+            debug_assert!(
+                provoked(),
+                "an edge into a dirty shadow-only form it doesn't hold ({:#x})",
+                r.blocks[0].key
+            );
+            #[cfg(test)]
+            tally(|t| t.unfit += 1);
+            entry = entry.iter().map(|s| s.loose()).collect();
+            x = emit_region(&env, r, plain, &entry, &flags, None);
+            debug_assert!(!x.c.unfit && !x.bad);
         }
         let (mut c, n) = (x.c, x.inl);
         nzcv_used |= c.nzcv_used;
@@ -1265,6 +1295,49 @@ impl Emission {
 /// states: [`emit_region`]).
 type Last = (u64, Vec<emit::Regs>, Vec<In>, Emission);
 
+/// What [`module`]'s settling did on this thread, for the tests: regions of
+/// several blocks, those that didn't settle, the analyses (partial
+/// emissions), those of a region with entries, the members they skipped,
+/// the passes whose arguments were the last one's, and the emissions again
+/// with flags in memory (`bad`) or the entries made clean (`unfit`).
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Tally {
+    regions: u32,
+    unsettled: u32,
+    partial: u32,
+    partial_entries: u32,
+    skipped: u32,
+    unchanged: u32,
+    bad: u32,
+    unfit: u32,
+}
+
+#[cfg(test)]
+thread_local! {
+    static TALLY: core::cell::Cell<Tally> = Default::default();
+    /// A test provoking an unfit edge: an unsettled region's entries made
+    /// tight (`Regs::tight`), and no assertion on what follows.
+    static PROVOKE: core::cell::Cell<bool> = const { core::cell::Cell::new(false) };
+}
+
+#[cfg(test)]
+fn tally(f: impl FnOnce(&mut Tally)) {
+    TALLY.with(|t| {
+        let mut v = t.get();
+        f(&mut v);
+        t.set(v);
+    });
+}
+
+/// Whether a test provokes an unfit edge ([`Tally`]); never outside the tests.
+fn provoked() -> bool {
+    #[cfg(test)]
+    return PROVOKE.with(core::cell::Cell::get);
+    #[cfg(not(test))]
+    false
+}
+
 /// One emission of region `r` with the registers in `plain` read without a
 /// local, each member starting in its `entry` register state and `fin` flag
 /// state. With `redo`, an analysis ([`Emission::whole`] false): only the
@@ -1353,6 +1426,10 @@ fn emit_region(
             };
             reached[j] = true;
             flags[j] = flags[j].merge(In::Mem);
+            // Entered with NZCV in memory: never lazy flags at the member
+            // (`settle` sees this merge in every emission), or else the
+            // region is emitted again with its flags in memory.
+            bad |= matches!(fin[j], In::Lazy(..));
             c.conform(entry[j]);
             // Member j's label, from inside the two `if`s.
             c.br(j as u32 + 1).end();
@@ -1716,10 +1793,17 @@ fn emit_region(
 /// after one with `pe`, `pf` (and the same `plain`): those whose own entry
 /// states differ. The others' edges carry what they carried before: what an
 /// edge carries is its member's state from its entry on (`emit_region` sets
-/// each member's registers and flags at its start); the target's states
-/// shape only the code on the edge (what it stores, loads, conforms to), and
-/// whether it contradicts the target's lazy flags, found again from the
-/// lazy flags it carried.
+/// each member's registers and flags at its start). The targets' states
+/// shape the code on the edge (what it stores, loads, conforms to), whether
+/// it contradicts the target's lazy flags (found again from the lazy flags
+/// it carried), and one thing in the member's body: whether NZCV is stored
+/// before its branch (`keep`). That changes no edge only because
+/// [`emit::Func::commit_flags`] keeps the flags lazy (the edge records the
+/// setter, which stays), touches no register, and can't make the member's
+/// flags dead (it sets `touched` to true only where nothing set it). A change
+/// to any of those makes a member's edges a function of its successors'
+/// states too, to be emitted again when theirs change: the tests'
+/// `Emission::found` check catches it (`a_commit_before_the_branch_changes_no_edge`).
 fn redo(pe: &[emit::Regs], pf: &[In], entry: &[emit::Regs], fin: &[In]) -> Vec<bool> {
     (0..entry.len())
         .map(|i| entry[i] != pe[i] || fin[i] != pf[i])
@@ -3062,6 +3146,22 @@ mod tests {
     /// edge into the first such member stores the shadow.
     #[test]
     fn an_unsettled_region_enters_no_member_dirty_in_a_shadow_alone() {
+        unsettled_region(false);
+    }
+
+    /// The same region with every register its entries hold in a shadow
+    /// alone dirty there (a test's provocation, `Regs::tight`): the
+    /// function's entry doesn't hold V0 so at the head, an unfit edge
+    /// (`Func::unfit`), and the region is emitted again with its entries
+    /// made clean, in release too.
+    #[test]
+    fn an_unfit_edge_emits_the_region_again_with_its_entries_clean() {
+        PROVOKE.with(|p| p.set(true));
+        unsettled_region(true);
+        PROVOKE.with(|p| p.set(false));
+    }
+
+    fn unsettled_region(provoke: bool) {
         // 0x100: fadd d0, d0, d1; b 0x10c
         // 0x10c + 12k (k < 7): nop; b .+8 (a brk between the blocks)
         // 0x160: subs x2, x2, #1; b.ne 0x100; ret
@@ -3075,6 +3175,7 @@ mod tests {
         let (_r, m) = mem_with(0x100, &words);
         let r = region(&m, 0x100, 0x100, &|_| true);
         assert_eq!((r.blocks.len(), r.back_edges()), (9, 1));
+        TALLY.with(|t| t.take());
         let e = module(
             &[r],
             &test_mem(),
@@ -3095,6 +3196,8 @@ mod tests {
             store < edge,
             "V0 stored at {store}, the head's edge at {edge}"
         );
+        let t = TALLY.with(|t| t.get());
+        assert_eq!((t.unsettled, t.unfit), (1, provoke as u32), "{t:?}");
     }
 
     #[test]
@@ -3320,5 +3423,205 @@ mod tests {
             words: vec![MOVZ, 0xd65f03c0],
         };
         assert!(!has(&build(b).bytes, &[0x13, 0, 0]));
+    }
+
+    /// What one module's settling did ([`Tally`]).
+    fn settling(regions: &[Region]) -> (Emitted, Tally) {
+        TALLY.with(|t| t.take());
+        let e = module(
+            regions,
+            &test_mem(),
+            |_| None,
+            &Config::DEFAULT,
+            false,
+            crate::cpu::FEATURES,
+            None,
+        );
+        (e, TALLY.with(|t| t.get()))
+    }
+
+    /// Only a member's successor's flag state changes between two emissions:
+    /// the member isn't emitted again, though whether it stores NZCV before
+    /// its branch changes (`keep`). Its edges stay what they were only while
+    /// that store keeps the flags lazy (`redo`): the analysis is checked
+    /// against its whole emission (`Emission::found`).
+    #[test]
+    fn a_commit_before_the_branch_changes_no_edge() {
+        // 0x100: ccmp xzr, xzr, #0, eq; b 0x10c (reads the flags, sets them)
+        // 0x10c: cmp xzr, xzr; b.ne 0x100 (its flags dead at entry); ret
+        let words = [
+            0xfa5f03e0, 0x14000002, 0xd4200000, 0xeb1f03ff, 0x54ffff81, 0xd65f03c0,
+        ];
+        let (_r, m) = mem_with(0x100, &words);
+        let r = region(&m, 0x100, 0x100, &|_| true);
+        assert_eq!((r.blocks.len(), r.back_edges()), (2, 1));
+        let (_, t) = settling(&[r]);
+        // The second emission redoes the member alone (its flags now dead),
+        // keeping the head's edge.
+        assert_eq!(
+            (t.regions, t.partial, t.skipped, t.unsettled),
+            (1, 1, 1, 0),
+            "{t:?}"
+        );
+    }
+
+    /// An entry member's flags are in memory (the prologue enters it so),
+    /// though its one edge carries lazy ones: it loads NZCV, and the region
+    /// needs no emission again with its flags in memory (`bad`).
+    #[test]
+    fn an_entry_member_reads_its_flags_from_memory() {
+        // 0x100: cmp x1, x2; b 0x10c
+        // 0x10c: b.eq 0x200 (no code there)
+        // 0x110: ret
+        let words = [0xeb02003f, 0x14000002, 0xd4200000, 0x540007a0, 0xd65f03c0];
+        let (_r, m) = mem_with(0x100, &words);
+        let r = forward(&m, 0x100, 0x100, &|_, k| k);
+        assert_eq!((r.blocks.len(), r.entries()), (3, vec![1, 2]));
+        let (e, t) = settling(&[r]);
+        assert_eq!((e.counts.cond_direct, e.counts.cond_memory), (0, 1));
+        assert!(has(&e.bytes, &[0x28, 2, 0x88, 2])); // NZCV loaded
+        assert_eq!(t.bad, 0, "{t:?}");
+    }
+
+    /// A region whose states the first emission settles: the next has its
+    /// arguments, and is that one (kept: `Emission::same` checks it).
+    #[test]
+    fn a_region_settled_at_once_keeps_its_first_emission() {
+        // 0x100: nop; b 0x10c
+        // 0x10c: nop; cbnz xzr, 0x100; ret
+        let words = [NOP, 0x14000002, 0xd4200000, NOP, 0xb5ffff9f, 0xd65f03c0];
+        let (_r, m) = mem_with(0x100, &words);
+        let r = region(&m, 0x100, 0x100, &|_| true);
+        assert_eq!((r.blocks.len(), r.back_edges()), (2, 1));
+        let (_, t) = settling(&[r]);
+        assert_eq!((t.regions, t.unchanged, t.partial), (1, 1, 0), "{t:?}");
+        // A register read once becomes plain after the first emission: the
+        // second is a whole one, though no member's states changed.
+        // 0x100: nop; b 0x10c
+        // 0x10c: add x1, x2, #3; ret
+        let words = [NOP, 0x14000002, 0xd4200000, ADD, 0xd65f03c0];
+        let (_r, m) = mem_with(0x100, &words);
+        let r = forward(&m, 0x100, 0x100, &|_, k| k);
+        assert_eq!(r.blocks.len(), 2);
+        let (_, t) = settling(&[r]);
+        assert_eq!((t.regions, t.unchanged, t.partial), (1, 0, 0), "{t:?}");
+    }
+
+    /// A forward region with two entries whose states take more than one
+    /// emission to settle (V0's shadow): the analyses emit some members
+    /// alone, with the entries' prologue emitted each time.
+    #[test]
+    fn a_region_with_entries_settles_in_analyses() {
+        // 0x100: fadd d0, d0, d1; b 0x10c
+        // 0x10c: nop; b 0x118
+        // 0x118: nop; b 0x124
+        // 0x124: fadd d0, d0, d1; ret
+        // V0's shadow reaches one member more at each emission, the second
+        // a whole one (`plain` changed): the third emits the last two alone.
+        let (fadd, b, brk) = (0x1e612800, 0x14000002, 0xd4200000);
+        let words = [fadd, b, brk, NOP, b, brk, NOP, b, brk, fadd, 0xd65f03c0];
+        let (_r, m) = mem_with(0x100, &words);
+        let r = forward(&m, 0x100, 0x100, &|_, k| k);
+        assert_eq!((r.blocks.len(), r.entries()), (4, vec![1, 2, 3]));
+        let (_, t) = settling(&[r]);
+        assert!(t.partial_entries > 0 && t.unsettled == 0, "{t:?}");
+    }
+
+    /// Regions formed from a real kernel's code (Buildroot's `Image` and the
+    /// defconfig one, from `images/build.sh linux`; skipped without them):
+    /// the loops and forward regions at each block start of a sample of the
+    /// text's pages, emitted as the JIT forms and emits them. The tests are a
+    /// debug build: every analysis is checked against its whole emission,
+    /// every kept emission against one emitted again, and every edge against
+    /// its member's entry state (`Emission::found`, `Emission::same`,
+    /// `Func::unfit`), which code from a guest otherwise reaches only in the
+    /// release wasm.
+    #[test]
+    fn regions_of_a_real_kernel_emit_as_their_arguments_do() {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../target/images/linux/");
+        for (image, map) in [
+            ("Image", "System.map"),
+            ("Image-defconfig", "System.map-defconfig"),
+        ] {
+            let (Ok(bytes), Ok(sym)) = (
+                std::fs::read(format!("{dir}{image}")),
+                std::fs::read_to_string(format!("{dir}{map}")),
+            ) else {
+                eprintln!("skipped: no target/images/linux/{image} (images/build.sh linux)");
+                continue;
+            };
+            let at = |name: &str| {
+                sym.lines()
+                    .find_map(|l| {
+                        let f: Vec<_> = l.split(' ').collect();
+                        (f.len() == 3 && f[2] == name)
+                            .then(|| u64::from_str_radix(f[0], 16).ok())
+                            .flatten()
+                    })
+                    .expect(name)
+            };
+            let (text, start, end) = (at("_text"), at("_stext"), at("_etext"));
+            let size = (end - text) as usize;
+            assert!(size <= bytes.len() && size.is_multiple_of(4096));
+            let mut ram = vec![0u128; size / 16];
+            // SAFETY: `ram` holds `size` bytes, 16-byte aligned, and outlives `mem`.
+            let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), size as u64) };
+            for (k, w) in bytes[..size].as_chunks::<8>().0.iter().enumerate() {
+                let w = u64::from_le_bytes(*w);
+                mem.write(8 * k as u64, 8, w).unwrap();
+            }
+            // The kernel's text at its VAs, its PAs from 0 (the MMU on, EL1).
+            let key = |va: u64| (va - text) | KEY_EL1 | KEY_MMU;
+            let inside = |va: u64| (start..end).contains(&va).then(|| key(va));
+            let heads_loop = |k: u64, va: u64| {
+                let r = region(&mem, k, va, &|_| true);
+                r.blocks.len() > 1 || r.looped()
+            };
+            let pages = (end - start) / 4096;
+            TALLY.with(|t| t.take());
+            for p in (0..pages).step_by((pages / 40).max(1) as usize) {
+                let page = start + 4096 * p;
+                let (mut loops, mut fwd) = (vec![], vec![]);
+                let mut off = 0;
+                while off < 4096 {
+                    let va = page + off;
+                    let r = region(&mem, key(va), va, &|_| true);
+                    let len = r.blocks.first().map_or(1, |b| b.words.len() as u64);
+                    off += 4 * len;
+                    if r.blocks.is_empty() {
+                        continue;
+                    }
+                    if r.blocks.len() > 1 || r.looped() {
+                        loops.push(r);
+                    } else {
+                        // Any block in reach that heads no loop (the JIT's
+                        // differential tests).
+                        let member = |va: u64, near: Option<u64>| {
+                            let k = near.or_else(|| inside(va))?;
+                            (!heads_loop(k, va)).then_some(k)
+                        };
+                        fwd.push(forward(&mem, key(va), va, &member));
+                    }
+                }
+                // Successors outside the batch: some compiled (imports).
+                let compiled = |k: u64| (k >> 2).is_multiple_of(3).then_some((7, 4));
+                let mut cfg = Config::DEFAULT;
+                cfg.polled = p % 2 == 1;
+                for rs in [&loops, &fwd] {
+                    let jc = p % 4 < 2;
+                    let xmiss = jc.then_some(40);
+                    module(rs, &mem, compiled, &cfg, jc, crate::cpu::FEATURES, xmiss);
+                }
+            }
+            let t = TALLY.with(|t| t.get());
+            eprintln!("{image}: {t:?}");
+            // Real shapes reach the analyses, with entries too, and nothing
+            // reaches the fallbacks.
+            assert!(
+                t.regions > 1000 && t.partial > 100 && t.partial_entries > 10,
+                "{t:?}"
+            );
+            assert_eq!((t.bad, t.unfit), (0, 0), "{t:?}");
+        }
     }
 }

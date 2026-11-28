@@ -580,12 +580,25 @@ const settled = (page: Page, ms = 30_000, from?: string) =>
     .then(() => page.evaluate(() => ({ state: document.body.dataset.state, text: (document.getElementById('message-text')?.textContent ?? ''), details: (document.getElementById('message-details')?.textContent ?? ''), actions: [...document.querySelectorAll('#message-actions button')].map((b) => b.textContent) })));
 
 // The page's messages (M8 loop 4): what stops a machine from starting says what to do.
-// A stall in it (once in ci.sh, 2026-11-18: 600 s at idle CPU, not reproduced in 20 runs under load) fails in 3 minutes,
-// its notes saying the last step reached.
+// A stall in it (three in ci.sh, 2026-11-18 to 11-28, none reproduced alone or under load: #286) fails in 3 minutes,
+// its notes saying the last step reached; a page's close that doesn't return goes on in a new context (`close`).
 test("the page says what's wrong: no cross-origin isolation, a missing script, core or image (then Retry), too little memory", { skip: !existsSync(IMAGES) && 'SKIPPED: run images/build.sh', timeout: 180_000 }, async (tc) => {
   const step = (what: string) => tc.diagnostic(`${new Date().toISOString()} ${what}`);
   step('no cross-origin isolation');
-  const ctx = await browser.newContext();
+  let ctx = await browser.newContext();
+  // A page's close that doesn't return (#286: the third stall, 2026-11-28, was a running machine's `page.close` after
+  // the core's Retry): bounded, and the test goes on in a new context (no section needs an earlier one's storage), the
+  // old one left to close by itself.
+  const close = async (page: Page) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<false>((r) => { timer = setTimeout(() => r(false), 20_000); });
+    const closed = await Promise.race([page.close().then(() => true), late]);
+    clearTimeout(timer);
+    if (closed) return;
+    step('the page did not close in 20 s: on in a new context (#286)');
+    void ctx.close().catch(() => {});
+    ctx = await browser.newContext();
+  };
   const open = async (route?: (page: Page) => Promise<unknown>) => {
     const page = await ctx.newPage();
     await route?.(page);
@@ -602,13 +615,13 @@ test("the page says what's wrong: no cross-origin isolation, a missing script, c
   assert.match(r.text!, words('machine:power-actions.notIsolated', {}, { start: true }));
   assert.match(r.details!, words('machine:power-actions.notIsolated.cause', {}, { start: true }));
   assert.equal(await page.locator('#restart').isHidden(), true);
-  await page.close();
+  await close(page);
   // xterm.js not installed: the module graph fails to load.
   step('a missing script');
   page = await open((p) => p.route('**/xterm.mjs', (r) => r.fulfill({ status: 404 })));
   await page.waitForFunction(() => document.getElementById('state')?.dataset.state === 'failed', null, { timeout: 10_000, polling: 50 });
   assert.match(await page.evaluate(() => document.getElementById('message-text')?.textContent ?? '') ?? '', /scripts didn't load[^]*npm start/);
-  await page.close();
+  await close(page);
   // The core, then an image: 404s from the machine worker's fetches; Retry once they're back.
   for (const [pattern, want, why] of [
     ['**/waarm64_core.wasm', words('machine:worker-fetch.noCore', {}, { start: true }), words('machine:worker-fetch.noCore.cause', { path: 'target/wasm32-unknown-unknown/release/waarm64_core.wasm', why: t('machine:worker-fetch.http.notFound', { status: 404 }) }, { start: true })],
@@ -626,7 +639,7 @@ test("the page says what's wrong: no cross-origin isolation, a missing script, c
     await page.locator('#message-actions button').click();
     assert.equal((await settled(page, 30_000, 'failed')).state, 'running');
     step('close');
-    await page.close();
+    await close(page);
   }
   // A device that reports 1 GB: the page asks before starting a machine that needs more.
   step('too little memory');
@@ -643,7 +656,7 @@ test("the page says what's wrong: no cross-origin isolation, a missing script, c
   const m = await mark();
   assert.equal(m.ramMiB, 256);
   assert.ok(m.gib > 1 && m.gib < 3, `the estimate ${m.gib} GiB`);
-  await page.close();
+  await close(page);
   // A machine whose tab went away while it ran (a mark no tab renews): the page says so and offers less first.
   step('a crashed mark');
   page = await open((p) => p.addInitScript(() => localStorage.setItem('waarm64.alive.transient-buildroot', JSON.stringify({ name: 'Buildroot', ramMiB: 1024, ncpus: 1, jitMiB: 320, gib: 2.9, peakGiB: 3.1, t: Date.now() - 600_000 }))));
@@ -655,7 +668,7 @@ test("the page says what's wrong: no cross-origin isolation, a missing script, c
   assert.equal((await settled(page, 30_000, 'idle')).state, 'running');
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('waarm64.settings') ?? '{}').jitMiB), 160);
   await page.evaluate(() => { const s = JSON.parse(localStorage.getItem('waarm64.settings') ?? '{}'); delete s.jitMiB; localStorage.setItem('waarm64.settings', JSON.stringify(s)); });
-  await page.close();
+  await close(page);
   // A saved disk written over another image: the way out is a reset.
   step('a disk written over another image');
   const prep = await ctx.newPage();
@@ -676,7 +689,7 @@ test("the page says what's wrong: no cross-origin isolation, a missing script, c
   await page.locator('#message-actions button').click();
   assert.equal((await settled(page, 30_000, 'failed')).state, 'running');
   step('close');
-  await page.close();
+  await close(page);
   await ctx.close();
 });
 

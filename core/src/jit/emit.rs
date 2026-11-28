@@ -192,6 +192,17 @@ impl Regs {
         self.s32 & self.s64 & !self.valid == 0
     }
 
+    /// `self` with every register held in a shadow alone dirty: a state the
+    /// edges don't conform to (a test's provocation, `block::tests`).
+    #[cfg(test)]
+    pub fn tight(self) -> Regs {
+        let (o32, o64) = self.only();
+        Regs {
+            dirty: self.dirty | o32 | o64,
+            ..self
+        }
+    }
+
     /// `self` with no register dirty in a shadow alone (made clean: each
     /// edge into it stores such a register first): a state any edge can
     /// conform to, for a region whose entry states didn't settle.
@@ -322,6 +333,11 @@ pub struct Func {
     /// The registers the instruction being emitted has read so far ([`Func::reg`]):
     /// what a load's or store's helper reads, flushed before its call ([`fallback_chain`]).
     pub ireads: u64,
+    /// An edge conformed to a register dirty in a shadow alone that it
+    /// didn't hold so ([`Func::conform`]): its upper bits would be lost. The
+    /// region is emitted again with its entries [`Regs::loose`]
+    /// (`block::module`; never in the tests).
+    pub unfit: bool,
     /// The open chain of load and store failure exits ([`Chain`]).
     chain: Option<Chain>,
     /// The block's words and the groups of accesses that share one TLB probe
@@ -1002,7 +1018,8 @@ impl Func {
     /// shadow alone (the shadow zero-extended) must be so here, in the same
     /// shadow: nothing else makes its upper bits zero. [`Regs::merge`] makes
     /// that form only where every edge has it, and a region whose states
-    /// didn't settle drops it ([`Regs::loose`]).
+    /// didn't settle drops it ([`Regs::loose`]); an edge that doesn't sets
+    /// [`Func::unfit`].
     pub fn conform(&mut self, to: Regs) {
         let mut d = self.regs.dirty & !to.dirty;
         while d != 0 {
@@ -1013,11 +1030,8 @@ impl Func {
         self.regs.dirty &= to.dirty;
         let ((t32, t64), (h32, h64)) = (to.only(), self.regs.only());
         let dirty = self.regs.dirty & !self.plain;
-        debug_assert!(
-            to.dirty & (t32 & !(h32 & dirty) | t64 & !(h64 & dirty)) == 0,
-            "an edge into a dirty shadow-only form it doesn't hold: {:?} to {to:?}",
-            self.regs
-        );
+        // Checked by the region's emission, in release too (`unfit`).
+        self.unfit |= to.dirty & (t32 & !(h32 & dirty) | t64 & !(h64 & dirty)) != 0;
         self.reload(to);
     }
 

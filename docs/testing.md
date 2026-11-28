@@ -708,6 +708,10 @@ start one target must get ALREADY_ON or ON_PENDING).
   wait for the prompt; and a test that waits for a shell must never match the console's end (count prompt lines:
   `trim.test.ts` failed 1 in 40 under load until it did). `scripts/ci.sh` runs the native tests from the working
   tree: don't edit `core/` while it runs, and read its result before committing.
+- **Real code through the emission's checks** (PERF loop 96): `block::module`'s equivalence checks (an analysis
+  against its whole emission, a kept emission against one emitted again, an edge against its member's entry) are
+  debug assertions, and natively nothing else emits a guest's code, so a native unit test forms regions from the
+  Buildroot kernels' text (`target/images/linux/`, skipped without it) and emits them: docs/jit.md "Emission".
 - **JIT-check** (`VmConfig.jit` 3: compile on sight into the full-size cache, with the checker)
   finds stale blocks JIT-stress's 4-region cache evicts before they're entered again; the `maint`
   test uses it (code rewritten by another vCPU).

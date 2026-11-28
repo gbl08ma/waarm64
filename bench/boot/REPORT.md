@@ -9680,3 +9680,50 @@ docs/jit.md "Blocks and keys".
 
 Memory: none. Compiled code unchanged (nothing built: no static counts or steps move). No CI: the loop changes only
 docs, a comment, REPORTs and results.
+
+## PERF loop 96: the review of loop 94's emission fixed (2026-11-28)
+
+An out-of-context static review of how a region is emitted (`block::module`, the settle loop, loop 94's partial
+emissions; branch `review/jit-emission`, now deleted) found no miscompilation and four risks. Each checked against the
+code; all four held. Tree 9752bb9a. Data: `bench/boot/results/perf96/` (`node/`: the paired A/B; `dump.txt`).
+
+1. **Medium, held: the equivalence checks never saw real guest code.** `Emission::found`, `Emission::same`,
+   `conform`'s dirty-shadow check and `Regs::merge`'s `sound` are debug assertions, and natively no test emits a
+   guest's code (the native JIT runs through the block interpreter; the image tests are `--release`). Added
+   `block::tests::regions_of_a_real_kernel_emit_as_their_arguments_do`: the loops and forward regions (admitting
+   any block that heads no loop, as the differential tests do) at every block start of 40 pages of each Buildroot
+   kernel's text (`Image`, `Image-defconfig`; skipped without them), emitted in modules as the JIT does, polled and
+   not, with and without the jump cache: ~8,400 regions an image, ~2,900 unsettled, ~20,000 analyses (16,000-19,000
+   with entries), 17 s in the debug tests. And a **release guard**: `conform` records an unfit edge
+   (`Func::unfit`) instead of asserting, and `module` emits such a region again with its entries made clean
+   (`Regs::loose`), in the tests an assertion (`an_unfit_edge_emits_the_region_again_with_its_entries_clean`
+   provokes it with a test-only `Regs::tight`).
+2. **Low, held: `redo`'s invariant was wider than its doc.** A successor's flag state also decides whether a
+   member stores NZCV before its branch; edges stay their member's alone because `commit_flags` keeps the flags lazy,
+   touches no register and can't make the flags dead (verified: `touched` goes only from unset to true). The doc
+   comment now says so; `a_commit_before_the_branch_changes_no_edge` is a loop whose member alone is redone when its
+   successor's flags turn dead.
+3. **Low, held: the entries' prologue didn't feed `bad`.** It does now (`bad |= fin[j]` lazy); unreachable while
+   `settle` sees the prologue's merge in memory. `an_entry_member_reads_its_flags_from_memory` pins it.
+4. **Low, held: paths no test reached.** The pass whose arguments are the last one's
+   (`a_region_settled_at_once_keeps_its_first_emission`, with a second region where only `plain` changes), and
+   analyses of a region with entries (`a_region_with_entries_settles_in_analyses`). The `x.bad` fallback stays a
+   release `assert!` and unreached (0 in the ~17,000 kernel regions too).
+
+**Planted bugs** (the `jit::` tests, each restored): an analysis's skipped member replacing its target's merged
+state instead of merging — caught only by the new tests (the entries test, the kernel test); its dead flags taken as
+live (5 tests); `redo` ignoring flag states (3, the new loop test among them); the pre-branch commit retiring the
+lazy flags (4); the last pass's arguments reused although `plain` changed — only the new tests; the prologue's
+flags-in-memory merge left out (the entry test through `bad`, and the kernel test); that merge and the new `bad`
+line both left out (the entry test: the member reads flag locals nothing set); the unfit fallback disabled (the
+provoking test).
+
+**Cost:** modules byte for byte the same (Buildroot's 43 and Alpine's 300, `dump.txt`); `tests/steps.txt` and the
+ABI unchanged. The Mac's paired A/B on `node` (12 pairs, Chrome for Testing 158): wall −0.01% [−0.40, +0.39] same,
+cycles +0.08% [−0.30, +0.46] same; `emitNs` median +0.42%, `compileNs` +0.15%, `planNs` +0.29%, inside each arm's
+spread (580-618 ms, both arms bimodal); footprint the same distribution. Memory: none.
+
+**CI:** `ci.sh` and `ci-jit.sh` passed. The first `ci.sh` run hit [#286](https://github.com/gbl08ma/waarm64/issues/286)
+a third time (`tests/browser.test.ts` "the page says what's wrong": a running machine's `page.close` after the core's
+Retry never returned); that test now bounds its closes at 20 s and goes on in a new context, and passed 5 of 5 alone
+and in the next `ci.sh`.
