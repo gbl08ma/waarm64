@@ -993,7 +993,8 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   bringing bytes is waited for: `fetchBytes`), the cache fetches a block being fetched once and at most 8 at a time
   (a block of a multi-block fetch kept as its own copy, so the cache's 256 MiB is what it holds), qcow2 reads a request's
   L2 tables and merged ranges at once (`openDisk`'s `readAsync`), and the blk backend is `concurrent`: `Devices.poll`
-  completes its requests as they resolve (virtio allows any order) and serves the other devices meanwhile. A read
+  completes its requests as they resolve (virtio allows any order) and serves the other devices meanwhile; one that
+  fails, or whose completion does (a full ring), fails the next poll (PERF loop 93). A read
   starts once the last write, flush or discard before it ended; those wait for every request before them (the overlay
   changes one request at a time; a FLUSH covers the writes completed before it). A snapshot's quiesce drains them
   first (`Devices.drain`, the device worker's `drain`). The deterministic mode keeps one request at a time in order

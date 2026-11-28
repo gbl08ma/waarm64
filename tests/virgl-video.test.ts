@@ -68,7 +68,7 @@ test('VideoContext: codecs, buffers and a picture\'s parameters and data, read f
   const errors: string[] = [];
   const staging = new Map([[7, new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8])], [8, new Uint8Array(32).fill(9)]]);
   const v = new VideoContext({
-    read: (res, len) => staging.get(res)?.subarray(0, len) ?? null,
+    read: (res, len) => staging.get(res)?.slice(0, len) ?? null, // the reader's own bytes (VideoEnv)
     size: (res) => staging.get(res)?.length ?? 0,
     error: (m) => errors.push(m),
   }, stats);
@@ -126,7 +126,7 @@ function video(profile: number, o: { hardware?: number[]; order?: () => number; 
   const staging = new Map<number, Uint8Array>();
   const { made, factory } = fakeDecoders();
   const v = new VideoContext({
-    read: (res, len) => staging.get(res)?.subarray(0, len) ?? null,
+    read: (res, len) => staging.get(res)?.slice(0, len) ?? null, // the reader's own bytes (VideoEnv)
     size: (res) => staging.get(res)?.length ?? 0,
     error: (m) => errors.push(m),
     decoders: factory,
@@ -408,6 +408,21 @@ test('VirglRenderer: a picture\'s desc and data whose backings span entries are 
   const data = made[0].chunks[0].data;
   assert.ok(data.length === 400 && data.every((b) => b === 4), 'the data read whole');
   assert.equal(r.stats.joins, 2);
+});
+
+test('VirglRenderer: the video path reads a backing into bytes of its own, inside one entry too (PERF loop 93: a decoder may hold them past the command)', () => {
+  const ram = new Uint8Array(4096).fill(5);
+  const r = new VirglRenderer(mockGl(), { ram: () => [ram], log: () => {} });
+  r.createContext(1);
+  r.createResource({ id: 7, target: 0, format: 64, bind: 0x20000, width: 64, height: 1, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+  r.attach(1, 7);
+  r.attachBacking(7, [{ off: 1024, len: 64, mem: 0 }]);
+  const priv = r as unknown as { contexts: Map<number, unknown>; videoContext(c: unknown): { env: { read(res: number, len: number): Uint8Array | null } } };
+  const env = priv.videoContext(priv.contexts.get(1)).env;
+  const got = env.read(7, 64)!;
+  ram.fill(6, 1024, 1088); // the guest reuses its staging buffer once the command completed
+  assert.ok(got.length === 64 && got.every((b) => b === 5), 'the bytes as read, not guest RAM');
+  assert.equal(r.stats.joins, 0);
 });
 
 test('VirglRenderer: a picture is written into its planes after the decoding context let go of them', () => {

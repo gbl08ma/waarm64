@@ -505,6 +505,34 @@ test('poll: each request reaches its backend with its queue and segments, its wo
   assert.equal(Atomics.load(u32, ring + 1), start + words.length, 'both taken');
 });
 
+test('poll: a concurrent request whose completion throws (its ring full) fails the next poll, not unhandled (PERF loop 93)', async () => {
+  // The layout (docs/abi.md): the request ring at 280, the completion ring (head, tail, 4,096 words) after it, here full.
+  const memory = { buffer: new SharedArrayBuffer(1 << 16) };
+  const u32 = new Uint32Array(memory.buffer);
+  const ring = 280 / 4, cpl = (280 + 8 + 4 * 4096) / 4;
+  u32.set([1, 0], ring + 2); // one record of epoch 0, no segments
+  Atomics.store(u32, ring, 2);
+  Atomics.store(u32, cpl, 4096);
+  let answer!: (n: number) => void;
+  const backend = { reset() {}, concurrent: true, request: () => new Promise<number>((ok) => (answer = ok)) };
+  const proto = Devices.prototype as unknown as Record<string, unknown>;
+  const self: Record<string, unknown> = { memory, shared: [0], signal: 40_000, wakes: [], stops: [], backends: [backend], epochs: [0], deterministic: false, detached: new Set(), ramAt: 0, spillViews: [], kickOwed: false, kick: proto.kick, views: proto.views, complete: proto.complete };
+  const poll = Devices.prototype.poll as (this: unknown) => Promise<void>;
+  const unhandled: unknown[] = [];
+  const onUnhandled = (e: unknown) => unhandled.push(e);
+  process.on('unhandledRejection', onUnhandled);
+  try {
+    await poll.call(self);
+    answer(1);
+    await new Promise((ok) => setTimeout(ok, 10));
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+  }
+  assert.deepEqual(unhandled.map(String), [], 'no unhandled rejection');
+  assert.equal((self.detached as Set<unknown>).size, 0, 'no longer in flight');
+  await assert.rejects(poll.call(self), /completion ring full/, 'the next poll fails with it');
+});
+
 test('net: a received frame across merged buffers (MRG_RXBUF): the header, then the frame, over their segments', () => {
   const ram = new Uint8Array(1 << 16);
   const done: number[] = [];

@@ -129,12 +129,12 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried and lost: polled code without `acc`").
 
-## State (2026-11-28, after loop 92)
+## State (2026-11-28, after loop 93)
 
 **The track resumed 2026-11-28 (paused after loop 86).** Loops 88-90: round-robin's chunk ends (row 22), the three
 sweeps closed by their counts (row 23), the review of loop 88 fixed (bench/boot/REPORT.md "PERF loop 88" to "PERF loop
 90"). Loop 91 did row 24 (bench/gpu/REPORT.md "PERF loop 91"): virgl's joins, the import read ahead, the checksum, the
-poll. Loop 92 closed row 25 by its counts, nothing built (bench/boot/REPORT.md "PERF loop 92"). The queue was refilled after loop 92 (rows 26-34); row 26 fixes the review of loop 91.
+poll. Loop 92 closed row 25 by its counts, nothing built (bench/boot/REPORT.md "PERF loop 92"). The queue was refilled after loop 92 (rows 26-34). Loop 93 fixed the review of loop 91 (row 26; bench/gpu/REPORT.md "PERF loop 93": four low findings, all held).
 
 **The rule since 2026-11-24 (the user): spend as little time in benchmarks and CI as the answers allow
 ("Batching", above).** Loop 75's notes still hold: `bench/boot/results/perf75/diag.patch` applies to 3a08fdf3; loop
@@ -150,8 +150,8 @@ Loop 86 fixed the out-of-context review of loop 84 (bench/io/REPORT.md "PERF loo
 
 What every loop kept, dropped and found is in its REPORT entry (bench/boot/REPORT.md "PERF loop 36" to "PERF loop
 66" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
-36, 42, 47, 50, 55, 58, 71, 73, 74, 76, 77, 78, 79, 80, 82, 84 and 88) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43, 48, 56, 60, 72,
-75, 77, 78, 80, 81, 82, 84, 86 and 90 (50's: comments only), 73's in its own commit while paused. Built but off by default (measured slower): I8MM, FCMA,
+36, 42, 47, 50, 55, 58, 71, 73, 74, 76, 77, 78, 79, 80, 82, 84, 88 and 91) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43, 48, 56, 60, 72,
+75, 77, 78, 80, 81, 82, 84, 86, 90 and 93 (50's: comments only), 73's in its own commit while paused. Built but off by default (measured slower): I8MM, FCMA,
 FP16, FHM, BF16. The ABI is 74.
 
 ## Still open (the queue: the first is next; by expected gain, highest first)
@@ -177,8 +177,7 @@ Performance`) the dev VM or the Mac can try; each row's figures are its issue's,
 
 | # | Entry | Kind | Notes |
 |---|---|---|---|
-| 26 | **Next**: fix the out-of-context review of loop 91's host paths (`origin/review/host-events`, `review/host-events.md`: four low findings) | fix | each with its confirming test failing first; delete the branch on origin |
-| 27 | JIT: cut emissions of regions whose entry states never settle ([#15](https://github.com/gbl08ma/waarm64/issues/15), `block::module`) | count, build | compile time: emission 163 ms of the boot gate on the Mac, 1.44 s of a pages session; the unsettled regions' repeated emissions 53-62% of members emitted (counted on 16-block regions: re-count); the code those regions get must not get worse |
+| 27 | **Next**: JIT: cut emissions of regions whose entry states never settle ([#15](https://github.com/gbl08ma/waarm64/issues/15), `block::module`) | count, build | compile time: emission 163 ms of the boot gate on the Mac, 1.44 s of a pages session; the unsettled regions' repeated emissions 53-62% of members emitted (counted on 16-block regions: re-count); the code those regions get must not get worse |
 | 28 | JIT blocks still end at the other system instructions: MSRs, SYS, CLREX, DC ([#315](https://github.com/gbl08ma/waarm64/issues/315), `core/src/jit/block.rs` `end`) | count, build | a profile of block ends by instruction first; relax only what ends blocks often enough |
 | 29 | Keep the previous ASID's nG TLB entries ([#316](https://github.com/gbl08ma/waarm64/issues/316), `core/src/mmu.rs`) | count | ~0.3 M nG refills in Alpine's boot; count the refills' share of time on the gates and the pages session |
 | 30 | Adaptive idle-vCPU poll before sleeping ([#134](https://github.com/gbl08ma/waarm64/issues/134)) | build, measure | the renderers' CPU, not time: ≤ ~4.5% of a core on the pages session, ~1.1 points of an idle 4-vCPU guest; futex hand-offs must not slow (loop 83's `pingpong`) |

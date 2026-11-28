@@ -243,7 +243,8 @@ the 2D presenter's on WebGL2 or a 2D context), 35-37 ms on the simple framebuffe
   buffer first (`readBacking`), and that's nearly every upload: a staging buffer's pages are scattered, so Firefox's
   scroll and pages join 15-171 times a second, 9-115 MB/s, 76-100% of what they upload (PERF loop 91; the renderer's
   `joins` and `joinBytes`, `?displaystats`). The join's buffer is kept for the next one (up to 16 MiB; the video path,
-  which keeps two reads at once, takes fresh ones): 103-107 µs a ~900 KB join fresh, 14-32 µs kept, in Chromium.
+  which keeps two reads at once and may hold them past the command, takes copies of its own, a join a fresh buffer):
+  103-107 µs a ~900 KB join fresh, 14-32 µs kept, in Chromium. An empty range reads as no bytes, at the backing's end too.
 - **sway on GLES**: 2 submits a frame; its buffers are 3D resources flipped with `SET_SCANOUT` and `RESOURCE_FLUSH`;
   its cursor is drawn with GL into a 3D resource (devices.md "A 3D cursor"); dumb buffers (fbcon, a console's cursor,
   pixman) stay 2D. A scrolling foot uploads its whole window every frame (3.7 MB at 1376×762).

@@ -120,7 +120,7 @@ export async function openStoredForWriting(path: string, identity: string, size:
   return openOverlay(path, identity);
 }
 
-/** The chunks (1 MiB each) an import reads ahead of the one it writes (PERF loop 91). */
+/** The chunks (1 MiB each) an import has in flight, the one it writes next among them: 2 is one read ahead (PERF loop 91). */
 const IMPORT_AHEAD = 2;
 
 /**
@@ -146,9 +146,9 @@ export async function importImage(
   const store = overlay(zeroDisk(image.size), files.data, files.map, files.meta, 0, { ordered: false });
   const CHUNK = 1 << 20;
   let blocks = 0;
-  // IMPORT_AHEAD chunks read ahead of the one being written: their compressed clusters inflate in the pool while this
-  // thread reads the file and writes the store (PERF loop 91). Each read's failure is caught at once (its own await
-  // throws it), so one left behind by a failed import isn't an unhandled rejection.
+  // IMPORT_AHEAD chunks in flight, the one being written among them: the others' compressed clusters inflate in the
+  // pool while this thread reads the file and writes the store (PERF loop 91). Each read's failure is caught at once
+  // (its own await throws it), so one left behind by a failed import isn't an unhandled rejection.
   const reads: Promise<Uint8Array | undefined>[] = [];
   let ahead = 0;
   const readAhead = () => {

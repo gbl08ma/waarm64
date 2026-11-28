@@ -265,7 +265,7 @@ const VP9_PIC_FIELDS = 332;
 
 /** How the video commands reach the rest of the renderer. */
 export type VideoEnv = {
-  /** `len` bytes at the start of a resource's backing (a staging buffer the guest filled), or null. */
+  /** `len` bytes at the start of a resource's backing (a staging buffer the guest filled), the caller's own, or null. */
   read(res: number, len: number): Uint8Array | null;
   /** The size of a resource's backing (0 if none). */
   size(res: number): number;
@@ -388,8 +388,8 @@ export class VideoContext {
         const desc = this.env.read(p[2], this.env.size(p[2]));
         const bits = this.env.read(p[3], p[4]);
         if (!desc || !bits) return this.env.error(`video: codec ${p[0]}: can't read the picture's parameters or data`);
-        c.desc = desc.slice();
-        c.bits.push(bits.slice());
+        c.desc = desc;
+        c.bits.push(bits);
         this.stats.bitstreamBytes += p[4];
         return;
       }

@@ -144,9 +144,6 @@
     },
     "@typescript-eslint/prefer-nullish-coalescing": {
       "count": 1
-    },
-    "@typescript-eslint/use-unknown-in-catch-callback-variable": {
-      "count": 1
     }
   },
   "web/diskcache.ts": {

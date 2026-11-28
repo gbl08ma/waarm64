@@ -964,14 +964,13 @@ export class Devices {
         if (len === undefined) continue;
         if (typeof len === 'number') this.complete(i, w0, len);
         else if (b.concurrent && !this.deterministic) {
-          // Completed when it resolves, whatever came before: the device worker serves the rest meanwhile.
+          // Completed when it resolves, whatever came before: the device worker serves the rest meanwhile. A failure,
+          // the request's or its completion's (a full ring), fails the next poll.
           const p: Promise<void> = len
-            .then(
-              (n) => this.complete(i, w0, n),
-              (e) => {
-                this.failed ??= e;
-              },
-            )
+            .then((n) => this.complete(i, w0, n))
+            .catch((e: unknown) => {
+              this.failed ??= e;
+            })
             .finally(() => this.detached.delete(p));
           this.detached.add(p);
         } else this.complete(i, w0, await len);

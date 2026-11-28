@@ -347,7 +347,7 @@ shape, §5.1, and carried by definitions) makes it the guest's swap with nothing
   image (a ~400 MB compressed qcow2) stores as 1,043 MB, estimated beforehand at 1,212 MB from the qcow2's
   allocated clusters (`storedEstimate`); its import took ~94–140 s in a cloud session, and takes 2.7-2.8 s on the dev VM
   (Chromium 155). The import reads its file (a `File`, through `FileReaderSync` in the disk worker: an image from a
-  server is fetched whole first) a MiB at a time, **one chunk read ahead** of the one it writes (`IMPORT_AHEAD` 2), so
+  server is fetched whole first) a MiB at a time, **one chunk read ahead** of the one it writes (`IMPORT_AHEAD` 2: the chunks in flight, that one among them), so
   its compressed clusters inflate in the pool while the worker writes the last chunk: 3.1-3.2 s → 2.7-2.8 s (PERF loop
   91, bench/gpu/REPORT.md); more chunks ahead gain nothing more (the worker's own reads and writes are then the bound). Keeping the file as it is was
   the alternative: a qcow2 can't be written in place (our qcow2 code reads, and writes whole files, never allocates

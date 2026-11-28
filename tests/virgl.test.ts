@@ -1129,6 +1129,19 @@ test('virgl renderer: transfers across a backing\'s entries upload their own byt
   assert.equal(r.stats.backingReads, 4);
 });
 
+test('virgl renderer: an empty transfer at the end of a backing is a no-op that succeeds (PERF loop 93)', () => {
+  const gl = mockGl();
+  const errors: string[] = [];
+  const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(4096)], log: (m) => errors.push(m) });
+  r.createContext(1);
+  r.createResource({ id: 1, target: 2, format: 64, bind: 8, width: 16, height: 8, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+  r.attachBacking(1, [{ off: 0, len: 64, mem: 0 }, { off: 1024, len: 64, mem: 0 }]);
+  // A box of no width at offset 128 (the backing's size), and one at 64 (between the entries) as before.
+  assert.ok(r.transfer(1, 1, 0, { x: 0, y: 0, z: 0, w: 0, h: 1, d: 1 }, 128, 16, 0, true), 'at the end');
+  assert.ok(r.transfer(1, 1, 0, { x: 0, y: 0, z: 0, w: 0, h: 1, d: 1 }, 64, 16, 0, true), 'between entries');
+  assert.deepEqual(errors, []);
+});
+
 test('virgl renderer: indices start at the index buffer\'s offset, and the largest index restarts only with restart on (dEQP-GLES2 index arrays)', () => {
   const gl = mockGl();
   gl.keepLog = true;

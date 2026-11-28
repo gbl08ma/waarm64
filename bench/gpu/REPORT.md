@@ -624,3 +624,39 @@ ring's wrap.
 No workload A/B beyond CI: each change is a micro-op judged by its micro-benchmark. CI at this loop's commit, on the dev
 VM: scripts/ci.sh (757 s), ci-net.sh (424 s), ci-graphics.sh (323 s), ci-machines.sh (251 s), ci-debian.sh (317 s),
 ci-usb.sh (10 s) and ci-deqp.sh (639 s), all passed.
+
+## PERF loop 93: the review of loop 91's host paths fixed (2026-11-28)
+
+The out-of-context review of loop 91's four changes (`review/host-events`, four low findings at 5e1e1700, "no high- or
+medium-severity defect") checked against main (351fc173): all four hold as described. Each code fix got a test that
+failed on 351fc173 first, then passed.
+
+1. **`IMPORT_AHEAD`'s comment said two chunks read ahead; the code keeps one** (`web/stored.ts`: the count is the
+   chunks in flight, the one written next among them). Comment only, reworded to say so (and docs/machines.md); loop
+   91's test already catches `IMPORT_AHEAD` 1 (no read ahead).
+2. **`readBacking(…, keep)` gave a view of guest RAM for a range inside one entry**, though its comment read as if
+   the caller owned the bytes. Its one caller, the video path's `read`, copied both reads at once, so nothing was
+   wrong yet; a decoder holding them past the command would have read RAM the guest reuses. Now `own`: a copy either
+   way (a join into a fresh buffer), `VideoEnv.read` documented as the reader's own bytes, and `DECODE_BITSTREAM`'s
+   two `slice()`s gone (a join is copied once, not twice). Test: tests/virgl-video.test.ts "the video path reads a
+   backing into bytes of its own, inside one entry too" (guest RAM written after the read; failed first: the bytes
+   changed). The tests' fake envs slice too, as the contract now says.
+3. **An empty read at the backing's end returned null**, so a zero-width transfer there failed silently (at an
+   interior boundary it read as empty). Pre-existing. Now `len <= 0` reads as no bytes before the walk. Test:
+   tests/virgl.test.ts "an empty transfer at the end of a backing is a no-op that succeeds" (failed first: false).
+4. **A concurrent request's completion that threw (a full completion ring) was an unhandled rejection** and left
+   `failed` unset (`.then(ok, err)`'s `err` doesn't see `ok`'s throw). Not reachable at today's queue sizes (the
+   review's count: 512 words in flight across a reset against 4,096), so a latent fix: `.then(complete).catch(failed
+   ??= e)`, the next poll throws it. Test: tests/devices.test.ts "a concurrent request whose completion throws (its
+   ring full) fails the next poll, not unhandled" (failed first: the unhandled `completion ring full`). docs/devices.md
+   says so.
+
+Planted and caught beyond the failing-first runs: the video path's join into the kept buffer (loop 91's two-reads
+test), the empty guard written `len < 0` (the new transfer test). **Performance where loop 91 put it:** the poll's parse
+is untouched (`bench/io/poll.ts` on the dev VM, Node 26.7, 11 rounds, base/new/base: 19.6/19.6/19.6 ns a one-segment
+request, 35.1/35.2/35.5 a three-segment one, IQRs within ±0.4; `results/perf93/poll.json`); the transfers' joins keep
+their path (one compare added before it; `bench/gpu/join.ts` measures a copy of the loop, not the renderer, so it
+wasn't re-run); the checksum wasn't touched.
+
+CI at this loop's commit, on the dev VM: scripts/ci.sh (770 s), ci-graphics.sh (326 s), ci-machines.sh (256 s),
+ci-debian.sh (322 s) and ci-usb.sh (9 s), all passed.

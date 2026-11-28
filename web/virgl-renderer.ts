@@ -823,11 +823,13 @@ export class VirglRenderer {
   /**
    * `len` bytes at `offset` in the resource's backing: a view of guest RAM if they're contiguous, else a copy (a join).
    * A join goes into `joined`, kept for the next (a staging buffer's pages are scattered: Firefox's scroll joins ~900 KB
-   * 70 times a second, PERF loop 91), unless `keep` (the caller keeps the bytes) or it's over `JOIN_KEPT`: so the
-   * bytes are the caller's until its next call only, as a view of guest RAM is (an upload copies them at once).
+   * 70 times a second, PERF loop 91), unless it's over `JOIN_KEPT`: so the bytes are the caller's until its next call
+   * only, as a view of guest RAM is (an upload copies them at once). With `own`, they're the caller's for good: a copy
+   * either way, a join into a fresh buffer (the video path, which reads two and keeps both). Empty for no bytes.
    */
-  private readBacking(r: Res, offset: number, len: number, keep = false): Uint8Array | null {
+  private readBacking(r: Res, offset: number, len: number, own = false): Uint8Array | null {
     if (!r.backing) return null;
+    if (len <= 0) return new Uint8Array(0); // an empty box, at the backing's end too (PERF loop 93)
     const ram = this.ram();
     this.stats.backingReads++;
     let skip = offset;
@@ -837,11 +839,12 @@ export class VirglRenderer {
         skip -= b.len;
         continue;
       }
-      if (skip + len <= b.len) return bytes(ram, b).subarray(skip, skip + len);
+      if (skip + len <= b.len)
+        return own ? bytes(ram, b).slice(skip, skip + len) : bytes(ram, b).subarray(skip, skip + len);
       this.stats.joins++;
       this.stats.joinBytes += len;
       let out: Uint8Array;
-      if (keep || len > JOIN_KEPT) out = new Uint8Array(len);
+      if (own || len > JOIN_KEPT) out = new Uint8Array(len);
       else {
         if (this.joined.length < len)
           this.joined = new Uint8Array(Math.min(JOIN_KEPT, Math.max(len, 2 * this.joined.length)));
